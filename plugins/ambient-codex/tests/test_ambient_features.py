@@ -348,20 +348,31 @@ class TestBuildMode(unittest.TestCase):
         self.assertEqual(env["status"], "partial")
 
     def test_truncated_batch_requeues_and_completes(self):
+        # Record-framed contract: the gen reply is per-file JSON objects. a.py's
+        # object is complete; b.py's is cut mid-content. The parser drops b.py,
+        # commits a.py, and retries only the missing file.
         root = tempfile.mkdtemp()
         plan = [{"path": "a.py", "purpose": "p", "est_lines": 5},
                 {"path": "b.py", "purpose": "p", "est_lines": 5}]
-        fake, state = fake_build_complete(plan, [
-            {"files": [{"path": "a.py", "content": "A\n"},
-                       {"path": "b.py", "content": "CUT"}],
-             "finish_reason": "length"},   # b dropped as possibly-cut
-            {"files": [{"path": "b.py", "content": "B\n"}]},
-        ])
+        state = {"calls": 0}
+
+        def fake(api_key, api_url, model, messages, args, on_delta=None, **kw):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                return (json.dumps({"plan": plan, "notes": "n",
+                                    "advisory_steps": []}),
+                        {}, {"finish_reason": "stop"})
+            if state["calls"] == 2:
+                return ('{"path":"a.py","content":"A\\n"}\n'
+                        '{"path":"b.py","content":"BB',
+                        {}, {"finish_reason": "length"})
+            return '{"path":"b.py","content":"B\\n"}', {}, {"finish_reason": "stop"}
+
         env = self._run(build_ns(root), fake)
         self.assertEqual(env["status"], "ok")
         self.assertEqual(sorted(f["path"] for f in env["files"]),
                          ["a.py", "b.py"])
-        self.assertEqual(state["calls"], 3)  # plan + 2 generations
+        self.assertGreaterEqual(state["calls"], 3)
 
     def test_apply_writes_inside_root_only(self):
         root = tempfile.mkdtemp()

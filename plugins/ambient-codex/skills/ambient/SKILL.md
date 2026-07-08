@@ -81,7 +81,9 @@ For long jobs in Codex:
    `write_stdin`, and relay meaningful progress to the user.
 3. Parse the final result, not just the first JSON line. Bundled `audit --repo
    --json` may print a plan line before the result object. Bundled `map --json`
-   streams JSONL, one envelope per item.
+   streams JSONL, one envelope per item. Bundled `build` also uses internal
+   record-framed JSONL so complete generated files can survive a truncated reply
+   while missing files requeue.
 4. Exit `0` means clean completion. Exit `2` means partial coverage; report both
    the usable output and the coverage gap. Exit `3` means setup is needed. Exit
    `64` means the Codex-side flags were wrong and should be fixed.

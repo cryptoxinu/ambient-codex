@@ -74,6 +74,7 @@ class TestMcpAdapter(unittest.TestCase):
         frames = decode_frames(proc.stdout)
         self.assertEqual(frames[0]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(frames[0]["result"]["serverInfo"]["name"], "ambient-codex")
+        self.assertEqual(frames[0]["result"]["capabilities"]["tools"]["listChanged"], False)
         self.assertIn("instructions", frames[0]["result"])
         self.assertIn("bundled Ambient CLI", frames[0]["result"]["instructions"])
         names = {tool["name"] for tool in frames[1]["result"]["tools"]}
@@ -85,6 +86,45 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertIn("ambient_set_config", names)
         self.assertIn("ambient_key", names)
         self.assertIn("ambient_self_test", names)
+
+    def test_notifications_and_ping_are_codex_safe(self):
+        mcp = load_mcp()
+        self.assertIsNone(mcp.handle_request({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        }))
+        self.assertIsNone(mcp.handle_request({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {"requestId": 9, "reason": "client cancelled"},
+        }))
+        response = mcp.handle_request({"jsonrpc": "2.0", "id": 7, "method": "ping"})
+        self.assertEqual(response, {"jsonrpc": "2.0", "id": 7, "result": {}})
+
+    def test_empty_resource_and_prompt_lists_are_supported(self):
+        mcp = load_mcp()
+        resources = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "resources/list"})
+        templates = mcp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "resources/templates/list"})
+        prompts = mcp.handle_request({"jsonrpc": "2.0", "id": 3, "method": "prompts/list"})
+        self.assertEqual(resources["result"], {"resources": []})
+        self.assertEqual(templates["result"], {"resourceTemplates": []})
+        self.assertEqual(prompts["result"], {"prompts": []})
+
+    def test_batch_requests_return_only_call_responses(self):
+        mcp = load_mcp()
+        response = mcp.handle_payload([
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"},
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ])
+        self.assertEqual([item["id"] for item in response], [1, 2])
+        self.assertIn("tools", response[1]["result"])
 
     def test_plugin_mcp_config_is_fast_unbuffered_and_bounded(self):
         data = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
@@ -99,7 +139,7 @@ class TestMcpAdapter(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             args=[],
             returncode=0,
-            stdout="ambient 1.5.0\n",
+            stdout="ambient 1.5.3\n",
             stderr="",
         )
         with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:

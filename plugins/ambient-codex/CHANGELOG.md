@@ -2,6 +2,21 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.5.3 - 2026-07-08
+
+### Changed
+
+- Ported the build lane to record-framed JSONL generation: each generated file
+  is parsed as an independent complete record, truncated tails are dropped and
+  requeued, reasoning drafts are never mined for files, and apply idempotency now
+  compares raw bytes.
+- Hardened the MCP adapter for Codex's runtime handshake: notifications are now
+  handled without invalid `id: null` responses, `ping` is supported, empty
+  resource/prompt lists are explicit, batch messages are accepted, and tool-list
+  capability metadata is concrete.
+- Added opt-in `AMBIENT_MCP_TRACE_FILE` tracing for local protocol diagnostics.
+  It is disabled unless the environment variable is set.
+
 ## 1.5.0 - 2026-07-08
 
 ### Added

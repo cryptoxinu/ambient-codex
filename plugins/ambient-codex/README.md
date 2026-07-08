@@ -116,6 +116,8 @@ Delegated implementation:
 ./bin/ambient build "Implement the feature described in the brief" --dir . --json --apply --yes
 ```
 
+Bundled `build` generates file sets through record-framed JSONL internally, so a
+truncated model reply can keep complete files and safely requeue missing ones.
 Codex must still inspect every generated file, run tests, and own the final
 decision. Ambient output is untrusted until verified.
 

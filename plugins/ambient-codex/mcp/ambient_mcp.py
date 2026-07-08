@@ -11,14 +11,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.5.0"
+SERVER_VERSION = "1.5.3"
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INSTRUCTIONS = (
     "Use the bundled Ambient CLI only through this MCP server or the plugin root. "
@@ -49,6 +50,49 @@ def plugin_root() -> Path:
 
 def ambient_bin() -> Path:
     return plugin_root() / "bin" / "ambient"
+
+
+def trace_file() -> Optional[Path]:
+    configured = os.environ.get("AMBIENT_MCP_TRACE_FILE")
+    if not configured:
+        return None
+    return Path(configured).expanduser()
+
+
+def summarize_message(message: Any) -> Dict[str, Any]:
+    if isinstance(message, list):
+        return {"batch": len(message)}
+    if not isinstance(message, dict):
+        return {"type": type(message).__name__}
+    summary: Dict[str, Any] = {
+        "id": message.get("id"),
+        "method": message.get("method"),
+    }
+    if "result" in message:
+        result = message["result"]
+        summary = {**summary, "result_keys": sorted(result) if isinstance(result, dict) else type(result).__name__}
+        if isinstance(result, dict) and isinstance(result.get("tools"), list):
+            summary = {**summary, "tool_count": len(result["tools"])}
+    if "error" in message:
+        error = message["error"]
+        summary = {**summary, "error": error.get("message") if isinstance(error, dict) else str(error)}
+    return summary
+
+
+def trace_event(event: str, message: Any) -> None:
+    destination = trace_file()
+    if destination is None:
+        return
+    payload = {
+        "ts": time.time(),
+        "event": event,
+        "message": summarize_message(message),
+    }
+    try:
+        with destination.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    except OSError:
+        return
 
 
 SECRET_PATTERNS = (
@@ -551,21 +595,33 @@ def requested_protocol_version(request: Dict[str, Any]) -> str:
     return PROTOCOL_VERSION
 
 
+def is_notification(request: Dict[str, Any]) -> bool:
+    return "id" not in request
+
+
 def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     request_id = request.get("id")
     method = request.get("method")
-    if method == "notifications/initialized":
+    if is_notification(request):
         return None
     try:
         if method == "initialize":
             return response_result(request_id, {
                 "protocolVersion": requested_protocol_version(request),
-                "capabilities": {"tools": {}},
+                "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                 "instructions": SERVER_INSTRUCTIONS,
             })
+        if method == "ping":
+            return response_result(request_id, {})
         if method == "tools/list":
             return response_result(request_id, {"tools": TOOLS})
+        if method == "resources/list":
+            return response_result(request_id, {"resources": []})
+        if method == "resources/templates/list":
+            return response_result(request_id, {"resourceTemplates": []})
+        if method == "prompts/list":
+            return response_result(request_id, {"prompts": []})
         if method == "tools/call":
             params = require_object(request.get("params"), "params")
             name = require_string(params, "name", max_chars=128)
@@ -594,7 +650,10 @@ def read_headers(stream) -> Optional[Dict[str, str]]:
             headers = {**headers, key.lower(): value.strip()}
 
 
-def read_message(stream) -> Optional[Dict[str, Any]]:
+JsonRpcPayload = Union[Dict[str, Any], List[Any]]
+
+
+def read_message(stream) -> Optional[JsonRpcPayload]:
     headers = read_headers(stream)
     if headers is None:
         return None
@@ -605,25 +664,34 @@ def read_message(stream) -> Optional[Dict[str, Any]]:
     if not body:
         return None
     payload = json.loads(body.decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("JSON-RPC message must be an object")
+    if not isinstance(payload, (dict, list)):
+        raise ValueError("JSON-RPC message must be an object or batch array")
     return payload
 
 
-def write_message(stream, payload: Dict[str, Any]) -> None:
+def write_message(stream, payload: JsonRpcPayload) -> None:
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
     stream.write(header + body)
     stream.flush()
 
 
+def handle_payload(payload: JsonRpcPayload) -> Optional[JsonRpcPayload]:
+    if isinstance(payload, list):
+        responses = [response for item in payload if isinstance(item, dict) for response in [handle_request(item)] if response]
+        return responses or None
+    return handle_request(payload)
+
+
 def serve() -> int:
     while True:
-        request = read_message(sys.stdin.buffer)
-        if request is None:
+        payload = read_message(sys.stdin.buffer)
+        if payload is None:
             return 0
-        response = handle_request(request)
+        trace_event("request", payload)
+        response = handle_payload(payload)
         if response is not None:
+            trace_event("response", response)
             write_message(sys.stdout.buffer, response)
 
 
