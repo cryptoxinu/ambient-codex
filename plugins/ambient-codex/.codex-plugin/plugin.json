@@ -1,0 +1,38 @@
+{
+  "name": "ambient-codex",
+  "version": "1.4.0",
+  "description": "Codex-native Ambient delegation, audits, builds, and model routing.",
+  "author": {
+    "name": "xinu",
+    "url": "https://github.com/cryptoxinu"
+  },
+  "homepage": "https://github.com/cryptoxinu/ambient-codex",
+  "repository": "https://github.com/cryptoxinu/ambient-codex",
+  "license": "MIT",
+  "keywords": [
+    "ambient",
+    "codex",
+    "plugin",
+    "inference",
+    "code-review",
+    "delegation"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Ambient Codex",
+    "shortDescription": "Route token-heavy Codex work through Ambient models.",
+    "longDescription": "Ambient Codex adds a Codex-native skill, MCP control tools, lifecycle hooks, and a stdlib CLI for Ambient setup, model selection, mode control, audits, code generation briefs, repository maps, usage controls, and delegated frontier-model work.",
+    "developerName": "xinu",
+    "category": "Productivity",
+    "capabilities": [
+      "skills",
+      "mcp",
+      "hooks",
+      "local-cli"
+    ],
+    "websiteURL": "https://github.com/cryptoxinu/ambient-codex",
+    "brandColor": "#1F6FEB",
+    "defaultPrompt": "Use Ambient Codex when token-heavy planning, audits, builds, repository maps, or second-opinion model checks would help."
+  },
+  "mcpServers": "./.mcp.json"
+}

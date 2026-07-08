@@ -1,0 +1,15 @@
+interface:
+  display_name: "Ambient"
+  short_description: "Control Ambient models, modes, audits, and delegated work."
+  brand_color: "#1F6FEB"
+  default_prompt: "Use $ambient to open the native control panel, pick models, audit this diff, or delegate a token-heavy build through Ambient."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "ambient"
+      description: "Local Ambient Codex MCP server for bounded control, model, mode, settings, key, doctor, usage, and ask actions."
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true

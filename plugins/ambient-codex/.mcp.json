@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ambient": {
+      "command": "python3",
+      "args": [
+        "mcp/ambient_mcp.py"
+      ],
+      "cwd": ".",
+      "tool_timeout_sec": 120
+    }
+  }
+}
