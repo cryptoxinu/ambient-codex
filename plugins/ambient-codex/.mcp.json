@@ -3,9 +3,11 @@
     "ambient": {
       "command": "python3",
       "args": [
+        "-u",
         "mcp/ambient_mcp.py"
       ],
       "cwd": ".",
+      "startup_timeout_sec": 60,
       "tool_timeout_sec": 120
     }
   }

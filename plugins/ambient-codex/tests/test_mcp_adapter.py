@@ -46,13 +46,18 @@ def decode_frames(raw):
 
 
 class TestMcpAdapter(unittest.TestCase):
+    def test_mcp_version_matches_plugin_manifest(self):
+        mcp = load_mcp()
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(mcp.SERVER_VERSION, manifest["version"])
+
     def test_stdio_initialize_and_list_tools(self):
         init = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-06-18",
                 "capabilities": {},
                 "clientInfo": {"name": "test", "version": "0"},
             },
@@ -67,7 +72,10 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_frames(proc.stdout)
+        self.assertEqual(frames[0]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(frames[0]["result"]["serverInfo"]["name"], "ambient-codex")
+        self.assertIn("instructions", frames[0]["result"])
+        self.assertIn("bundled Ambient CLI", frames[0]["result"]["instructions"])
         names = {tool["name"] for tool in frames[1]["result"]["tools"]}
         self.assertIn("ambient_status", names)
         self.assertIn("ambient_ask", names)
@@ -76,6 +84,32 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertIn("ambient_set_model", names)
         self.assertIn("ambient_set_config", names)
         self.assertIn("ambient_key", names)
+        self.assertIn("ambient_self_test", names)
+
+    def test_plugin_mcp_config_is_fast_unbuffered_and_bounded(self):
+        data = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        ambient = data["mcpServers"]["ambient"]
+        self.assertEqual(ambient["command"], "python3")
+        self.assertEqual(ambient["args"], ["-u", "mcp/ambient_mcp.py"])
+        self.assertGreaterEqual(ambient["startup_timeout_sec"], 60)
+        self.assertEqual(ambient["tool_timeout_sec"], 120)
+
+    def test_self_test_is_local_bounded_and_redacted(self):
+        mcp = load_mcp()
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="ambient 1.5.0\n",
+            stderr="",
+        )
+        with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:
+            result = mcp.call_tool("ambient_self_test", {})
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[-1], "version")
+        self.assertEqual(run.call_args.kwargs["timeout"], 5)
+        text = result["content"][0]["text"]
+        self.assertIn("ambient-codex self-test ok", text)
+        self.assertNotIn("AMBIENT_API_KEY", text)
 
     def test_status_tool_runs_config_with_redaction(self):
         mcp = load_mcp()

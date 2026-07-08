@@ -318,6 +318,20 @@ class ExactHookHeaderTests(unittest.TestCase):
             amb.cmd_audit_hook(hook_args(uninstall_hook="pre-commit"))
         self.assertTrue(os.path.exists(self.path))
 
+    def test_rendered_hook_uses_native_codex_marker(self):
+        rendered = amb._render_hook("pre-commit")
+        self.assertIn("# ambient-codex audit hook v1 (pre-commit)", rendered)
+        self.assertNotIn("# ambient-code audit hook v1 (pre-commit)", rendered)
+
+    def test_exact_legacy_ambient_owned_hook_is_still_ours(self):
+        legacy = (
+            "#!/bin/sh\n"
+            "# ambient-code audit hook v1 (pre-commit)\n"
+            "# Installed by: ambient audit --install-hook pre-commit\n"
+            "echo old owned template\n"
+        )
+        self.assertTrue(amb._hook_is_ours(legacy, "pre-commit"))
+
     def test_exact_header_still_ours(self):
         exact = ("#!/bin/sh\n"
                  f"{amb.AMBIENT_HOOK_MARKER} (pre-commit)\n"

@@ -20,9 +20,12 @@ The main security boundaries are:
 - External input boundary: all web/API/MCP/model output is untrusted data.
 - External output boundary: selected prompts, diffs, and files are sent to the
   configured inference endpoint.
-- Launcher ownership: the Codex hook and bundled `link` only self-heal launchers
-  whose target path contains `/ambient-codex/`. Any other launcher is treated as
-  foreign and left untouched.
+- Launcher ownership: bundled `link` only manages launchers whose target path
+  contains `/ambient-codex/`. Any other launcher is treated as foreign and left
+  untouched.
+- Lifecycle hooks: the public plugin registers no default command hooks. If a
+  user opts into git audit hooks, ownership is checked by exact native
+  `ambient-codex` markers before replacement or removal.
 - Agent lane: `ambient agent` runs opencode and exposes the Ambient key to that
   subprocess environment.
 

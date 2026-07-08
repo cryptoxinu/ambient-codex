@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import re
 import unittest
 from pathlib import Path
@@ -8,6 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestCodexNativeIsolation(unittest.TestCase):
+    def test_plugin_bundles_no_default_lifecycle_hooks(self):
+        data = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        self.assertEqual(data, {"hooks": {}})
+
     def test_hook_has_no_claude_plugin_root_fallback(self):
         text = (ROOT / "hooks" / "session-start.sh").read_text(encoding="utf-8")
         self.assertNotIn("CLAUDE_PLUGIN_ROOT", text)

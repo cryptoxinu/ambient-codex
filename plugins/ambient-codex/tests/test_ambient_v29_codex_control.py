@@ -1,4 +1,4 @@
-"""v1.4.0 native Codex control surface.
+"""Native Codex control surface.
 
 Covers the Codex-owned settings panel, safe mode/model/settings writes, key
 offboarding, and MCP write-tool wiring. Hermetic: no live API, temp config only.

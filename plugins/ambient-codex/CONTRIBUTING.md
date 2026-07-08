@@ -14,6 +14,8 @@ as part of Ambient Codex work unless the user explicitly expands scope.
 - Keep plugin surfaces valid: `.codex-plugin/plugin.json`, `.mcp.json`,
   `skills/ambient/SKILL.md`, `skills/ambient/agents/openai.yaml`, and
   `hooks/hooks.json`.
+- `hooks/hooks.json` must stay empty unless a phase explicitly accepts the hook
+  trust-review cost and documents the exact lifecycle behavior.
 - Codex-facing instructions must not route through bare `ambient` on PATH. Use
   the bundled plugin binary or MCP server so this plugin never crosses into any
   other Ambient install.
@@ -29,6 +31,7 @@ python3 -m py_compile bin/ambient mcp/ambient_mcp.py
 python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 python3 /Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/ambient
 python3 -m unittest discover -s tests -q
+bash -n hooks/session-start.sh
 ```
 
 Add or update tests for behavior changes. Prefer focused tests around pure

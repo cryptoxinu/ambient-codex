@@ -92,7 +92,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.4.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.5.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 CONFIG_PATH = os.path.expanduser("~/.config/ambient/env")
 USAGE_PATH = os.path.expanduser("~/.config/ambient/usage.jsonl")
 KEYCHAIN_SERVICE = "ambient.xyz"
@@ -8106,7 +8106,8 @@ def git_diff_inputs(staged, ref):
 # the verdict — it never contains, and can never contain, model output (the
 # SKILL trust boundary: model output is data, never code that runs).
 
-AMBIENT_HOOK_MARKER = "# ambient-code audit hook v1"
+AMBIENT_HOOK_MARKER = "# ambient-codex audit hook v1"
+LEGACY_AMBIENT_HOOK_MARKERS = ("# ambient-code audit hook v1",)
 
 
 def _render_hook(name):
@@ -8185,11 +8186,14 @@ def _hook_is_ours(existing, name):
     if existing == _render_hook(name):
         return True
     lines = existing.splitlines()
-    return (len(lines) >= 3
-            and lines[0] == "#!/bin/sh"
-            and lines[1] == f"{AMBIENT_HOOK_MARKER} ({name})"
-            and lines[2] == f"# Installed by: ambient audit "
-                            f"--install-hook {name}")
+    markers = (AMBIENT_HOOK_MARKER, *LEGACY_AMBIENT_HOOK_MARKERS)
+    return any(
+        len(lines) >= 3
+        and lines[0] == "#!/bin/sh"
+        and lines[1] == f"{marker} ({name})"
+        and lines[2] == f"# Installed by: ambient audit --install-hook {name}"
+        for marker in markers
+    )
 
 
 def cmd_audit_hook(args):

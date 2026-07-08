@@ -3,7 +3,7 @@
 Codex-native plugin for the Ambient decentralized inference network.
 
 This is a standalone fork of the Ambient CLI/plugin work redesigned for Codex:
-Codex gets a skill, lifecycle hook, MCP server, and stdlib CLI for token-saving
+Codex gets a skill, MCP server, and stdlib CLI for token-saving
 delegation, second-opinion audits, build briefs, repository maps, model routing,
 API key lifecycle, mode/settings control, and usage controls.
 
@@ -32,10 +32,30 @@ root or the bundled MCP server. Do not make Codex rely on a bare `ambient` from
 PATH; that name may point at another local install.
 
 Ambient Codex is independent from any other Ambient integration on this machine.
-Its hooks and MCP server resolve this plugin's bundled binary and only self-heal
-launchers that already point into an `/ambient-codex/` path.
+It does not register auto-running lifecycle hooks by default. Its MCP server
+resolves this plugin's bundled binary directly, and optional launcher repair is
+only available through explicit terminal commands such as bundled `link`.
 
-## Install For Local Codex Development
+## Install In Codex
+
+From GitHub:
+
+```bash
+codex plugin marketplace add cryptoxinu/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+For local development from this checkout:
+
+```bash
+codex plugin marketplace add /Users/z/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+Start a new Codex thread after install or reinstall so Codex loads the current
+skill and MCP server.
+
+## Validate Local Development
 
 From this repo root:
 
@@ -54,6 +74,14 @@ The plugin root is:
 ```text
 /Users/z/ambient-codex/plugins/ambient-codex
 ```
+
+## Why Codex Starts Python
+
+Codex launches `python3 -u mcp/ambient_mcp.py` as a stdio MCP server. MCP is the
+tool bridge that lets Codex call bounded local actions such as status, model
+selection, mode changes, key lifecycle guidance, doctor, usage, short asks, and
+small audits. The MCP process does not make network calls during startup and it
+does not accept API keys as tool arguments.
 
 ## First Run
 
@@ -138,9 +166,10 @@ environment. Keep credentials out of the agent working tree.
 - `.mcp.json` registers the local stdio MCP server.
 - `mcp/ambient_mcp.py` implements bounded MCP tools over the native control
   surface and long-running CLI lanes.
-- `hooks/hooks.json` wires the session-start hook.
-- `hooks/session-start.sh` reminds Codex about persisted delegate/takeover mode
-  and self-heals only Codex-owned `/ambient-codex/` launchers.
+- `hooks/hooks.json` intentionally registers no default lifecycle hooks, so a
+  clean install does not require hook trust review.
+- `hooks/session-start.sh` remains an opt-in script for local experiments; it is
+  not wired into the public plugin by default.
 
 ## Delegate And Takeover Modes
 
@@ -203,6 +232,7 @@ python3 -m py_compile bin/ambient mcp/ambient_mcp.py
 python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 python3 /Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/ambient
 python3 -m unittest discover -s tests -q
+bash -n hooks/session-start.sh
 ```
 
 The tests are hermetic by default and should not require live Ambient spend.

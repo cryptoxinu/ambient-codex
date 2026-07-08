@@ -30,14 +30,29 @@ python3 -m unittest discover -s tests -q
 
 ## Install Locally In Codex
 
-Point Codex at:
+For the public repository:
+
+```bash
+codex plugin marketplace add cryptoxinu/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+For local development from this checkout:
+
+```bash
+codex plugin marketplace add /Users/z/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+The local marketplace file is:
 
 ```text
 /Users/z/ambient-codex/.agents/plugins/marketplace.json
 ```
 
-Then invoke the skill with `$ambient` or by asking Codex to use Ambient for an
-audit, build, summary, second opinion, or token-saving delegation.
+Start a new Codex thread after install or reinstall. Then invoke the skill with
+`$ambient` or by asking Codex to use Ambient for an audit, build, summary,
+second opinion, or token-saving delegation.
 
 Native control smoke test from the plugin root:
 

@@ -53,15 +53,30 @@ Only variable names, docs, or synthetic test values should match.
 
 ## Install Verification
 
-Use the marketplace file at repo root:
+Public repository install:
+
+```bash
+codex plugin marketplace add cryptoxinu/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+Local checkout install:
+
+```bash
+codex plugin marketplace add /Users/z/ambient-codex
+codex plugin add ambient-codex@ambient-codex
+```
+
+The local marketplace file is:
 
 ```text
 .agents/plugins/marketplace.json
 ```
 
 Verify that Codex sees the plugin, the `$ambient` skill loads, `.mcp.json` starts
-the MCP server, and `hooks/session-start.sh` emits delegate/takeover reminders
-only when configured.
+the MCP server with `python3 -u`, `codex mcp get ambient` shows the installed
+cache version, and `ambient_self_test` succeeds. A public install must not
+register default lifecycle hooks or require hook trust review.
 
 ## Uninstall Support Notes
 

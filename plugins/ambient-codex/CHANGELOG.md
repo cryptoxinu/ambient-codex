@@ -2,6 +2,25 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.5.0 - 2026-07-08
+
+### Added
+
+- MCP `ambient_self_test` for local no-network startup verification.
+- Compaction-safe production rebuild checklist in `docs/PRODUCTION_REBUILD_PLAN.md`.
+
+### Changed
+
+- MCP startup now uses unbuffered Python, a 60-second startup timeout, client
+  protocol-version echoing, and server instructions for Codex.
+- Public plugin installs no longer register default lifecycle hooks, avoiding
+  hook trust-review prompts on clean install.
+- Git audit-hook ownership now uses the native `ambient-codex audit hook v1`
+  marker while still recognizing exact legacy Ambient-owned hook headers for
+  safe uninstall or upgrade.
+- Public docs now spell out GitHub install, local install, API key setup, and why
+  Codex starts a local Python MCP process.
+
 ## 1.4.0 - 2026-07-08
 
 ### Added
