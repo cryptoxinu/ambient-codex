@@ -2,6 +2,21 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.4 - 2026-07-09
+
+### Clearer control panel and reliable text menus
+
+- Bare Ambient now exposes the product surface instead of only reporting state:
+  model lanes, delegate/takeover mode, settings, audits, builds, ask, diagnostics,
+  and usage.
+- The normal `pick a model`, `change chat model`, `change code model`, and
+  `change mode` flows now use deterministic numbered text menus plus direct setter
+  tools. Native MCP elicitation pickers are reserved for users who explicitly ask
+  for a native picker.
+- `ambient-codex control` now prints the same "In Codex chat, say:" action list
+  and advertises all setting knobs plus common audit/build/ask/doctor/usage
+  commands.
+
 ## 1.8.3 - 2026-07-09
 
 ### Picker fallback and settings clarity

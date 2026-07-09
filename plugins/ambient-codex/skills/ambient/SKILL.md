@@ -48,20 +48,26 @@ the way a settings screen would:
 
 1. Call MCP `ambient_control` and show, in plain words: whether a key is configured,
    the current mode (off / delegate / takeover), the current chat and code models,
-   and which models are serving right now.
-2. Tell the user their current model and mode, then offer picker actions as opt-in:
-   "You're set - chat is on <chat-model>, code is on <code-model>, mode is <mode>.
-   Want to change either? Say `pick a model` or `change mode` and I'll show you a
-   picker. Or just say `use Ambient to audit this diff` / `use Ambient to build X`."
-3. Only call MCP `ambient_pick_model` when the user asks to switch or choose a
-   model. Only call MCP `ambient_pick_mode` when the user asks to change the mode.
-   Never call both unprompted.
-
-If the user asks for a picker and the client cannot render one, auto-cancels it,
-or otherwise returns no selection, the picker tool returns a numbered menu
-instead. Read that menu to the user and act on their answer with
-`ambient_set_model` / `ambient_set_mode`. Do not summarize the menu away; the
-point of the fallback is to show the actual choices.
+   all settings with current value + allowed syntax, and which models are serving
+   right now.
+2. Text menus are the default. The Codex native elicitation picker can auto-cancel
+   in some clients, so the normal user path must be visible and deterministic in
+   chat:
+   - `pick a model` shows a numbered serving-model menu and sets both chat + code
+     with `ambient_set_model` after the user replies with a number or model id.
+   - `change chat model` shows the same menu and sets only `lane=chat`.
+   - `change code model` shows the same menu and sets only `lane=code`.
+   - `change mode` shows `1. off`, `2. on / delegate`, `3. takeover`, then calls
+     `ambient_set_mode` after the user replies.
+   - `change settings` shows the settings menu with current values and syntax,
+     then calls `ambient_set_config` after the user chooses a setting/value.
+3. Always show a "You can say" section in the panel. Include at least:
+   `pick a model`, `change chat model`, `change code model`, `change mode`,
+   `change settings`, `audit this diff`, `audit this repo`, `build <task>`,
+   `ask Ambient <question>`, `diagnose Ambient`, and `show Ambient usage`.
+4. Do not call `ambient_pick_model` or `ambient_pick_mode` for routine selection.
+   Use them only when the user explicitly asks for a native picker. If they return
+   no selection, show the text menu and use the direct setter tools.
 
 Settings are direct-set controls, not native pickers. If the user asks to change
 settings without naming a specific setting, show the current `ambient_control`
@@ -74,12 +80,12 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 
 | User intent | Codex action |
 |---|---|
-| Ambient status or control panel | Prefer MCP `ambient_control`; otherwise run bundled `control --json` or bundled `control`. Show key state, delegate state, default lanes, settings, and serving models. |
-| User wants to change mode but didn't name one | Call MCP `ambient_pick_mode` — a native off / delegate / takeover picker; it persists the choice. Don't ask which mode first; the picker asks. |
+| Ambient status or control panel | Prefer MCP `ambient_control`; otherwise run bundled `control --json` or bundled `control`. Show key state, delegate state, default lanes, all settings with syntax, serving models, and a "You can say" action list. |
+| User wants to change mode but didn't name one | Show a text menu: `1. off`, `2. on / delegate`, `3. takeover`; after the user replies, call MCP `ambient_set_mode`. Do not use the native picker unless the user explicitly asks for it. |
 | Turn delegation on | MCP `ambient_set_mode` with `state=on`, or bundled `control mode on`. Explain the delegate contract and follow it for the session. |
 | Turn takeover on | MCP `ambient_set_mode` with `state=takeover`, or bundled `control mode takeover`. Explain the takeover contract and route substantive work through Ambient until turned off. |
 | Turn Ambient off | MCP `ambient_set_mode` with `state=off`, or bundled `control mode off`. This exits both delegate and takeover. |
-| User wants to switch/choose a model without naming one | Call MCP `ambient_pick_model`. Codex renders a native picker of the models serving right now; the tool persists the choice itself. Do NOT transcribe a menu into chat, and do NOT ask which model first — the picker asks. Pass `lane` only when the user already said chat-only or code-only. |
+| User wants to switch/choose a model without naming one | Show a numbered text menu of serving models from `ambient_control`/`ambient_models`; after the user replies with a number or model id, call MCP `ambient_set_model`. Use `lane=both` for `pick a model`, `lane=chat` for `change chat model`, and `lane=code` for `change code model`. Do not use the native picker unless the user explicitly asks for it. |
 | User names a specific model | MCP `ambient_set_model` with that id, or bundled `control model MODEL --chat|--code`. |
 | Inspect the catalog | MCP `ambient_models`, or bundled `models --json` for raw inspection. |
 | Manage settings | Prefer MCP `ambient_set_config` when the setting/value is named; otherwise show the allowed settings from `ambient_control` and ask for the setting/value. For CLI fallback, run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |
@@ -254,9 +260,9 @@ Notes for you (the agent), not the user:
   at app.ambient.xyz and run `ambient-codex setup` locally.
 - After they confirm setup, smoke-test with bundled `ask "Reply with exactly: AMBIENT-OK"`,
   then IMMEDIATELY show the control panel (see **The control panel** above): call
-  `ambient_control`, show the current status, and tell the user they can pick a
-  model or mode by asking. Do not call `ambient_pick_model` or `ambient_pick_mode`
-  unless the user asks to change that setting.
+  `ambient_control`, show the current status, settings, serving models, and the
+  "You can say" action list. Do not call `ambient_pick_model` or
+  `ambient_pick_mode` unless the user explicitly asks for a native picker.
 
 Settings live behind commands, not manual env editing:
 

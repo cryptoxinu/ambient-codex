@@ -118,6 +118,11 @@ class ControlSnapshotTests(ControlCase):
         self.assertEqual(data["key"], {"configured": True, "backend": "keychain"})
         self.assertEqual(data["defaults"]["chat"], "z-ai/glm-5.2")
         self.assertEqual(data["models"]["serving_count"], 1)
+        self.assertIn(
+            {"phrase": "change settings",
+             "description": "edit streaming, fallback, fleet-budget, spend-cap, reference-price"},
+            data["chat_actions"],
+        )
         self.assertIn("ambient-codex control mode on", data["actions"])
         self.assertIn("ambient-codex setup", data["actions"])
 
@@ -129,6 +134,9 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("API key", out)
         self.assertIn("Mode", out)
         self.assertIn("ambient-codex control model MODEL --chat", out)
+        self.assertIn("In Codex chat, say:", out)
+        for phrase, _description in amb.CONTROL_CHAT_ACTIONS:
+            self.assertIn(phrase, out)
 
 
 class ControlWriteTests(ControlCase):
@@ -227,3 +235,11 @@ class KeyOnboardingUXTests(unittest.TestCase):
     def test_actions_offer_setup_not_control_key_setup(self):
         self.assertIn("ambient-codex setup", amb.CONTROL_ACTIONS)
         self.assertNotIn("ambient-codex control key setup", amb.CONTROL_ACTIONS)
+        for action in (
+            "ask PROMPT",
+            "audit --staged --json",
+            "build TASK --dir DIR --json",
+            "doctor",
+            "usage --json",
+        ):
+            self.assertIn(f"ambient-codex {action}", amb.CONTROL_ACTIONS)

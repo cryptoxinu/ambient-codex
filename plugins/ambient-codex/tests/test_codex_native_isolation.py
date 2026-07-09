@@ -61,6 +61,15 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertIn("ambient_control", text)
         self.assertIn("control mode off", text)
 
+    def test_skill_defaults_to_text_menus_not_native_pickers(self):
+        text = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Text menus are the default", text)
+        self.assertIn("Do not call `ambient_pick_model` or `ambient_pick_mode`", text)
+        self.assertIn("only when the user explicitly asks for a native picker", text)
+        self.assertIn("change chat model", text)
+        self.assertIn("change code model", text)
+        self.assertIn("change settings", text)
+
     def test_codex_facing_docs_do_not_reintroduce_path_first_routing(self):
         docs = [
             ROOT / "README.md",

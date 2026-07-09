@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.8.3"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.8.4"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -11121,14 +11121,42 @@ CONTROL_ACTIONS = tuple(
         "control mode on",
         "control mode takeover",
         "control mode off",
+        "control model MODEL",
         "control model MODEL --chat",
         "control model MODEL --code",
+        "models --json",
         "setup",
         "setup --force",
         "setup --remove",
-        "control setting fallback on|off",
         "control setting streaming on|off",
+        "control setting fallback on|off",
+        "control setting fleet-budget on|off",
+        "control setting spend-cap NUMBER",
+        "control setting reference-price IN/OUT",
+        "ask PROMPT",
+        "audit --staged --json",
+        "audit FILE... --json",
+        "audit --repo DIR --json",
+        "code TASK --json",
+        "build TASK --dir DIR --json",
+        "doctor",
+        "usage --json",
+        "agent",
     )
+)
+
+CONTROL_CHAT_ACTIONS = (
+    ("pick a model", "choose one model for both chat and code"),
+    ("change chat model", "choose the chat/audit model lane only"),
+    ("change code model", "choose the code/build/agent model lane only"),
+    ("change mode", "choose off / delegate / takeover"),
+    ("change settings", "edit streaming, fallback, fleet-budget, spend-cap, reference-price"),
+    ("audit this diff", "audit the current git diff"),
+    ("audit this repo", "run a repository audit"),
+    ("build <task>", "draft a file set with Codex review"),
+    ("ask Ambient <question>", "ask the chat model"),
+    ("diagnose Ambient", "run doctor"),
+    ("show Ambient usage", "show usage and savings"),
 )
 
 
@@ -11215,6 +11243,10 @@ def _control_snapshot(include_all=False, offline=False):
             "total_count": len(items),
             "items": items,
         },
+        "chat_actions": [
+            {"phrase": phrase, "description": description}
+            for phrase, description in CONTROL_CHAT_ACTIONS
+        ],
         "actions": list(CONTROL_ACTIONS),
     }
 
@@ -11251,6 +11283,9 @@ def _control_print_status(payload):
             print(f"  ... {models['total_count'] - 8} more; run: ambient-codex models")
     else:
         print("\nServing models right now: unavailable in this status view")
+    print("\nIn Codex chat, say:")
+    for action in payload["chat_actions"]:
+        print(f"  {action['phrase']:<24} {action['description']}")
     print("\nActions:")
     for action in payload["actions"]:
         print(f"  {action}")
