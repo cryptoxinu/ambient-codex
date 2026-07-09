@@ -2,6 +2,19 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.3 - 2026-07-09
+
+### Picker fallback and settings clarity
+
+- Mode and model picker cancellations now return explicit numbered fallback menus
+  instead of dead-ending with "kept current" when Codex auto-cancels elicitation.
+- The mode fallback lists `off`, `on`, and `takeover` with the exact setter tool to
+  call.
+- The model fallback lists currently serving model ids and the exact setter tool to
+  call.
+- The skill now treats settings as direct-set controls: show the settings list,
+  then use `ambient_set_config` with the chosen setting/value.
+
 ## 1.8.2 - 2026-07-09
 
 ### Setup control panel polish

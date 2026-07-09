@@ -188,7 +188,10 @@ class TestPickModelTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_model_tool({})
         run.assert_not_called()
-        self.assertIn("Kept your current model", out["content"][0]["text"])
+        text = out["content"][0]["text"]
+        self.assertIn("Model unchanged", text)
+        self.assertIn("1. z-ai/glm-5.2", text)
+        self.assertIn("ambient_set_model", text)
 
     def test_timeout_or_error_changes_nothing(self):
         with mock.patch.object(self.mcp, "_serving_models", return_value=SERVING), \
@@ -196,7 +199,10 @@ class TestPickModelTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_model_tool({})
         run.assert_not_called()
-        self.assertIn("Kept your current model", out["content"][0]["text"])
+        text = out["content"][0]["text"]
+        self.assertIn("Model unchanged", text)
+        self.assertIn("1. z-ai/glm-5.2", text)
+        self.assertIn("ambient_set_model", text)
 
     def test_a_model_we_never_offered_is_refused(self):
         """Never persist an id echoed back that was not in our own option list."""
@@ -391,7 +397,12 @@ class TestPickModeTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
-        self.assertIn("Kept your current mode", out["content"][0]["text"])
+        text = out["content"][0]["text"]
+        self.assertIn("Mode unchanged", text)
+        self.assertIn("1. off", text)
+        self.assertIn("2. on", text)
+        self.assertIn("3. takeover", text)
+        self.assertIn("ambient_set_mode", text)
 
     def test_no_picker_returns_a_numbered_menu(self):
         self.mcp.SESSION.client_capabilities = {}
@@ -399,7 +410,20 @@ class TestPickModeTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
-        self.assertIn("1.", out["content"][0]["text"])
+        text = out["content"][0]["text"]
+        self.assertIn("1. off", text)
+        self.assertIn("ambient_set_mode", text)
+
+    def test_timeout_or_auto_cancel_returns_the_numbered_menu(self):
+        with mock.patch.object(self.mcp, "current_mode", return_value="off"), \
+             mock.patch.object(self.mcp, "elicit", return_value=None), \
+             mock.patch.object(self.mcp, "run_ambient") as run:
+            out = self.mcp.pick_mode_tool({})
+        run.assert_not_called()
+        text = out["content"][0]["text"]
+        self.assertIn("Mode unchanged", text)
+        self.assertIn("1. off", text)
+        self.assertIn("ambient_set_mode", text)
 
     def test_a_bogus_state_is_refused(self):
         with mock.patch.object(self.mcp, "current_mode", return_value="off"), \

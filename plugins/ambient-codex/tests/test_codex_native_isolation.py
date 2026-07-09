@@ -109,8 +109,9 @@ class TestCodexNativeIsolation(unittest.TestCase):
         tool_section = text.split("## MCP Control Plane", 1)[1].split("## CLI Execution Plane", 1)[0]
         self.assertEqual(set(re.findall(r"- `(ambient_[^`]+)`", tool_section)), expected_tools)
 
+        mcp = load_mcp()
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.8.2")
+        self.assertEqual(manifest["version"], mcp.SERVER_VERSION)
         long_description = manifest["interface"]["longDescription"]
         self.assertIn("Hooks are not registered by default.", long_description)
         hook_capabilities = [
@@ -122,7 +123,6 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertRegex("Ambient Codex adds lifecycle hooks.", hook_advertising)
         self.assertIsNone(hook_advertising.search(long_description))
 
-        mcp = load_mcp()
         self.assertEqual({tool["name"] for tool in mcp.TOOLS}, expected_tools)
         self.assertEqual(set(mcp.TOOL_HANDLERS), expected_tools)
 

@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.8.2"
+SERVER_VERSION = "1.8.3"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -333,10 +333,24 @@ def set_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _MODE_OPTIONS = (
-    ("off", "Off — Codex does all the work itself"),
-    ("on", "Delegate — route token-heavy work (bulk code, audits, digests) to Ambient"),
-    ("takeover", "Takeover — run every substantive turn through Ambient to save Codex tokens"),
+    ("off", "Codex does all the work itself"),
+    ("on", "Delegate token-heavy work such as bulk code, audits, and digests to Ambient"),
+    ("takeover", "Run every substantive turn through Ambient to save Codex tokens"),
 )
+
+
+def _mode_menu_text(current: str, reason: str) -> str:
+    listing = "\n".join(
+        f"  {i}. {state} — {label}"
+        for i, (state, label) in enumerate(_MODE_OPTIONS, 1)
+    )
+    return (
+        f"{reason} Mode unchanged; current mode is '{current}'.\n"
+        "Available modes:\n"
+        f"{listing}\n"
+        "To change it, call `ambient_set_mode` with `state` set to `off`, "
+        "`on`, or `takeover`."
+    )
 
 
 def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -348,12 +362,10 @@ def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     reject_unknown(args, set())
     current = current_mode()
     if not SESSION.supports_elicitation():
-        listing = "\n".join(
-            f"  {i}. {label}" for i, (_, label) in enumerate(_MODE_OPTIONS, 1))
-        return tool_text(
-            f"This client cannot render a picker (mode is currently '{current}'), so "
-            "nothing changed. Ask the user which mode they want, then call "
-            "`ambient_set_mode` with off/on/takeover:\n" + listing)
+        return tool_text(_mode_menu_text(
+            current,
+            "This client cannot render a native mode picker.",
+        ))
 
     schema = {
         "type": "object",
@@ -363,7 +375,7 @@ def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
                 "title": "Ambient mode",
                 "description": f"Currently: {current}",
                 "enum": [state for state, _ in _MODE_OPTIONS],
-                "enumNames": [label for _, label in _MODE_OPTIONS],
+                "enumNames": [f"{state} — {label}" for state, label in _MODE_OPTIONS],
             },
         },
         "required": ["state"],
@@ -371,7 +383,10 @@ def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     result = elicit("Choose how much work Codex routes to Ambient", schema)
     chosen = elicitation_choice(result, "state")
     if not chosen:
-        return tool_text(f"Kept your current mode ({current}). (Ask again any time to change it.)")
+        return tool_text(_mode_menu_text(
+            current,
+            "No mode was selected; the picker may have been cancelled or unavailable.",
+        ))
     if chosen not in {state for state, _ in _MODE_OPTIONS}:
         return tool_text(f"Mode unchanged — {chosen!r} is not a valid mode.",
                          is_error=True)
@@ -427,6 +442,19 @@ def _model_label(model: Dict[str, Any]) -> str:
     return label[:120]
 
 
+def _model_menu_text(serving: List[Dict[str, Any]], reason: str) -> str:
+    listing = "\n".join(
+        f"  {i}. {_model_label(model)}"
+        for i, model in enumerate(serving, 1)
+    )
+    return (
+        f"{reason} Model unchanged.\n"
+        "Serving models:\n"
+        f"{listing}\n"
+        "To change it, call `ambient_set_model` with the selected model id."
+    )
+
+
 def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     """Render a native Codex picker for the model + lane, then persist the choice.
 
@@ -448,12 +476,10 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "`ambient_set_model`.")
 
     if not SESSION.supports_elicitation():
-        listing = "\n".join(
-            f"  {i}. {_model_label(m)}" for i, m in enumerate(serving, 1))
-        return tool_text(
-            "This client cannot render a picker, so nothing was changed.\n"
-            "Ask the user to choose one of these serving models, then call "
-            "`ambient_set_model` with their answer:\n" + listing)
+        return tool_text(_model_menu_text(
+            serving,
+            "This client cannot render a native model picker.",
+        ))
 
     lane_label = {"both": "chat + code", "chat": "chat", "code": "code"}[lane]
     # `enum` + `enumNames` is the enum shape in the MCP restricted schema subset.
@@ -475,7 +501,10 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     result = elicit(f"Select the Ambient model for {lane_label}", schema)
     chosen = elicitation_choice(result, "model")
     if not chosen:
-        return tool_text("Kept your current model. (Ask again any time to switch.)")
+        return tool_text(_model_menu_text(
+            serving,
+            "No model was selected; the picker may have been cancelled or unavailable.",
+        ))
     # Never trust an echoed value: persist only an id we actually offered.
     offered = {str(m["id"]) for m in serving}
     if chosen not in offered:

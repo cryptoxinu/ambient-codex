@@ -57,9 +57,16 @@ the way a settings screen would:
    model. Only call MCP `ambient_pick_mode` when the user asks to change the mode.
    Never call both unprompted.
 
-If the user asks for a picker and the client cannot render one (older client, or
-headless `codex exec`), the picker tool returns a numbered menu instead — read it
-to the user and act on their answer with `ambient_set_model` / `ambient_set_mode`.
+If the user asks for a picker and the client cannot render one, auto-cancels it,
+or otherwise returns no selection, the picker tool returns a numbered menu
+instead. Read that menu to the user and act on their answer with
+`ambient_set_model` / `ambient_set_mode`. Do not summarize the menu away; the
+point of the fallback is to show the actual choices.
+
+Settings are direct-set controls, not native pickers. If the user asks to change
+settings without naming a specific setting, show the current `ambient_control`
+settings list and the allowed setting names/values, then call `ambient_set_config`
+after the user chooses. Do not call model or mode picker tools for settings.
 
 ### Intent table
 
@@ -75,7 +82,7 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 | User wants to switch/choose a model without naming one | Call MCP `ambient_pick_model`. Codex renders a native picker of the models serving right now; the tool persists the choice itself. Do NOT transcribe a menu into chat, and do NOT ask which model first — the picker asks. Pass `lane` only when the user already said chat-only or code-only. |
 | User names a specific model | MCP `ambient_set_model` with that id, or bundled `control model MODEL --chat|--code`. |
 | Inspect the catalog | MCP `ambient_models`, or bundled `models --json` for raw inspection. |
-| Manage settings | Prefer MCP `ambient_set_config`; otherwise run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |
+| Manage settings | Prefer MCP `ambient_set_config` when the setting/value is named; otherwise show the allowed settings from `ambient_control` and ask for the setting/value. For CLI fallback, run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |
 | Key status/setup/rotation/removal | Prefer MCP `ambient_key` for status/instructions/removal, or bundled `control key status|setup|rotate|remove`. Never accept key material in chat or tool args. |
 | Audit code | Prefer `git diff | "<plugin-root>/bin/ambient" audit --json`, bundled `audit --staged --json`, bundled `audit FILE... --json`, or bundled `audit --repo DIR --json`. |
 | Audit a named target | Run the bundled binary with `audit <target> --json`, or `audit --repo DIR --json` for a whole repository. Under `--consensus` the deep confirmation pass is skipped, and `--deep` / `--no-deep` have no effect there. |
