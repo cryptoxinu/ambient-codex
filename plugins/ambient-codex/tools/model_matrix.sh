@@ -58,7 +58,14 @@ while read -r state mid; do
 done < "$WORK/ids.txt"
 
 echo "--- READY models must do real WORK (planted-bug audit + codegen) ---"
-printf 'def divide(a, b):\n    return a / b\n' > "$WORK/bug.py"
+cat > "$WORK/bug.py" <<'PY'
+def divide(a, b):
+    return a / b
+
+
+def always_crashes():
+    return 1 / 0
+PY
 # Process substitution (NOT `grep | while`): keep the loop in the CURRENT shell
 # so pass()/fail() update the summary counters + exit code. A pipe would run the
 # body in a subshell, silently dropping every real-WORK result from the tally.
