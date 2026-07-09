@@ -20,10 +20,10 @@ live() { [ -z "${AMB_NO_LIVE:-}" ] && [ -n "$KEY" ]; }
 # ---- sandbox HOME + key acquisition (never echo the key) -------------------
 REAL_HOME="$HOME"
 SBHOME="$WORK/home"
-mkdir -p "$SBHOME/.config/ambient"
-KEY="$(security find-generic-password -s ambient.xyz -a api-key -w 2>/dev/null || true)"
-if [ -z "$KEY" ] && [ -f "$REAL_HOME/.config/ambient/env" ]; then
-  KEY="$(sed -n 's/^AMBIENT_API_KEY=//p' "$REAL_HOME/.config/ambient/env" | head -1)"
+mkdir -p "$SBHOME/.config/ambient-codex"
+KEY="$(security find-generic-password -s ambient-codex -a api-key -w 2>/dev/null || true)"
+if [ -z "$KEY" ] && [ -f "$REAL_HOME/.config/ambient-codex/env" ]; then
+  KEY="$(sed -n 's/^AMBIENT_API_KEY=//p' "$REAL_HOME/.config/ambient-codex/env" | head -1)"
 fi
 export HOME="$SBHOME"
 export AMBIENT_NO_ONBOARD=1   # battery is non-interactive by definition
@@ -38,7 +38,7 @@ run() {
   cat "$OUT" >> "$LOG"
   return 0
 }
-with_key() { AMBIENT_API_KEY="$KEY" "$@"; }
+with_key() { AMBIENT_CODEX_API_KEY="$KEY" "$@"; }
 
 echo "=== ambient-codex stress battery v2 ($("$AMB" --version 2>/dev/null)) ==="
 [ -n "$KEY" ] || echo "  (no API key found — live checks will be skipped)"
@@ -56,12 +56,12 @@ printf 'api_key = "sk-fixture-deadbeef-0000-not-a-real-key"\n' > "$WORK/secret.p
 echo "--- offline: surface + exit-code contract ---"
 run "$AMB" --version;              [ $RC -eq 0 ] && pass "--version exits 0" || fail "--version" "rc=$RC"
 run "$AMB" version;                [ $RC -eq 0 ] && pass "version subcommand" || fail "version" "rc=$RC"
-run "$AMB";                        [ $RC -eq 0 ] && grep -q "ambient setup" "$OUT" && pass "bare banner (exit 0, shows commands)" || fail "bare banner" "rc=$RC"
+run "$AMB";                        [ $RC -eq 0 ] && grep -q "ambient-codex setup" "$OUT" && pass "bare banner (exit 0, shows commands)" || fail "bare banner" "rc=$RC"
 run "$AMB" nonsense;               [ $RC -eq 64 ] && pass "unknown command exits 64" || fail "usage exit" "rc=$RC"
 run "$AMB" audti;                  grep -q "did you mean: audit" "$OUT" && [ $RC -eq 64 ] && pass "typo gets did-you-mean + 64" || fail "did-you-mean" "rc=$RC"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" ask < /dev/null
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" ask < /dev/null
 [ $RC -eq 64 ] && pass "ask with nothing exits 64 (usage)" || fail "ask usage" "rc=$RC"
-run "$AMB" codex;                  [ $RC -eq 1 ] && grep -qi "ambient agent" "$OUT" && pass "codex explains + points at agent" || fail "codex" "rc=$RC"
+run "$AMB" codex;                  [ $RC -eq 1 ] && grep -qi "ambient-codex agent" "$OUT" && pass "codex explains + points at agent" || fail "codex" "rc=$RC"
 run "$AMB" audit --help;           grep -q -- --consensus "$OUT" && pass "audit --help lists flags" || fail "audit help" "missing"
 run "$AMB" build --help;           grep -q -- --plan-only "$OUT" && pass "build --help lists flags" || fail "build help" "missing"
 
@@ -70,35 +70,35 @@ run "$AMB" ask "hi" < /dev/null;   [ $RC -eq 3 ] && grep -q "app.ambient.xyz" "$
 run "$AMB" mode;                   grep -q "MISSING" "$OUT" && pass "mode reports missing key" || fail "mode" "no MISSING"
 
 echo "--- offline: config + endpoint hardening ---"
-printf '\xff\xfe' > "$SBHOME/.config/ambient/env"
+printf '\xff\xfe' > "$SBHOME/.config/ambient-codex/env"
 run "$AMB" version;                [ $RC -eq 0 ] && ! grep -q "internal" "$OUT" && pass "corrupt config degrades cleanly" || fail "corrupt config" "rc=$RC"
-rm -f "$SBHOME/.config/ambient/env"
-run env AMBIENT_API_URL=https://evil.example AMBIENT_API_KEY=sk-x "$AMB" models
+rm -f "$SBHOME/.config/ambient-codex/env"
+run env AMBIENT_API_URL=https://evil.example AMBIENT_CODEX_API_KEY=sk-x "$AMB" models
 [ $RC -ne 0 ] && grep -q "trust-url" "$OUT" && pass "host pinning refuses non-Ambient endpoint" || fail "host pinning" "rc=$RC"
-run env AMBIENT_API_KEY=sk-bogus-key-0000000000 "$AMB" setup sk-fixture-argv-key-0000000000000000
+run env AMBIENT_CODEX_API_KEY=sk-bogus-key-0000000000 "$AMB" setup sk-fixture-argv-key-0000000000000000
 [ $RC -ne 0 ] && grep -qi "shell history" "$OUT" && pass "key-in-argv refused" || fail "key-in-argv" "rc=$RC"
 
 echo "--- offline: tripwires + robustness ---"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/secret.py" --dry-run
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/secret.py" --dry-run
 grep -qi "credential" "$OUT" && pass "secrets tripwire blocks a key" || fail "secrets tripwire" "did not block"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/blob.bin" --dry-run
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/blob.bin" --dry-run
 grep -qi "binary\|nothing to audit" "$OUT" && pass "binary file skipped" || fail "binary skip" "not skipped"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/empty.py" --dry-run
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/empty.py" --dry-run
 grep -qi "empty\|nothing to audit" "$OUT" && pass "empty file skipped" || fail "empty skip" "not skipped"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/big.txt" "$WORK/minified.js" --dry-run
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/big.txt" "$WORK/minified.js" --dry-run
 [ $RC -eq 0 ] && grep -qi "map-reduce" "$OUT" && pass "5.4MB + 400KB-line inputs plan a map-reduce (dry run, no spend)" || fail "big-input dry-run" "rc=$RC"
-( cd "$WORK" && AMBIENT_API_KEY="$FAKEKEY" "$AMB" audit --staged --dry-run >"$WORK/staged.out" 2>&1; echo $? > "$WORK/staged.rc" )
+( cd "$WORK" && AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit --staged --dry-run >"$WORK/staged.out" 2>&1; echo $? > "$WORK/staged.rc" )
 cat "$WORK/staged.out" >> "$LOG"; OUT="$WORK/staged.out"; RC=$(cat "$WORK/staged.rc")
 grep -qi "git repository" "$OUT" && pass "--staged outside repo: clean error" || fail "--staged guard" "no clean error"
 run "$AMB" link --dir "$WORK/bin"
-[ -L "$WORK/bin/ambient" ] && pass "link creates launcher symlink" || fail "link" "no symlink"
+[ -L "$WORK/bin/ambient-codex" ] && pass "link creates launcher symlink" || fail "link" "no symlink"
 run "$AMB" link --dir "$WORK/bin" --remove
-[ ! -e "$WORK/bin/ambient" ] && pass "link --remove removes it" || fail "link remove" "still there"
+[ ! -e "$WORK/bin/ambient-codex" ] && pass "link --remove removes it" || fail "link remove" "still there"
 run "$AMB" cache;                  grep -q "cache:" "$OUT" && pass "cache status prints" || fail "cache" "no status"
 run "$AMB" curate hide 'qwen/*'
 run "$AMB" curate status;          grep -q "hide=qwen" "$OUT" && pass "curate hide persists" || fail "curate" "not persisted"
 run "$AMB" curate reset;           grep -q "reset" "$OUT" && pass "curate reset" || fail "curate reset" "rc=$RC"
-run env AMBIENT_API_KEY="$FAKEKEY" "$AMB" build "x" --apply < /dev/null
+run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" build "x" --apply < /dev/null
 [ $RC -ne 0 ] && grep -q -- "--dir" "$OUT" && pass "headless build --apply refuses without --dir" || fail "build gates" "rc=$RC"
 
 # ==== LIVE checks (spend) =====================================================
@@ -127,7 +127,7 @@ jassert "$OUT" "d['schema_version']==1 and d['configured'] is True and isinstanc
   "models --json envelope (configured + models)" "models --json"
 
 echo "--- live: bad key is diagnosed, never a traceback ---"
-run env AMBIENT_API_KEY=sk-bogus-key-000000000000 HOME="$SBHOME" "$AMB" doctor
+run env AMBIENT_CODEX_API_KEY=sk-bogus-key-000000000000 HOME="$SBHOME" "$AMB" doctor
 if [ $RC -eq 1 ] && ! grep -q "Traceback" "$OUT" && grep -qiE "rejected|auth|FAIL" "$OUT"; then
   pass "bogus key: clean [key] diagnosis, exit 1"
 else fail "bad-key doctor" "rc=$RC"; fi
@@ -176,17 +176,22 @@ if python3 -c "import ast,glob; [ast.parse(open(f).read()) for f in glob.glob('$
   pass "build: every generated .py parses; nothing executable"
 else fail "build output" "unparseable or executable file"; fi
 run with_key "$AMB" build "x" --dir "$WORK/bld2" --dry-run
-grep -q "est. cost" "$OUT" && [ $RC -eq 0 ] && pass "build --dry-run prints plan, no spend" || fail "build dry-run" "rc=$RC"
+if [ $RC -eq 0 ] && grep -qi "dry run" "$OUT" && grep -qi "nothing sent" "$OUT" \
+   && grep -q "target dir" "$OUT"; then
+  pass "build --dry-run prints plan, no spend"
+else
+  fail "build dry-run" "rc=$RC"
+fi
 
 echo "--- live: ask envelope + streaming + non-TTY once ---"
 run with_key "$AMB" ask "Reply with exactly: OK" --json
 jassert "$OUT" "d['content'].strip()=='OK' and d['status']=='ok' and d['schema_version']==1" \
   "ask --json stable envelope" "ask --json"
-AMBIENT_API_KEY="$KEY" "$AMB" ask "Reply with exactly: PIPEONCE" --yes </dev/null 2>>"$LOG" | tee "$WORK/pipe.txt" >> "$LOG"
+AMBIENT_CODEX_API_KEY="$KEY" "$AMB" ask "Reply with exactly: PIPEONCE" --yes </dev/null 2>>"$LOG" | tee "$WORK/pipe.txt" >> "$LOG"
 N=$(grep -c "PIPEONCE" "$WORK/pipe.txt" 2>/dev/null || echo 0)
 [ "$N" -eq 1 ] && pass "piped ask prints exactly once" || fail "piped-once" "count=$N"
 # Grep the pty capture FILE — piping `script`'s stdout is unreliable headless (macOS).
-AMBIENT_API_KEY="$KEY" script -q "$WORK/tty.txt" "$AMB" ask "Reply with exactly: STREAMOK" </dev/null >/dev/null 2>&1
+AMBIENT_CODEX_API_KEY="$KEY" script -q "$WORK/tty.txt" "$AMB" ask "Reply with exactly: STREAMOK" </dev/null >/dev/null 2>&1
 cat "$WORK/tty.txt" >> "$LOG" 2>/dev/null || true
 N=$(grep -c "STREAMOK" "$WORK/tty.txt" 2>/dev/null || echo 0)
 [ "$N" -ge 1 ] && pass "ask streams on a TTY" || fail "ask streaming" "count=$N"

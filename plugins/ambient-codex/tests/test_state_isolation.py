@@ -20,6 +20,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "bin" / "ambient"
+STRESS_HARNESS = ROOT / "tools" / "stress_test.sh"
+MODEL_MATRIX = ROOT / "tools" / "model_matrix.sh"
 
 # `posixpath.expanduser` reads HOME; `ntpath.expanduser` ignores it and reads
 # USERPROFILE. Sandboxing only HOME sent these tests at the developer's real
@@ -563,6 +565,20 @@ class TestKeyEnvIsNamespaced(unittest.TestCase):
             argv = run.call_args[0][0]
             self.assertIn("ambient-codex", argv)
             self.assertNotIn("ambient.xyz", argv)
+
+
+class TestStressHarnessIsolation(unittest.TestCase):
+    def test_live_harnesses_use_codex_key_namespace_only(self):
+        for path in (STRESS_HARNESS, MODEL_MATRIX):
+            with self.subTest(path=path.name):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("ambient-codex", source)
+                self.assertIn("AMBIENT_CODEX_API_KEY", source)
+                self.assertNotIn("find-generic-password -s ambient.xyz", source)
+                self.assertNotIn(".config/ambient/env", source)
+                self.assertNotIn("env AMBIENT_API_KEY", source)
+                self.assertNotIn("with_key() { AMBIENT_API_KEY", source)
+                self.assertNotIn('AMBIENT_API_KEY="$KEY"', source)
 
 
 class TestHookScriptReadsIsolatedEnv(unittest.TestCase):

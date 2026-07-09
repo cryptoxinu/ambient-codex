@@ -19,15 +19,15 @@ fail() { echo "  FAIL  $1  -- $2"; FAIL=$((FAIL+1)); }
 skip() { echo "  SKIP  $1  -- $2"; SKIP=$((SKIP+1)); }
 
 REAL_HOME="$HOME"
-SBHOME="$WORK/home"; mkdir -p "$SBHOME/.config/ambient"
-KEY="$(security find-generic-password -s ambient.xyz -a api-key -w 2>/dev/null || true)"
-[ -z "$KEY" ] && [ -f "$REAL_HOME/.config/ambient/env" ] && \
-  KEY="$(sed -n 's/^AMBIENT_API_KEY=//p' "$REAL_HOME/.config/ambient/env" | head -1)"
+SBHOME="$WORK/home"; mkdir -p "$SBHOME/.config/ambient-codex"
+KEY="$(security find-generic-password -s ambient-codex -a api-key -w 2>/dev/null || true)"
+[ -z "$KEY" ] && [ -f "$REAL_HOME/.config/ambient-codex/env" ] && \
+  KEY="$(sed -n 's/^AMBIENT_API_KEY=//p' "$REAL_HOME/.config/ambient-codex/env" | head -1)"
 if [ -z "$KEY" ]; then echo "no API key — matrix needs live access"; exit 1; fi
 export HOME="$SBHOME" AMBIENT_NO_ONBOARD=1
 LOG="$WORK/all.log"
 run() { OUT="$WORK/out.$RANDOM"; "$@" >"$OUT" 2>&1; RC=$?; cat "$OUT" >> "$LOG"; return 0; }
-wk() { AMBIENT_API_KEY="$KEY" "$@"; }
+wk() { AMBIENT_CODEX_API_KEY="$KEY" "$@"; }
 
 echo "=== ambient model × command matrix ($("$AMB" --version)) ==="
 
@@ -102,7 +102,7 @@ grep -q "reset" "$OUT" && pass "curate reset" || fail "curate reset" "?"
 run "$AMB" cache; grep -q "cache:" "$OUT" && pass "cache status" || fail "cache" "?"
 run "$AMB" cache clear; grep -q "removed" "$OUT" && pass "cache clear" || fail "cache clear" "?"
 run "$AMB" link --dir "$WORK/bin"; run "$AMB" link --dir "$WORK/bin"
-[ -L "$WORK/bin/ambient" ] && pass "link is idempotent" || fail "link idempotent" "?"
+[ -L "$WORK/bin/ambient-codex" ] && pass "link is idempotent" || fail "link idempotent" "?"
 run "$AMB" trust-url https://gateway.example < /dev/null
 [ $RC -ne 0 ] && grep -qi "interactive-only" "$OUT" && pass "trust-url refuses non-TTY" || fail "trust-url gate" "rc=$RC"
 run wk "$AMB" usage --json
