@@ -118,6 +118,18 @@ class TestApplyBudget(unittest.TestCase):
             + amb.CONTEXT_OVERHEAD_TOKENS,
             p.context_length)
 
+    def test_auto_budget_covers_observed_glm_gutter_token_density(self):
+        p = amb.ModelProfile(
+            "z-ai/glm-5.2", True, 101376, 101376,
+            65123, 108008, 91806, 65123,
+            ["reasoning", "structured_outputs"])
+        a = self._ns(max_tokens=None)
+        amb.apply_output_budget(a, p, p.chunk_chars)
+        observed_prompt_tokens = 48404
+        self.assertLessEqual(
+            observed_prompt_tokens + a.max_tokens,
+            p.context_length)
+
     def test_explicit_budget_clamps_to_actual_input_context(self):
         p = amb.ModelProfile(
             "z-ai/glm-5.2", True, 101376, 101376,

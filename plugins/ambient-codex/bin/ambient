@@ -322,7 +322,7 @@ CHUNK_CHARS = 300_000         # default per-chunk budget (overridden per model)
 # against supported_sampling_parameters), so output-budget + chunk-size are the
 # only levers.
 CHARS_PER_TOKEN = 3.2                  # aligns with estimate_cost/cost_gate
-INPUT_TOKEN_SAFETY = 1.6               # guttered/source code often tokenizes denser
+INPUT_TOKEN_SAFETY = 1.75              # guttered/source code often tokenizes denser
 REASONING_EXPANSION = 1.5              # reasoning chars produced per input char on
                                        # dense code (empirical ~1.43, rounded up)
 # --- Telemetry-EWMA routing ------------------------------------
