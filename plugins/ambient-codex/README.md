@@ -72,6 +72,19 @@ codex plugin add ambient-codex@ambient-codex
 Start a new Codex thread after install or reinstall so Codex loads the current
 skill and MCP server.
 
+For a terminal launcher (`ambient-codex setup`, `ambient-codex doctor`, ...):
+
+```bash
+"$(codex mcp get ambient --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["transport"]["cwd"].rstrip("/."))')/bin/ambient" link
+```
+
+`codex plugin add` installs into a version-stamped cache directory, so re-run
+`ambient-codex link` after each plugin update; the old symlink points at the
+previous directory. `ambient-codex doctor` reports a stale launcher as
+`FAIL launcher` with that exact fix. (The bundled `hooks/session-start.sh` heals it
+automatically, but hooks are opt-in so a clean install never triggers Codex's
+hook-trust review.)
+
 ## Validate Local Development
 
 From this repo root:
