@@ -132,7 +132,11 @@ class TestAgentSpendDisclosure(unittest.TestCase):
                  "SessionStart self-heal is POSIX-sh + symlinks; Windows "
                  "installs use the ambient.cmd shim path instead")
 class TestSessionStartSelfHeal(unittest.TestCase):
-    """S2: the hook heals ONLY $HOME/.local/bin/ambient, only when safe."""
+    """S2: the hook heals ONLY $HOME/.local/bin/ambient-codex, only when safe.
+
+    The launcher is deliberately NOT named `ambient`: another Ambient install owns
+    that name on PATH, and the two must be able to coexist.
+    """
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -148,7 +152,7 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         shutil.copyfile(BIN, self.active)
         os.chmod(self.active, os.stat(self.active).st_mode
                  | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        self.link = os.path.join(self.home, ".local", "bin", "ambient")
+        self.link = os.path.join(self.home, ".local", "bin", "ambient-codex")
 
     def _run_hook(self, *, plugin_root=True, claude_plugin_root=None):
         env = {k: v for k, v in os.environ.items()

@@ -140,8 +140,8 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_jsonl(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
-        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
+        self.assertEqual(len(frames[1]["result"]["tools"]), len(load_mcp().TOOLS))
 
     def test_notifications_and_ping_are_codex_safe(self):
         mcp = load_mcp()
@@ -230,7 +230,7 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_frames(proc.stdout)
         self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
-        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+        self.assertEqual(len(frames[1]["result"]["tools"]), len(load_mcp().TOOLS))
 
     def test_python3_directly_starts_jsonl_mcp_server(self):
         init = {
@@ -256,7 +256,7 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_jsonl(proc.stdout)
         self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
-        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+        self.assertEqual(len(frames[1]["result"]["tools"]), len(load_mcp().TOOLS))
 
     def test_mcp_server_starts_with_node_absent_from_path(self):
         """The regression that shipped: reproduce a node-free Codex install.
@@ -290,7 +290,7 @@ class TestMcpAdapter(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
             frames = decode_jsonl(proc.stdout)
             self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
-            self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+            self.assertEqual(len(frames[1]["result"]["tools"]), len(load_mcp().TOOLS))
 
     def test_all_mcp_tool_schemas_are_codex_strict_objects(self):
         mcp = load_mcp()

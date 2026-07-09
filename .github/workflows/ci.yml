@@ -30,6 +30,61 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -q
 
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/ambient-codex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.15.2
+      # `bin/ambient` is extensionless, so a bare `ruff check .` used to skip the whole
+      # CLI. pyproject's `extend-include` fixes that; name the paths anyway.
+      - name: Lint
+        run: ruff check bin/ambient mcp tests
+
+  no-node:
+    # The 1.5.x plugin booted its MCP server through a Node launcher that existed only
+    # to find python3, so Codex installs without Node (Homebrew, standalone) could never
+    # start it. Prove the server comes up on a box with no Node at all.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/ambient-codex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: No Node artifacts remain
+        run: |
+          test ! -e mcp/ambient_mcp_launcher.js
+          ! grep -q '"node"' .mcp.json
+      - name: MCP server starts with node removed from PATH
+        run: |
+          sudo rm -f "$(command -v node)" || true
+          ! command -v node
+          python3 - <<'PY'
+          import json, subprocess, sys
+          cfg = json.load(open(".mcp.json"))["mcpServers"]["ambient"]
+          assert cfg["command"] == "python3", cfg
+          msgs = (
+              json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize",
+                          "params":{"protocolVersion":"2025-06-18","capabilities":{}}}) + "\n"
+              + json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/list"}) + "\n"
+          )
+          out = subprocess.run([cfg["command"], *cfg["args"]], input=msgs, text=True,
+                               capture_output=True, timeout=60)
+          assert out.returncode == 0, out.stderr
+          frames = [json.loads(line) for line in out.stdout.splitlines() if line.strip()]
+          names = [t["name"] for t in frames[1]["result"]["tools"]]
+          assert "ambient_pick_model" in names, names
+          print(f"MCP server started with no Node; {len(names)} tools")
+          PY
+
   plugin:
     runs-on: ubuntu-latest
     defaults:
@@ -47,8 +102,11 @@ jobs:
           pj = json.load(open(".codex-plugin/plugin.json"))["version"]
           py = re.search(r'version\s*=\s*"([^"]+)"', open("pyproject.toml").read()).group(1)
           amb = re.search(r'__version__ = "([^"]+)"', open("bin/ambient").read()).group(1)
-          if not (pj == py == amb):
-              sys.exit(f"version drift: plugin.json={pj} pyproject={py} cli={amb}")
+          # The MCP server reports its own version over the wire in `initialize`;
+          # leaving it out of this gate let it drift from the manifest unnoticed.
+          mcp = re.search(r'SERVER_VERSION = "([^"]+)"', open("mcp/ambient_mcp.py").read()).group(1)
+          if not (pj == py == amb == mcp):
+              sys.exit(f"version drift: plugin.json={pj} pyproject={py} cli={amb} mcp={mcp}")
           print(f"version {pj} in sync")
           PY
       - name: Manifests parse

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ambient-codex"
-version = "1.5.7"                       # keep in sync with .codex-plugin/plugin.json + bin/ambient __version__
+version = "1.6.0"                       # keep in sync with .codex-plugin/plugin.json + bin/ambient __version__
 description = "A Codex-native Ambient plugin for delegation, audits, builds, and decentralized inference"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -26,3 +26,8 @@ py-modules = []
 # Canonical runner is `python3 -m unittest discover -s tests`; this only lets
 # `pytest tests/` collect despite the sibling-module imports (tests/ is a pkg).
 pythonpath = ["tests"]
+
+[tool.ruff]
+# `bin/ambient` has no .py suffix, so a bare `ruff check .` silently skips the entire
+# 12.9k-line CLI — a planted unused import passed clean. Lint it explicitly.
+extend-include = ["bin/ambient"]

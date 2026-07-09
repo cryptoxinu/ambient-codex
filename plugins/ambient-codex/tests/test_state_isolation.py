@@ -142,6 +142,31 @@ class TestGitHookOwnership(unittest.TestCase):
             self.assertNotIn('"# ambient-code audit hook v1"', source)
 
 
+class TestPathLauncherName(unittest.TestCase):
+    def test_launcher_is_not_named_ambient(self):
+        """`~/.local/bin/ambient` belongs to whichever install claimed it first.
+
+        The Claude plugin symlinks that exact name, so Codex must install its own
+        launcher as `ambient-codex` rather than race for the shared one.
+        """
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            self.assertEqual(cli.LAUNCHER_NAME, "ambient-codex")
+
+    def test_link_writes_the_codex_launcher(self):
+        with tempfile.TemporaryDirectory() as home:
+            dest = os.path.join(home, "bin")
+            env = {**os.environ, "HOME": home, "AMBIENT_NO_ONBOARD": "1"}
+            env.pop("AMBIENT_CODEX_HOME", None)
+            proc = subprocess.run(
+                [sys.executable, str(CLI), "link", "--dir", dest],
+                env=env, capture_output=True, text=True, timeout=60, check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex")))
+            self.assertFalse(os.path.lexists(os.path.join(dest, "ambient")),
+                             "Codex claimed the shared `ambient` name on PATH")
+
+
 class TestForeignKeyImportIsReadOnlyAndOptIn(unittest.TestCase):
     def test_import_is_skipped_without_a_tty(self):
         with tempfile.TemporaryDirectory() as home:

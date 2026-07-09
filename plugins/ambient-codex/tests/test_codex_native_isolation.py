@@ -80,6 +80,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
             "ambient_control",
             "ambient_set_mode",
             "ambient_set_model",
+            "ambient_pick_model",
             "ambient_set_config",
             "ambient_key",
             "ambient_models",
@@ -108,7 +109,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertEqual(set(re.findall(r"- `(ambient_[^`]+)`", tool_section)), expected_tools)
 
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.5.7")
+        self.assertEqual(manifest["version"], "1.6.0")
         long_description = manifest["interface"]["longDescription"]
         self.assertIn("Hooks are not registered by default.", long_description)
         hook_capabilities = [

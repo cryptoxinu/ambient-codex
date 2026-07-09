@@ -44,7 +44,9 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 | Turn delegation on | Prefer MCP `ambient_set_mode` with `state=on`; otherwise run bundled `control mode on`. Explain the delegate contract and follow it for the session. |
 | Turn takeover on | Prefer MCP `ambient_set_mode` with `state=takeover`; otherwise run bundled `control mode takeover`. Explain the takeover contract and route substantive work through Ambient until turned off. |
 | Turn Ambient off | Prefer MCP `ambient_set_mode` with `state=off`; otherwise run bundled `control mode off`. This exits both delegate and takeover. |
-| Pick or inspect models | Prefer MCP `ambient_control` / `ambient_set_model`; otherwise run bundled `control` and bundled `control model MODEL --chat|--code`. Use `models --json` only for raw catalog inspection. |
+| User wants to switch/choose a model without naming one | Call MCP `ambient_pick_model`. Codex renders a native picker of the models serving right now; the tool persists the choice itself. Do NOT transcribe a menu into chat, and do NOT ask which model first — the picker asks. Pass `lane` only when the user already said chat-only or code-only. |
+| User names a specific model | MCP `ambient_set_model` with that id, or bundled `control model MODEL --chat|--code`. |
+| Inspect the catalog | MCP `ambient_models`, or bundled `models --json` for raw inspection. |
 | Manage settings | Prefer MCP `ambient_set_config`; otherwise run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |
 | Key status/setup/rotation/removal | Prefer MCP `ambient_key` for status/instructions/removal, or bundled `control key status|setup|rotate|remove`. Never accept key material in chat or tool args. |
 | Audit code | Prefer `git diff | "<plugin-root>/bin/ambient" audit --json`, bundled `audit --staged --json`, bundled `audit FILE... --json`, or bundled `audit --repo DIR --json`. |

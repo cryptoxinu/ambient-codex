@@ -93,7 +93,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.5.7"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.6.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL mutable state under its own root, separate from any other
 # Ambient install. Through 1.5.x this fork wrote ~/.config/ambient/env — byte-identical
@@ -122,6 +122,8 @@ USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
 KEYCHAIN_SERVICE = "ambient-codex"
 KEYCHAIN_ACCOUNT = "api-key"
 LEGACY_KEYCHAIN_SERVICE = "ambient.xyz"  # read-only, opt-in import source
+# NOT `ambient`: another Ambient install owns that name on PATH.
+LAUNCHER_NAME = "ambient-codex"
 DEFAULT_API_URL = "https://api.ambient.xyz"
 KEY_CONSOLE_URL = "https://app.ambient.xyz"   # where users create/manage API keys
 SUPPORT_LINE = ("If this keeps happening, contact Ambient support with the "
@@ -11945,16 +11947,19 @@ def _shim_is_ours(shim_path):
 
 
 def cmd_link(args):
-    """Put a stable `ambient` launcher on PATH. Marketplace installs live in a
+    """Put a stable `ambient-codex` launcher on PATH. Marketplace installs live in a
     VERSIONED cache dir that changes on every update — a symlink in
     ~/.local/bin survives updates (no stable path for
-    `ambient setup`, which needs the user's own terminal)."""
+    `ambient setup`, which needs the user's own terminal).
+
+    The launcher is deliberately NOT named `ambient`: another Ambient install
+    (e.g. the Claude plugin) owns that name on PATH, and the two must coexist."""
     target = _this_script()
     dest_dir = os.path.expanduser(getattr(args, "dir", None) or "~/.local/bin")
-    dest = os.path.join(dest_dir, "ambient")
+    dest = os.path.join(dest_dir, LAUNCHER_NAME)
     if getattr(args, "remove", False):
         if os.name == "nt":   # M14: install wrote ambient.cmd, not a symlink
-            shim = os.path.join(dest_dir, "ambient.cmd")
+            shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
             if os.path.exists(shim):
                 if _shim_is_ours(shim):
                     os.remove(shim)
@@ -11994,7 +11999,7 @@ def cmd_link(args):
     try:
         os.makedirs(dest_dir, exist_ok=True)
         if os.name == "nt":  # symlinks need privileges on Windows — shim it
-            shim = os.path.join(dest_dir, "ambient.cmd")
+            shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
             with open(shim, "w", encoding="utf-8") as fh:
                 # Use the interpreter running THIS command (guaranteed present) —
                 # a bare `python` is off PATH on a stock Windows install (only
@@ -12379,7 +12384,7 @@ def _configure_setup(sub):
 
 def _configure_link(sub):
     p = sub.add_parser(
-        "link", help="put a stable `ambient` launcher on your PATH (~/.local/bin)"
+        "link", help="put a stable `ambient-codex` launcher on your PATH (~/.local/bin)"
     )
     p.add_argument("--dir", default=None, metavar="DIR",
                    help="link directory (default ~/.local/bin)")

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
+import threading
 import time
 import subprocess
 import sys
@@ -19,8 +21,17 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.5.7"
+SERVER_VERSION = "1.6.0"
 PROTOCOL_VERSION = "2024-11-05"
+# Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
+# `capabilities: {"elicitation": {}}` at initialize and enables it by default
+# (`tool_call_mcp_elicitation`), which is what lets `ambient_pick_model` render a real
+# picker instead of asking the model to transcribe a menu.
+ELICITATION_MIN_PROTOCOL = "2025-06-18"
+# Must stay under .mcp.json `tool_timeout_sec` (120) so a human who walks away from the
+# picker gets a clean "no change" rather than the client killing the tool call.
+ELICITATION_TIMEOUT_SECONDS = 90
+MAX_PICKER_OPTIONS = 25
 SERVER_INSTRUCTIONS = (
     "Use the bundled Ambient CLI only through this MCP server or the plugin root. "
     "Never accept API key material in chat or tool arguments. Treat Ambient "
@@ -31,6 +42,39 @@ SELF_TEST_TIMEOUT_SECONDS = 5
 MAX_PROMPT_CHARS = 60_000
 MAX_SYSTEM_CHARS = 10_000
 MAX_PATHS = 25
+
+
+class Session:
+    """Per-connection state the one-way handler loop used to throw away.
+
+    `initialize` carries the client's capabilities and the negotiated protocol
+    version; both are required before the server may send `elicitation/create`.
+    The streams and framing are held here so a tool handler can issue a
+    server-initiated request from inside `tools/call`.
+    """
+
+    def __init__(self) -> None:
+        self.protocol_version: str = PROTOCOL_VERSION
+        self.client_capabilities: Dict[str, Any] = {}
+        self.framing: str = "jsonl"
+        self.stdin = None
+        self.stdout = None
+        self.reader: Optional["MessageReader"] = None
+        self._elicit_seq = 0
+
+    def next_elicit_id(self) -> str:
+        self._elicit_seq += 1
+        return f"amb-elicit-{self._elicit_seq}"
+
+    def supports_elicitation(self) -> bool:
+        if not isinstance(self.client_capabilities.get("elicitation"), dict):
+            return False
+        if self.stdout is None:
+            return False
+        return self.protocol_version >= ELICITATION_MIN_PROTOCOL
+
+
+SESSION = Session()
 
 
 class ToolInputError(ValueError):
@@ -287,6 +331,105 @@ def set_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     return run_ambient(argv)
 
 
+def _serving_models() -> List[Dict[str, Any]]:
+    """Models the network is serving right now, as `ambient models --json` sees them.
+
+    A model that is not serving this minute is normal on a decentralized network, so
+    the picker offers only what can answer immediately rather than a stale catalogue.
+    """
+    command = [sys.executable, str(ambient_bin()), "models", "--json"]
+    try:
+        completed = subprocess.run(
+            command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=str(plugin_root()), timeout=DEFAULT_TIMEOUT_SECONDS, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise AmbientCommandError(f"unable to list Ambient models: {exc}") from exc
+    if completed.returncode != 0:
+        raise AmbientCommandError(redact(completed.stderr.strip() or "ambient models failed"))
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise AmbientCommandError(f"ambient models returned non-JSON: {exc}") from exc
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        return []
+    serving = [
+        m for m in models
+        if isinstance(m, dict) and m.get("ready") and not m.get("hidden") and m.get("id")
+    ]
+    return serving[:MAX_PICKER_OPTIONS]
+
+
+def _model_label(model: Dict[str, Any]) -> str:
+    label = str(model.get("id", ""))
+    note = model.get("note") or model.get("description")
+    if isinstance(note, str) and note.strip():
+        label = f"{label} — {note.strip()}"
+    return label[:120]
+
+
+def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Render a native Codex picker for the model + lane, then persist the choice.
+
+    Falls back to a numbered text menu whenever a picker cannot be drawn: an older
+    client, a client that never advertised elicitation, or a headless `codex exec`
+    run (where Codex auto-cancels elicitations because no human is present).
+    """
+    reject_unknown(args, {"lane"})
+    # The picker asks ONE question. Codex does not preserve the property order of a
+    # multi-field `requestedSchema` — a model+lane form rendered "Apply to" as field
+    # 1/2 — so a user who asked to switch models would be quizzed about lanes first.
+    lane = require_choice(args, "lane", ("both", "chat", "code")) if "lane" in args else "both"
+
+    serving = _serving_models()
+    if not serving:
+        return tool_text(
+            "No Ambient models are serving this minute — they spin up on demand. "
+            "Try `ambient_models` again shortly, or pass an explicit model to "
+            "`ambient_set_model`.")
+
+    if not SESSION.supports_elicitation():
+        listing = "\n".join(
+            f"  {i}. {_model_label(m)}" for i, m in enumerate(serving, 1))
+        return tool_text(
+            "This client cannot render a picker, so nothing was changed.\n"
+            "Ask the user to choose one of these serving models, then call "
+            "`ambient_set_model` with their answer:\n" + listing)
+
+    lane_label = {"both": "chat + code", "chat": "chat", "code": "code"}[lane]
+    schema = {
+        "type": "object",
+        "properties": {
+            "model": {
+                "type": "string",
+                "title": "Ambient model",
+                "description": "Serving right now on the Ambient network",
+                "oneOf": [
+                    {"const": str(m["id"]), "title": _model_label(m)} for m in serving
+                ],
+            },
+        },
+        "required": ["model"],
+    }
+    result = elicit(f"Select the Ambient model for {lane_label}", schema)
+    chosen = elicitation_choice(result, "model")
+    if not chosen:
+        action = (result or {}).get("action", "no answer")
+        return tool_text(f"Model unchanged ({action}).")
+    # Never trust an echoed value: persist only an id we actually offered.
+    offered = {str(m["id"]) for m in serving}
+    if chosen not in offered:
+        return tool_text(f"Model unchanged — {chosen!r} was not one of the offered "
+                         "models.", is_error=True)
+
+    argv = ["control", "model", chosen]
+    if lane == "chat":
+        argv.append("--chat")
+    elif lane == "code":
+        argv.append("--code")
+    return run_ambient(argv)
+
+
 def set_config_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     reject_unknown(args, {"name", "value", "unset"})
     name = require_choice(
@@ -436,6 +579,7 @@ TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "ambient_control": control_tool,
     "ambient_set_mode": set_mode_tool,
     "ambient_set_model": set_model_tool,
+    "ambient_pick_model": pick_model_tool,
     "ambient_set_config": set_config_tool,
     "ambient_key": key_tool,
     "ambient_models": models_tool,
@@ -494,6 +638,18 @@ TOOLS = [
             "model": {"type": "string", "maxLength": 256},
             "lane": {"type": "string", "enum": ["both", "chat", "code"]},
         }, required=["model", "lane"]),
+    },
+    {
+        "name": "ambient_pick_model",
+        "description": (
+            "Let the user pick the Ambient model from a native Codex picker listing "
+            "only models serving right now. Use this whenever the user wants to "
+            "switch/choose a model without naming one. Omit `lane` to have them pick "
+            "that too. Falls back to a numbered menu on clients without a picker."
+        ),
+        "inputSchema": tool_schema({
+            "lane": {"type": "string", "enum": ["both", "chat", "code"]},
+        }),
     },
     {
         "name": "ambient_set_config",
@@ -614,11 +770,18 @@ def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
     try:
         if method == "initialize":
+            negotiated = requested_protocol_version(request)
+            params = request.get("params")
+            capabilities = params.get("capabilities") if isinstance(params, dict) else None
+            # Remember what the client can do. Dropping this is why the server could
+            # never elicit: it had no way to know Codex would render a picker.
+            SESSION.protocol_version = negotiated
+            SESSION.client_capabilities = capabilities if isinstance(capabilities, dict) else {}
             return response_result(request_id, {
-                "protocolVersion": requested_protocol_version(request),
+                "protocolVersion": negotiated,
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                "instructions": SERVER_INSTRUCTIONS,
+                "instructions": session_instructions(),
             })
         if method == "ping":
             return response_result(request_id, {})
@@ -705,6 +868,155 @@ def write_message(stream, payload: JsonRpcPayload, *, framing: str) -> None:
     stream.flush()
 
 
+def current_mode() -> str:
+    """Read the persisted Ambient Codex mode: off | on | takeover.
+
+    Read straight from this install's own env file rather than shelling out, so a
+    slow or missing CLI can never delay MCP startup (Codex kills a server that does
+    not answer `initialize` inside `startup_timeout_sec`).
+    """
+    override = os.environ.get("AMBIENT_CODEX_HOME")
+    root = Path(override).expanduser() if override else Path.home() / ".config" / "ambient-codex"
+    mode = "off"
+    try:
+        with (root / "env").open(encoding="utf-8") as handle:
+            for line in handle:
+                key, sep, value = line.partition("=")
+                if sep and key.strip() == "AMBIENT_DELEGATE":
+                    mode = value.strip() or "off"
+    except OSError:
+        return "off"
+    return mode if mode in ("off", "on", "takeover") else "off"
+
+
+def session_instructions() -> str:
+    """Server instructions, with the delegate/takeover contract when it is armed.
+
+    Codex registers no lifecycle hooks for this plugin by default, so `initialize` is
+    the one place per session that can remind the agent it is in takeover mode. Without
+    this an agent silently forgets, and the user's Ambient credit stops being used.
+    """
+    mode = current_mode()
+    if mode == "takeover":
+        return SERVER_INSTRUCTIONS + (
+            "\n\nAmbient TAKEOVER is ON. Route every substantive turn through Ambient "
+            "(ask/code/build/audit) so the user spends Ambient credit rather than Codex "
+            "tokens, and open each substantive reply with a one-line takeover banner. "
+            "`ambient control mode off` stops it."
+        )
+    if mode == "on":
+        return SERVER_INSTRUCTIONS + (
+            "\n\nAmbient delegate mode is ON. Route token-heavy work (bulk code writing, "
+            "audits, digests) through Ambient; keep planning, review, and integration in "
+            "Codex. `ambient control mode off` stops it."
+        )
+    return SERVER_INSTRUCTIONS
+
+
+def is_response(payload: JsonRpcPayload) -> bool:
+    """A JSON-RPC response (reply to us), not a request we must answer."""
+    return (isinstance(payload, dict) and "method" not in payload
+            and ("result" in payload or "error" in payload))
+
+
+class MessageReader:
+    """Pump stdin on a thread so a blocked picker can still be given up on.
+
+    `select()` is not usable here: it polls the file descriptor, but `read_message`
+    reads through a BufferedReader, so a batched write from the client can leave a
+    complete message sitting in Python's buffer while the fd reports "not ready".
+    `select` also cannot poll pipes on Windows. A reader thread sidesteps both, and
+    turns "wait with a deadline" into an ordinary `Queue.get(timeout=...)`.
+    """
+
+    _EOF = object()
+
+    def __init__(self, stream) -> None:
+        self._queue: "queue.Queue[Any]" = queue.Queue()
+        self._thread = threading.Thread(target=self._pump, args=(stream,), daemon=True)
+        self._thread.start()
+
+    def _pump(self, stream) -> None:
+        while True:
+            try:
+                framed = read_message(stream)
+            except Exception:  # noqa: BLE001 - a bad frame ends the stream, not the process
+                self._queue.put(self._EOF)
+                return
+            if framed is None:
+                self._queue.put(self._EOF)
+                return
+            self._queue.put(framed)
+
+    def get(self, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """Next framed message; None on EOF. Raises queue.Empty on timeout."""
+        item = self._queue.get(timeout=timeout)
+        return None if item is self._EOF else item
+
+
+def elicit(message: str, requested_schema: Dict[str, Any],
+           timeout_seconds: int = ELICITATION_TIMEOUT_SECONDS) -> Optional[Dict[str, Any]]:
+    """Ask the human directly via `elicitation/create`. None when unavailable.
+
+    Returns the raw result: `{"action": "accept", "content": {...}}`, or
+    `{"action": "decline"|"cancel"}`. Returns None when the client never advertised
+    elicitation, when it replies with an error, when it hangs up, or when nobody
+    answers before the deadline — every one of those collapses to the same
+    "make no change" path in the callers.
+
+    While the human stares at the picker the client may still send us requests
+    (`ping`, `tools/list`). Answering them inline is what keeps this from
+    deadlocking the connection.
+    """
+    if not SESSION.supports_elicitation() or SESSION.reader is None:
+        return None
+    request_id = SESSION.next_elicit_id()
+    request = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "elicitation/create",
+        "params": {"message": message, "requestedSchema": requested_schema},
+    }
+    trace_event("elicit_request", request)
+    write_message(SESSION.stdout, request, framing=SESSION.framing)
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            trace_event("elicit_timeout", {"id": request_id})
+            return None
+        try:
+            framed = SESSION.reader.get(timeout=remaining)
+        except queue.Empty:
+            trace_event("elicit_timeout", {"id": request_id})
+            return None
+        if framed is None:  # client hung up mid-picker
+            return None
+        payload = framed["payload"]
+        trace_event("request", payload)
+        if is_response(payload):
+            if payload.get("id") != request_id:
+                continue  # a late reply to an abandoned picker; drop it
+            result = payload.get("result")
+            # An `error` reply means no picker was ever drawn for the human.
+            return result if isinstance(result, dict) else None
+        response = handle_payload(payload)
+        if response is not None:
+            write_message(SESSION.stdout, response, framing=str(framed["framing"]))
+
+
+def elicitation_choice(result: Optional[Dict[str, Any]], field: str) -> Optional[str]:
+    """Pull one accepted value out of an elicitation result. None unless accepted."""
+    if not isinstance(result, dict) or result.get("action") != "accept":
+        return None
+    content = result.get("content")
+    if not isinstance(content, dict):
+        return None
+    value = content.get(field)
+    return value if isinstance(value, str) and value else None
+
+
 def handle_payload(payload: JsonRpcPayload) -> Optional[JsonRpcPayload]:
     if isinstance(payload, list):
         responses = [response for item in payload if isinstance(item, dict) for response in [handle_request(item)] if response]
@@ -713,16 +1025,27 @@ def handle_payload(payload: JsonRpcPayload) -> Optional[JsonRpcPayload]:
 
 
 def serve() -> int:
+    SESSION.stdin = sys.stdin.buffer
+    SESSION.stdout = sys.stdout.buffer
+    SESSION.reader = MessageReader(SESSION.stdin)
     while True:
-        framed = read_message(sys.stdin.buffer)
+        framed = SESSION.reader.get()
         if framed is None:
             return 0
         payload = framed["payload"]
+        # A tool handler may elicit mid-call, and it replies on the framing the client
+        # is currently speaking, so record it before dispatching.
+        SESSION.framing = str(framed["framing"])
         trace_event("request", payload)
+        if is_response(payload):
+            # A late answer to a picker we already gave up on. Replying to a reply
+            # would put a bogus error response on the wire.
+            trace_event("late_response", payload)
+            continue
         response = handle_payload(payload)
         if response is not None:
             trace_event("response", response)
-            write_message(sys.stdout.buffer, response, framing=str(framed["framing"]))
+            write_message(SESSION.stdout, response, framing=SESSION.framing)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,54 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.6.0 - 2026-07-09
+
+### Zero-dependency MCP transport
+
+- Codex now starts the MCP server as `python3 -u mcp/ambient_mcp.py`. `mcp/ambient_mcp_launcher.js`
+  is deleted. That Node script existed only to locate `python3`, which made Node a hard runtime
+  requirement of a stdlib-only plugin; Codex installed from Homebrew or the standalone build ships
+  no Node, so the MCP server never started and every Ambient MCP tool was silently missing.
+  Python 3.8+ is now the only runtime.
+- `ambient doctor` leads with a `runtime` row that resolves `python3` by path and prints the fix
+  when it is absent, since a missing interpreter otherwise surfaces only as an MCP startup timeout.
+- CI gains a job that removes Node from the runner and proves the server still starts.
+
+### Two Ambient installs can now coexist
+
+- All mutable state moved to `~/.config/ambient-codex/` (override: `AMBIENT_CODEX_HOME`).
+  Through 1.5.x this plugin wrote `~/.config/ambient/env` — byte-identical to the path the Claude
+  Ambient plugin reads — and shared `usage.jsonl`, `reservations.jsonl`, `capabilities.json`,
+  `cache/`, and the `ambient.xyz` keychain item with it. `ambient control mode takeover` here
+  flipped Claude into takeover on its next session, and a cheap model picked here silently became
+  Claude's default.
+- The keychain item is now `ambient-codex`. A shared item meant `control key remove` here deleted
+  the other install's key.
+- `ambient link` installs `~/.local/bin/ambient-codex`, not `ambient`.
+- The git hook uninstaller no longer recognises the other install's `# ambient-code audit hook v1`
+  marker, so it can never delete a hook it did not install.
+- `ambient setup` offers a one-time, TTY-gated, opt-in import of another install's key so nothing
+  has to be pasted twice. It copies once, never writes back, and validates the key like a pasted one.
+- Fleet budget and spend cap are now per-install rather than per-billing-key.
+
+### Native model picker
+
+- New MCP tool `ambient_pick_model` renders a real Codex picker over `elicitation/create`, listing
+  only the models serving right now. The server previously discarded the client's advertised
+  capabilities at `initialize` and had no server-initiated request path, so it could not ask the
+  user anything.
+- Declining, cancelling, timing out, an error reply, a client without the elicitation capability,
+  and headless `codex exec` all collapse to "change nothing". A model id that was not offered is
+  refused rather than persisted.
+- MCP `initialize` instructions now carry the delegate/takeover contract, so an agent cannot
+  silently forget it is in takeover mode.
+
+### Fixed
+
+- `ruff check .` silently skipped the entire 12.9k-line extensionless `bin/ambient`; a planted
+  unused import passed clean. `pyproject.toml` now sets `extend-include`, and CI lints it.
+- The version-sync gate now covers `mcp/ambient_mcp.py`, which reports its version over the wire.
+
 ## 1.5.7 - 2026-07-09
 
 ### Fixed

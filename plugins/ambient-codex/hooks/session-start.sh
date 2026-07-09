@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SessionStart hook (startup|resume|clear|compact):
-#  1. Self-heal the ~/.local/bin/ambient launcher — plugin updates move the
+#  1. Self-heal the ~/.local/bin/ambient-codex launcher — plugin updates move the
 #     versioned install dir, and the old dir is garbage-collected later, which
 #     would leave the user's terminal `ambient` dangling.
 #  2. Remind Codex when Ambient delegate mode is ON.
@@ -14,7 +14,7 @@ case "${plugin_root:-}" in
 esac
 
 if [ -n "$plugin_root" ] && [ -x "${plugin_root}/bin/ambient" ]; then
-  link="$HOME/.local/bin/ambient"
+  link="$HOME/.local/bin/ambient-codex"
   real="${plugin_root}/bin/ambient"
   # Heal ONLY this well-known path, and ONLY when it is a SYMLINK we OWN:
   #  - dangling (a plugin update GC'd the old versioned dir it pointed at), or
