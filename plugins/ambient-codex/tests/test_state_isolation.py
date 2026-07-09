@@ -7,6 +7,7 @@ on its next session, and a cheap model chosen here silently became Claude's defa
 green the whole time. These tests assert the *state* boundary instead.
 """
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -166,6 +167,65 @@ class TestPathLauncherName(unittest.TestCase):
             self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex")))
             self.assertFalse(os.path.lexists(os.path.join(dest, "ambient")),
                              "Codex claimed the shared `ambient` name on PATH")
+
+
+class TestOpencodeProviderIsNamespaced(unittest.TestCase):
+    """opencode keeps ONE global config, shared with every other tool on the box.
+
+    Both Ambient installs used to write `provider["ambient"]` into
+    ~/.config/opencode/opencode.json. Whichever ran `agent` first pinned the
+    baseURL (`ambient trust-url` can point it at a private gateway), and the other
+    install then sent ITS key to that endpoint, because the existing-provider branch
+    only unions a model in and never rewrites `options`.
+    """
+
+    def test_provider_key_is_install_scoped(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            self.assertEqual(cli.OPENCODE_PROVIDER, "ambient-codex")
+            self.assertNotEqual(cli.OPENCODE_PROVIDER, "ambient")
+
+    def test_the_other_installs_provider_entry_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cfg_dir = os.path.join(home, ".config", "opencode")
+            os.makedirs(cfg_dir)
+            cfg_path = os.path.join(cfg_dir, "opencode.json")
+            foreign = {
+                "provider": {
+                    "ambient": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "options": {"baseURL": "https://someone-elses-gateway/v1",
+                                    "apiKey": "{env:AMBIENT_API_KEY}"},
+                        "models": {"old/model": {"name": "old/model"}},
+                    }
+                }
+            }
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                json.dump(foreign, fh)
+            cli.OPENCODE_CONFIG_PATH = cfg_path
+
+            cli.ensure_opencode_config("https://api.ambient.xyz", "new/model")
+
+            with open(cfg_path, encoding="utf-8") as fh:
+                after = json.load(fh)
+            self.assertEqual(after["provider"]["ambient"], foreign["provider"]["ambient"],
+                             "Codex mutated the other install's opencode provider")
+            ours = after["provider"]["ambient-codex"]
+            self.assertEqual(ours["options"]["baseURL"], "https://api.ambient.xyz/v1")
+            self.assertIn("new/model", ours["models"])
+
+    def test_no_literal_key_is_written_to_the_opencode_config(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cfg_dir = os.path.join(home, ".config", "opencode")
+            os.makedirs(cfg_dir)
+            cfg_path = os.path.join(cfg_dir, "opencode.json")
+            cli.OPENCODE_CONFIG_PATH = cfg_path
+            cli.ensure_opencode_config("https://api.ambient.xyz", "m/1")
+            body = Path(cfg_path).read_text(encoding="utf-8")
+            self.assertIn("{env:AMBIENT_API_KEY}", body)
+            self.assertNotIn("sk-", body)
 
 
 class TestGuidanceNeverNamesTheSharedLauncher(unittest.TestCase):

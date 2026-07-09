@@ -647,8 +647,10 @@ TOOLS = [
         "description": (
             "Let the user pick the Ambient model from a native Codex picker listing "
             "only models serving right now. Use this whenever the user wants to "
-            "switch/choose a model without naming one. Omit `lane` to have them pick "
-            "that too. Falls back to a numbered menu on clients without a picker."
+            "switch/choose a model without naming one. The picker asks exactly one "
+            "question. `lane` is NOT elicited: omit it to apply the pick to both the "
+            "chat and code lanes, or pass chat/code when the user already said which. "
+            "Falls back to a numbered menu on clients without a picker."
         ),
         "inputSchema": tool_schema({
             "lane": {"type": "string", "enum": ["both", "chat", "code"]},
@@ -936,6 +938,7 @@ class MessageReader:
 
     def __init__(self, stream) -> None:
         self._queue: "queue.Queue[Any]" = queue.Queue()
+        self._eof = threading.Event()
         self._thread = threading.Thread(target=self._pump, args=(stream,), daemon=True)
         self._thread.start()
 
@@ -944,15 +947,30 @@ class MessageReader:
             try:
                 framed = read_message(stream)
             except Exception:  # noqa: BLE001 - a bad frame ends the stream, not the process
+                self._eof.set()
                 self._queue.put(self._EOF)
                 return
             if framed is None:
+                self._eof.set()
                 self._queue.put(self._EOF)
                 return
             self._queue.put(framed)
 
+    def at_eof(self) -> bool:
+        """True once the stream is finished AND everything read has been handed out."""
+        return self._eof.is_set() and self._queue.empty()
+
     def get(self, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        """Next framed message; None on EOF. Raises queue.Empty on timeout."""
+        """Next framed message; None on EOF. Raises queue.Empty on timeout.
+
+        EOF is STICKY. The pump enqueues one sentinel and dies, so a single reader
+        used to be able to consume it and leave the next caller blocked forever on an
+        empty queue behind a dead thread — exactly what happened when the client
+        closed stdin while a picker was open: elicit() ate the sentinel and serve()'s
+        unbounded get() never returned.
+        """
+        if self.at_eof():
+            return None
         item = self._queue.get(timeout=timeout)
         return None if item is self._EOF else item
 
