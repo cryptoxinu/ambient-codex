@@ -398,8 +398,10 @@ class HookTakeoverContractTests(unittest.TestCase):
 
     def _run(self, cfg_text):
         with tempfile.TemporaryDirectory() as home:
-            os.makedirs(os.path.join(home, ".config", "ambient"))
-            with open(os.path.join(home, ".config", "ambient", "env"),
+            # Codex's own state root; the shared ~/.config/ambient belongs to the
+            # other Ambient install and this hook must never read it.
+            os.makedirs(os.path.join(home, ".config", "ambient-codex"))
+            with open(os.path.join(home, ".config", "ambient-codex", "env"),
                       "w", encoding="utf-8") as fh:
                 fh.write(cfg_text)
             env = {k: v for k, v in os.environ.items()

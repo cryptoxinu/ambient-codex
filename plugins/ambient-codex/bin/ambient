@@ -44,7 +44,8 @@ AMBIENT_MAX_SPEND to cap it, large jobs confirm on a TTY (--yes skips;
 Exit codes: 0 ok · 1 diagnosed error · 2 PARTIAL result · 3 no key configured
             64 usage error · 130 interrupted
 
-Credentials: OS keychain (preferred) or ~/.config/ambient/env (chmod 600).
+Credentials: OS keychain `ambient-codex` (preferred) or ~/.config/ambient-codex/env
+             (chmod 600). State root override: AMBIENT_CODEX_HOME.
 Model resolution: -m flag > AMBIENT_MODEL_MAP phase entry > AMBIENT_MODEL /
                   AMBIENT_CODE_MODEL env var > saved default (ambient use)
                   > built-in default. `-m auto[:cheapest|:largest]` (or
@@ -93,10 +94,34 @@ except ImportError:
     fcntl = None
 
 __version__ = "1.5.7"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
-CONFIG_PATH = os.path.expanduser("~/.config/ambient/env")
-USAGE_PATH = os.path.expanduser("~/.config/ambient/usage.jsonl")
-KEYCHAIN_SERVICE = "ambient.xyz"
+
+# Ambient Codex keeps ALL mutable state under its own root, separate from any other
+# Ambient install. Through 1.5.x this fork wrote ~/.config/ambient/env — byte-identical
+# to the Claude plugin's path — so `control mode takeover` here flipped Claude into
+# takeover on its next session, and a cheap model picked here silently became Claude's
+# default. The two installs must be able to coexist untouched.
+#
+# Nothing under LEGACY_SHARED_DIR is ever written; it is read exactly once, on an
+# explicit opt-in key import (see maybe_import_foreign_key).
+AMBIENT_CODEX_HOME_ENV = "AMBIENT_CODEX_HOME"
+LEGACY_SHARED_DIR = os.path.expanduser("~/.config/ambient")
+
+
+def _state_dir():
+    override = os.environ.get(AMBIENT_CODEX_HOME_ENV)
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return os.path.expanduser("~/.config/ambient-codex")
+
+
+STATE_DIR = _state_dir()
+CONFIG_PATH = os.path.join(STATE_DIR, "env")
+USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
+# Distinct from the `ambient.xyz` item the Claude install owns: a shared item would
+# mean `ambient control key remove` in Codex deletes the other install's key too.
+KEYCHAIN_SERVICE = "ambient-codex"
 KEYCHAIN_ACCOUNT = "api-key"
+LEGACY_KEYCHAIN_SERVICE = "ambient.xyz"  # read-only, opt-in import source
 DEFAULT_API_URL = "https://api.ambient.xyz"
 KEY_CONSOLE_URL = "https://app.ambient.xyz"   # where users create/manage API keys
 SUPPORT_LINE = ("If this keeps happening, contact Ambient support with the "
@@ -368,18 +393,23 @@ def keychain_available():
     return secret_backend() is not None
 
 
-def keychain_read():
-    """Fetch the key from the OS secret store. None when absent/unavailable."""
+def keychain_read(service=None):
+    """Fetch the key from the OS secret store. None when absent/unavailable.
+
+    `service` exists so the one-time import can read ANOTHER install's item
+    (LEGACY_KEYCHAIN_SERVICE) without ever writing to or deleting it.
+    """
+    service = service or KEYCHAIN_SERVICE
     b = secret_backend()
     try:
         if b == "keychain":
             proc = subprocess.run(
-                ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
+                ["security", "find-generic-password", "-s", service,
                  "-a", KEYCHAIN_ACCOUNT, "-w"],
                 capture_output=True, text=True, timeout=10)
         elif b == "secret-tool":
             proc = subprocess.run(
-                ["secret-tool", "lookup", "service", KEYCHAIN_SERVICE,
+                ["secret-tool", "lookup", "service", service,
                  "account", KEYCHAIN_ACCOUNT],
                 capture_output=True, text=True, timeout=10)
         else:
@@ -452,6 +482,64 @@ def resolve_key_and_backend(conf):
     if conf.get("AMBIENT_API_KEY"):
         return conf["AMBIENT_API_KEY"], "file"
     return None, None
+
+
+def read_foreign_key():
+    """Return another Ambient install's key, or (None, None). READ-ONLY.
+
+    Ambient Codex keeps its own credential so the two installs stay independent.
+    That would otherwise force the user to paste the same key twice, so `setup`
+    offers a one-time import. This never writes to, deletes from, or migrates the
+    source; it only reads it after the user has explicitly said yes.
+    """
+    kc = keychain_read(LEGACY_KEYCHAIN_SERVICE)
+    if kc:
+        return kc, f"OS keychain `{LEGACY_KEYCHAIN_SERVICE}`"
+    legacy_env = os.path.join(LEGACY_SHARED_DIR, "env")
+    try:
+        with open(legacy_env, encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped.startswith("AMBIENT_API_KEY="):
+                    value = stripped.split("=", 1)[1].strip().strip("'\"")
+                    if value:
+                        return value, legacy_env
+    except OSError:
+        pass
+    return None, None
+
+
+def offer_foreign_key_import():
+    """Ask whether to reuse another install's key. Returns the key, or None.
+
+    Returns the key only; the caller stores it through the normal
+    `_verify_and_store_key` path so an imported key is validated against the API
+    exactly like a pasted one. Gated on an interactive TTY: a non-interactive run
+    must never silently adopt a credential it did not create. The key is never
+    echoed, and the source is left exactly as it was found.
+    """
+    if os.environ.get("AMBIENT_NO_ONBOARD"):
+        return None
+    try:
+        interactive = sys.stdin.isatty() and sys.stderr.isatty()
+    except Exception:  # noqa: BLE001 — closed/odd stdin is not a TTY
+        interactive = False
+    if not interactive:
+        return None
+    key, source = read_foreign_key()
+    if not key:
+        return None
+    print(f"Found an existing Ambient API key from another install ({source}).",
+          file=sys.stderr)
+    print("Ambient Codex keeps its own copy so the two installs stay independent.\n"
+          "Importing copies the key once; the original is never modified.",
+          file=sys.stderr)
+    try:
+        answer = input("Import that key into Ambient Codex? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        return None
+    return key if answer in ("y", "yes") else None
 
 
 def _is_local_host(host):
@@ -831,7 +919,7 @@ def _config_lock(conf_dir):
 def _private_dir(path):
     """Create/heal a directory as owner-only. Cache entries quote the user's
     proprietary code and usage records their activity — the 0600 discipline of
-    the env file applies to everything under ~/.config/ambient (
+    the env file applies to everything under ~/.config/ambient-codex (
     cache/usage were world-readable)."""
     try:
         os.makedirs(path, mode=0o700, exist_ok=True)
@@ -1360,7 +1448,7 @@ def _cost_cpt(model):
 # (models improve as network capacity ramps), so nothing is permanently
 # blacklisted. AMBIENT_TELEMETRY=off disables learning → the tool falls back to
 # advertised features, byte-identical to a fresh install.
-CAPABILITY_PATH = os.path.expanduser("~/.config/ambient/capabilities.json")
+CAPABILITY_PATH = os.path.join(STATE_DIR, "capabilities.json")
 CAP_RECENT_K = 4          # outcomes remembered per (model, dimension)
 CAP_FAIL_THRESHOLD = 2    # recent fails (with no recent ok) => "unreliable"
 _CAP_CACHE = None
@@ -1740,7 +1828,7 @@ def savings_note_by_served(usage_by_model, catalog=None, conf=None):
 # AMBIENT_MAX_SPEND used to gate each invocation in ISOLATION, so the
 # documented 10-wide fan-out (SKILL.md) could spend up to 10x the ceiling.
 # These helpers make it a true AGGREGATE ceiling: every gated invocation
-# writes a reservation to ~/.config/ambient/reservations.jsonl under a
+# writes a reservation to ~/.config/ambient-codex/reservations.jsonl under a
 # cross-process lock; siblings see the running total and refuse past the
 # ceiling. Stale reservations (dead pid; or past AMBIENT_RESERVATION_TTL when
 # liveness is unknowable — a provably-ALIVE holder is never TTL-pruned) are
@@ -3545,7 +3633,7 @@ def _retry_delay(base, headers=None):
     return delay + random.uniform(0, 0.5 * delay)
 
 
-CACHE_DIR = os.path.expanduser("~/.config/ambient/cache")
+CACHE_DIR = os.path.join(STATE_DIR, "cache")
 CACHE_MAX_FILES = 4000            # LRU-ish cap; oldest pruned past this
 CACHE_TTL_DEFAULT = 7 * 86400     # a cached chunk older than this is ignored
 
@@ -8111,7 +8199,7 @@ def git_diff_inputs(staged, ref):
 # SKILL trust boundary: model output is data, never code that runs).
 
 AMBIENT_HOOK_MARKER = "# ambient-codex audit hook v1"
-LEGACY_AMBIENT_HOOK_MARKERS = ("# ambient-code audit hook v1",)
+LEGACY_AMBIENT_HOOK_MARKERS = ()  # never claim another install's hook
 
 
 def _render_hook(name):
@@ -11462,7 +11550,10 @@ def cmd_setup(args):
             "  Rotate/replace: ambient setup --force\n"
             "  Remove:         ambient setup --remove"
         )
-    if args.key_stdin:
+    imported = None if (existing or args.key_stdin) else offer_foreign_key_import()
+    if imported:
+        key = imported
+    elif args.key_stdin:
         # M11: --key-stdin is for a PIPED key. On a TTY, readline() echoes the
         # typed key to the screen/scrollback — refuse and point at the hidden-
         # input interactive path instead.

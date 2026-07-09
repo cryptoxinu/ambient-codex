@@ -323,14 +323,20 @@ class ExactHookHeaderTests(unittest.TestCase):
         self.assertIn("# ambient-codex audit hook v1 (pre-commit)", rendered)
         self.assertNotIn("# ambient-code audit hook v1 (pre-commit)", rendered)
 
-    def test_exact_legacy_ambient_owned_hook_is_still_ours(self):
-        legacy = (
+    def test_another_installs_hook_is_never_claimed_as_ours(self):
+        """`# ambient-code audit hook v1` belongs to the Claude install.
+
+        Ambient Codex used to recognise that marker, so uninstalling hooks here
+        would silently delete the other install's git hook. The two installs must
+        be able to coexist, so a foreign marker is now never ours.
+        """
+        foreign = (
             "#!/bin/sh\n"
             "# ambient-code audit hook v1 (pre-commit)\n"
             "# Installed by: ambient audit --install-hook pre-commit\n"
             "echo old owned template\n"
         )
-        self.assertTrue(amb._hook_is_ours(legacy, "pre-commit"))
+        self.assertFalse(amb._hook_is_ours(foreign, "pre-commit"))
 
     def test_exact_header_still_ours(self):
         exact = ("#!/bin/sh\n"

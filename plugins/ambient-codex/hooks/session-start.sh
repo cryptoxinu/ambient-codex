@@ -39,7 +39,9 @@ if [ -n "$plugin_root" ] && [ -x "${plugin_root}/bin/ambient" ]; then
   fi
 fi
 
-conf="$HOME/.config/ambient/env"
+# Ambient Codex's own state root, never the shared ~/.config/ambient the other
+# Ambient install owns — reading that would let its delegate mode drive Codex.
+conf="${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}/env"
 [ -f "$conf" ] || exit 0
 # Last assignment wins AND key/value whitespace is trimmed, matching the CLI's
 # config parser (key.strip()/val.strip()) — a duplicate OR hand-spaced
