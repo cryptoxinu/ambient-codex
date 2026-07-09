@@ -53,9 +53,8 @@ The plugin package owns these surfaces:
 - `.codex-plugin/plugin.json` declares the Codex plugin and its user-facing
   metadata.
 - `skills/ambient/SKILL.md` defines the Codex orchestration contract.
-- `.mcp.json` registers the local stdio MCP server.
-- `mcp/ambient_mcp_launcher.js` starts the stdlib Python MCP server through a
-  portable Node launcher.
+- `.mcp.json` registers the local stdio MCP server as `python3 -u mcp/ambient_mcp.py`.
+  Python 3.8+ is the plugin's only runtime; nothing else may enter this path.
 - `mcp/ambient_mcp.py` exposes bounded MCP tools and resolves the bundled CLI
   from this plugin root.
 - `bin/ambient` is the stdlib CLI for all heavy execution lanes.

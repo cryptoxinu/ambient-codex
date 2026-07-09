@@ -11501,6 +11501,18 @@ def cmd_doctor(args):
         tag = paint("PASS", "32") if ok else paint("FAIL", "31")
         print(f"{tag:4}  {check:14} {detail}")
 
+    # The MCP server is launched by Codex as `python3 -u mcp/ambient_mcp.py`.
+    # If `python3` is not on Codex's PATH the whole MCP surface is dead with a
+    # startup timeout that names nothing, so diagnose the interpreter by name.
+    interpreter = shutil.which("python3")
+    if interpreter:
+        report("runtime", True,
+               f"python3 -> {interpreter} ({'.'.join(str(n) for n in sys.version_info[:3])})")
+    else:
+        report("runtime", False,
+               "python3 not on PATH — Codex cannot start the Ambient MCP server. "
+               "Install Python 3.8+ (macOS: `xcode-select --install`) and reopen Codex.")
+
     if os.path.exists(CONFIG_PATH):
         mode_bits = os.stat(CONFIG_PATH).st_mode & 0o777
         report("config", mode_bits == 0o600,

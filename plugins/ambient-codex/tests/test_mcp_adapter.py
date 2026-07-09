@@ -22,6 +22,11 @@ def load_mcp():
     return module
 
 
+def plugin_version():
+    manifest = ROOT / ".codex-plugin" / "plugin.json"
+    return json.loads(manifest.read_text(encoding="utf-8"))["version"]
+
+
 def encode_frame(payload):
     body = json.dumps(payload).encode("utf-8")
     return b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
@@ -177,19 +182,27 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertEqual([item["id"] for item in response], [1, 2])
         self.assertIn("tools", response[1]["result"])
 
-    def test_plugin_mcp_config_is_fast_unbuffered_and_bounded(self):
+    def test_plugin_mcp_config_is_python_only_unbuffered_and_bounded(self):
         data = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
         ambient = data["mcpServers"]["ambient"]
-        self.assertEqual(ambient["command"], "node")
-        self.assertEqual(ambient["args"], ["mcp/ambient_mcp_launcher.js"])
+        self.assertEqual(ambient["command"], "python3")
+        self.assertEqual(ambient["args"], ["-u", "mcp/ambient_mcp.py"])
         self.assertGreaterEqual(ambient["startup_timeout_sec"], 60)
         self.assertEqual(ambient["tool_timeout_sec"], 120)
 
-    def test_node_launcher_starts_framed_mcp_server(self):
-        if not (ROOT / "mcp" / "ambient_mcp_launcher.js").exists():
-            self.fail("missing MCP launcher")
-        if shutil.which("node") is None:
-            self.skipTest("node is not available")
+    def test_no_node_artifact_survives_anywhere_in_the_plugin(self):
+        """Node must never re-enter the MCP critical path.
+
+        The 1.5.x plugin shipped a Node launcher whose only job was to locate
+        python3. Codex installed from Homebrew/standalone has no Node, so the
+        MCP server never started. Guard the whole tree, not just .mcp.json.
+        """
+        self.assertFalse((ROOT / "mcp" / "ambient_mcp_launcher.js").exists())
+        self.assertEqual(sorted(p.name for p in (ROOT / "mcp").glob("*.js")), [])
+        blob = json.dumps(json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8")))
+        self.assertNotIn("node", blob)
+
+    def test_python3_directly_starts_framed_mcp_server(self):
         init = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -202,7 +215,7 @@ class TestMcpAdapter(unittest.TestCase):
         }
         tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
         proc = subprocess.run(
-            ["node", str(ROOT / "mcp" / "ambient_mcp_launcher.js")],
+            [sys.executable, "-u", str(MCP)],
             cwd=ROOT,
             input=encode_frame(init) + encode_frame({
                 "jsonrpc": "2.0",
@@ -211,17 +224,15 @@ class TestMcpAdapter(unittest.TestCase):
             }) + encode_frame(tools),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=10,
+            timeout=20,
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_frames(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
         self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
-    def test_node_launcher_starts_jsonl_mcp_server(self):
-        if shutil.which("node") is None:
-            self.skipTest("node is not available")
+    def test_python3_directly_starts_jsonl_mcp_server(self):
         init = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -234,18 +245,52 @@ class TestMcpAdapter(unittest.TestCase):
         }
         tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
         proc = subprocess.run(
-            ["node", str(ROOT / "mcp" / "ambient_mcp_launcher.js")],
+            [sys.executable, "-u", str(MCP)],
             cwd=ROOT,
             input=encode_jsonl(init) + encode_jsonl(tools),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=10,
+            timeout=20,
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_jsonl(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
         self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+
+    def test_mcp_server_starts_with_node_absent_from_path(self):
+        """The regression that shipped: reproduce a node-free Codex install.
+
+        Build a PATH that contains python3 and nothing else, assert node really
+        is unreachable from it, then start the server exactly as .mcp.json does.
+        """
+        if os.name == "nt":  # pragma: no cover - PATH shim semantics differ
+            self.skipTest("POSIX PATH shim")
+        with tempfile.TemporaryDirectory() as tmp:
+            os.symlink(sys.executable, os.path.join(tmp, "python3"))
+            self.assertIsNone(shutil.which("node", path=tmp))
+            self.assertIsNotNone(shutil.which("python3", path=tmp))
+            cfg = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+            ambient = cfg["mcpServers"]["ambient"]
+            proc = subprocess.run(
+                [ambient["command"], *ambient["args"]],
+                cwd=ROOT,
+                env={"PATH": tmp, "HOME": tmp},
+                input=encode_jsonl({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {"protocolVersion": "2025-06-18", "capabilities": {}},
+                }) + encode_jsonl({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
+            frames = decode_jsonl(proc.stdout)
+            self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
+            self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
     def test_all_mcp_tool_schemas_are_codex_strict_objects(self):
         mcp = load_mcp()

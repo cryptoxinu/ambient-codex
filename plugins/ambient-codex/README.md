@@ -82,13 +82,26 @@ The plugin root is:
 
 ## Why Codex Starts Python
 
-Codex launches `node mcp/ambient_mcp_launcher.js` as a stdio MCP server. The
-launcher finds Python 3 as `python3`, `python`, or Windows `py -3`, then starts
-`mcp/ambient_mcp.py`. MCP is the
+Codex launches `python3 -u mcp/ambient_mcp.py` as a stdio MCP server. MCP is the
 tool bridge that lets Codex call bounded local actions such as status, model
 selection, mode changes, key lifecycle guidance, doctor, usage, short asks, and
 small audits. The MCP process does not make network calls during startup and it
 does not accept API keys as tool arguments.
+
+Python 3.8+ is the plugin's only runtime dependency: `bin/ambient` and the MCP
+server are both stdlib-only Python, so no `pip`, `npm`, or virtualenv is needed.
+Earlier 1.5.x releases started the server through a Node launcher whose sole job
+was to locate `python3`. That made Node a hard requirement, and Codex installed
+from Homebrew or the standalone build ships no Node — so the MCP server never
+started. Node is now gone from the critical path entirely.
+
+If `python3` is not on your PATH, `ambient doctor` reports it as the first row
+(`runtime`) with the fix. On macOS that is `xcode-select --install`.
+
+On Windows, install Python 3.8+ so that `python3` resolves on PATH (the Microsoft
+Store build provides `python3.exe`). If your Python only exposes `py -3`, point
+Codex at it directly with
+`codex mcp add ambient -- py -3 -u mcp/ambient_mcp.py`.
 
 ## First Run
 

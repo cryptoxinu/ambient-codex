@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "ambient": {
-      "command": "node",
+      "command": "python3",
       "args": [
-        "mcp/ambient_mcp_launcher.js"
+        "-u",
+        "mcp/ambient_mcp.py"
       ],
       "cwd": ".",
       "startup_timeout_sec": 60,
