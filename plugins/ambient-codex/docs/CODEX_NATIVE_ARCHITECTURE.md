@@ -136,8 +136,12 @@ without an explicit command, or become required for MCP/CLI startup.
 
 ## Security Model
 
-- Ambient API keys live in the OS keychain where available, or in
-  `~/.config/ambient/env` with `0600` permissions.
+- Ambient API keys live in the OS keychain item `ambient-codex` where available, or
+  in `~/.config/ambient-codex/env` with `0600` permissions.
+- All mutable state is rooted at `~/.config/ambient-codex/` (override
+  `AMBIENT_CODEX_HOME`). Ambient Codex must never read or write another Ambient
+  install's state, keychain item, PATH launcher, or git hooks. The single exception
+  is the explicitly opt-in, read-only key import in `ambient setup`.
 - API keys must never appear in chat, MCP arguments, argv, logs, commits, or docs.
 - Ambient inputs may leave the machine for external inference. Codex must avoid
   sending secrets, `.env` files, private user data, health data, or unrelated

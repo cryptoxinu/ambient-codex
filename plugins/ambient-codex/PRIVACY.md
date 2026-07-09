@@ -14,10 +14,13 @@ No analytics, crash reporting, or background telemetry is sent by this plugin.
 
 ## What Stays Local
 
-- API key: OS keychain when available, or `~/.config/ambient/env` with owner-only
-  permissions when file storage is explicitly used.
-- Usage ledger: `~/.config/ambient/usage.jsonl`.
-- Chunk cache: `~/.config/ambient/cache/`.
+- API key: OS keychain item `ambient-codex` when available, or
+  `~/.config/ambient-codex/env` with owner-only permissions when file storage is
+  explicitly used.
+- Usage ledger: `~/.config/ambient-codex/usage.jsonl`.
+- Chunk cache: `~/.config/ambient-codex/cache/`.
+- All Ambient Codex state lives under `~/.config/ambient-codex/`
+  (override: `AMBIENT_CODEX_HOME`), separate from any other Ambient install.
 - Build resume state: `<build-dir>/.ambient-build.json`.
 - Codex plugin files: under the local plugin install/cache.
 
@@ -39,9 +42,12 @@ Ambient Codex plugin and CLI; opencode has its own behavior.
 ```bash
 ambient setup --remove
 ambient cache clear
-rm -f ~/.config/ambient/usage.jsonl
-rm -f ~/.config/ambient/env
+rm -rf ~/.config/ambient-codex
 ```
+
+Only remove `~/.config/ambient-codex`. A different Ambient install (for example the
+Claude plugin) owns `~/.config/ambient`, and deleting that would take its key and
+usage history with it.
 
 Delete `.ambient-build.json` files from build directories when you no longer
 need resume state.

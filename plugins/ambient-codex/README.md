@@ -29,8 +29,15 @@ Community integration, not affiliated with or endorsed by Ambient.
   and small audits.
 - Tracks local usage and relative savings with bundled `usage`.
 
-The CLI is stdlib-only Python. Runtime state stays under `~/.config/ambient`
-and the OS keychain where available.
+The CLI is stdlib-only Python. Runtime state stays under `~/.config/ambient-codex`
+(override: `AMBIENT_CODEX_HOME`) and the OS keychain item `ambient-codex`.
+
+Ambient Codex is fully independent of any other Ambient install. It never reads or
+writes `~/.config/ambient`, never touches the `ambient.xyz` keychain item, installs
+its PATH launcher as `ambient-codex`, and never claims another install's git hook.
+The two can be installed side by side. So that a key is not pasted twice, `ambient
+setup` offers a one-time, opt-in import of an existing key; it copies once and never
+writes back to the source.
 
 Codex plugin workflows use the bundled CLI at `bin/ambient` through the plugin
 root or the bundled MCP server. Do not make Codex rely on a bare `ambient` from
@@ -99,9 +106,30 @@ If `python3` is not on your PATH, `ambient doctor` reports it as the first row
 (`runtime`) with the fix. On macOS that is `xcode-select --install`.
 
 On Windows, install Python 3.8+ so that `python3` resolves on PATH (the Microsoft
-Store build provides `python3.exe`). If your Python only exposes `py -3`, point
-Codex at it directly with
-`codex mcp add ambient -- py -3 -u mcp/ambient_mcp.py`.
+Store build provides `python3.exe`). If your Python only exposes `py -3`, override
+the launch command for the plugin's own server rather than registering a second one:
+
+```bash
+codex -c 'mcp_servers.ambient.command="py"' -c 'mcp_servers.ambient.args=["-3","-u","mcp/ambient_mcp.py"]'
+```
+
+## Picking A Model
+
+Ask Codex to switch models and it calls the MCP tool `ambient_pick_model`, which
+renders a native Codex picker listing only the models serving right now:
+
+```text
+Field 1/1  (1 required unanswered)
+Select the Ambient model for chat + code
+Ambient model
+Serving right now on the Ambient network
+› 1. ambient/large
+  2. moonshotai/kimi-k2.7-code
+```
+
+The tool persists the choice itself. Pressing esc, declining, or running headless
+(`codex exec`, where there is no human to answer) changes nothing. Clients that do
+not advertise the MCP elicitation capability get a numbered text menu instead.
 
 ## First Run
 
@@ -187,7 +215,8 @@ environment. Keep credentials out of the agent working tree.
 - `skills/ambient/agents/openai.yaml` provides skill UI metadata.
 - `.mcp.json` registers the local stdio MCP server.
 - `mcp/ambient_mcp.py` implements bounded MCP tools over the native control
-  surface and long-running CLI lanes.
+  surface and long-running CLI lanes, including `ambient_pick_model`, which renders
+  a native Codex picker via MCP `elicitation/create`.
 - `hooks/hooks.json` intentionally registers no default lifecycle hooks, so a
   clean install does not require hook trust review.
 - `hooks/session-start.sh` remains an opt-in script for local experiments; it is

@@ -14,9 +14,13 @@ security problem.
 Ambient Codex is a local plugin and CLI wrapper around an external inference API.
 The main security boundaries are:
 
-- API key handling: keys are stored in the OS keychain when available or an
-  owner-only local config file when explicitly used. Keys are never passed on
-  argv and must not be pasted into chat.
+- API key handling: keys are stored in the OS keychain item `ambient-codex` when
+  available, or in owner-only `~/.config/ambient-codex/env` when file storage is
+  explicitly used. Keys are never passed on argv and must not be pasted into chat.
+- Install isolation: Ambient Codex never writes outside `~/.config/ambient-codex`
+  and its own keychain item, so it cannot disturb another Ambient install's key,
+  settings, usage ledger, or git hooks. `ambient setup` may READ another install's
+  key once, only after an explicit interactive opt-in, and never writes back.
 - External input boundary: all web/API/MCP/model output is untrusted data.
 - External output boundary: selected prompts, diffs, and files are sent to the
   configured inference endpoint.
