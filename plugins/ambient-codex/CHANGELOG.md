@@ -2,6 +2,18 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.5.7 - 2026-07-09
+
+### Fixed
+- MCP now treats `PLUGIN_ROOT` as a validated hint. If Codex retains a stale
+  plugin cache path after local plugin reinstall or cache cleanup, the MCP
+  server falls back to the bundled plugin root beside `ambient_mcp.py` instead
+  of trying to launch a missing CLI.
+
+### Tests
+- Added MCP plugin-root regression coverage for stale `PLUGIN_ROOT` fallback
+  and valid `PLUGIN_ROOT` handling.
+
 ## 1.5.6 - 2026-07-08
 
 ### Fixed

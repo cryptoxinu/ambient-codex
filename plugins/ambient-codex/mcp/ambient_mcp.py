@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.5.6"
+SERVER_VERSION = "1.5.7"
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INSTRUCTIONS = (
     "Use the bundled Ambient CLI only through this MCP server or the plugin root. "
@@ -42,10 +42,20 @@ class AmbientCommandError(RuntimeError):
 
 
 def plugin_root() -> Path:
+    module_root = Path(__file__).resolve().parents[1]
     configured = os.environ.get("PLUGIN_ROOT")
     if configured:
-        return Path(configured).expanduser().resolve()
-    return Path(__file__).resolve().parents[1]
+        root = Path(configured).expanduser().resolve()
+        if is_plugin_root(root):
+            return root
+    return module_root
+
+
+def is_plugin_root(root: Path) -> bool:
+    return (
+        (root / "bin" / "ambient").is_file()
+        and (root / ".codex-plugin" / "plugin.json").is_file()
+    )
 
 
 def ambient_bin() -> Path:

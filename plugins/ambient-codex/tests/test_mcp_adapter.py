@@ -60,6 +60,19 @@ class TestMcpAdapter(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp.SERVER_VERSION, manifest["version"])
 
+    def test_plugin_root_ignores_stale_plugin_root_env(self):
+        mcp = load_mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            stale = Path(tmp) / "missing-cache-version"
+            with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(stale)}):
+                self.assertEqual(mcp.plugin_root(), ROOT.resolve())
+                self.assertEqual(mcp.ambient_bin(), ROOT.resolve() / "bin" / "ambient")
+
+    def test_plugin_root_honors_valid_plugin_root_env(self):
+        mcp = load_mcp()
+        with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(ROOT)}):
+            self.assertEqual(mcp.plugin_root(), ROOT.resolve())
+
     def test_stdio_initialize_and_list_tools(self):
         init = {
             "jsonrpc": "2.0",
@@ -122,7 +135,7 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_jsonl(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
         self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
     def test_notifications_and_ping_are_codex_safe(self):
@@ -203,7 +216,7 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_frames(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
         self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
     def test_node_launcher_starts_jsonl_mcp_server(self):
@@ -231,7 +244,7 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_jsonl(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.7")
         self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
     def test_all_mcp_tool_schemas_are_codex_strict_objects(self):
@@ -251,7 +264,7 @@ class TestMcpAdapter(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             args=[],
             returncode=0,
-            stdout="ambient 1.5.6\n",
+            stdout="ambient 1.5.7\n",
             stderr="",
         )
         with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:
