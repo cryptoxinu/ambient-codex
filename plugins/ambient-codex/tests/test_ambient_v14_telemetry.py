@@ -103,9 +103,9 @@ def rec(model="m-reason", chars=3200, in_tok=1000, **kw):
 # 8a-1: declarative command registry
 # ---------------------------------------------------------------------------
 
-ALL_COMMANDS = {"version", "models", "curate", "setup", "link", "cache",
-                "trust-url", "usage", "mode", "config", "control", "doctor",
-                "use", "ask", "audit", "map", "code", "chat", "build",
+ALL_COMMANDS = {"version", "models", "curate", "setup", "link", "uninstall",
+                "cache", "trust-url", "usage", "mode", "config", "control",
+                "doctor", "use", "ask", "audit", "map", "code", "chat", "build",
                 "agent", "codex"}
 KEYED = {"use", "ask", "audit", "map", "code", "chat", "build", "agent"}
 

@@ -2,6 +2,36 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.0 - 2026-07-09
+
+### Native mode picker + control-panel onboarding
+
+- New MCP tool `ambient_pick_mode` renders a native Codex picker for off / delegate /
+  takeover, mirroring `ambient_pick_model`. Tap to choose; it persists the choice and
+  falls back to a numbered menu on clients without elicitation.
+- The skill now opens a control panel on bare `$ambient` and right after setup: it
+  shows key/mode/model status, then offers the model and mode pickers directly, instead
+  of just telling the user to type commands. Setup is not "done" until the user has seen
+  the panel and can pick a model and a mode.
+
+### `ambient-codex uninstall`
+
+Clean offboarding that touches ONLY this install:
+
+- Wipes the key from the `ambient-codex` keychain item and the env file.
+- Removes the `ambient-codex` PATH launcher (refuses any launcher that isn't ours).
+- `--purge` deletes the whole `~/.config/ambient-codex` state dir — and refuses if that
+  root has been relocated onto another Ambient install's tree.
+- Prints `codex plugin remove ambient-codex@ambient-codex` for the plugin itself.
+- Never deletes or modifies another Ambient install's key, state, launcher, or hooks.
+  Tests prove a seeded neighbour's env is byte-identical after every uninstall path.
+
+### Clearer welcome copy
+
+The banner and welcome no longer say "a second pair of eyes"; they now read
+"open frontier models in your terminal, ~10-40x cheaper than the closed ones", and every
+command shown is `ambient-codex` (a bare `ambient` would drive a different install).
+
 ## 1.7.3 - 2026-07-09
 
 ### Clearer first-run key setup

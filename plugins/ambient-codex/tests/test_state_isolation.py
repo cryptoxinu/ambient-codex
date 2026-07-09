@@ -734,3 +734,80 @@ class TestGuidanceNeverTellsUserToExportTheSharedKey(unittest.TestCase):
             if "the AMBIENT_API_KEY environment variable" in line:
                 offenders.append(f"{lineno}: {line.strip()[:60]}")
         self.assertEqual(offenders, [])
+
+
+class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
+    """`ambient-codex uninstall` must remove ONLY this install's key, launcher, and
+    (with --purge) its own state — never another Ambient install's anything."""
+
+    def _run(self, home, *extra, codex_home=None):
+        env = {**sandbox_env(home), **({"AMBIENT_CODEX_HOME": codex_home} if codex_home else {})}
+        return subprocess.run(
+            [sys.executable, str(CLI), "uninstall", "--yes", *extra],
+            env=env, capture_output=True, text=True, timeout=120, check=False)
+
+    def _seed_foreign(self, home):
+        foreign = os.path.join(home, ".config", "ambient")
+        os.makedirs(foreign, exist_ok=True)
+        env = os.path.join(foreign, "env")
+        with open(env, "w", encoding="utf-8") as fh:
+            fh.write("AMBIENT_API_KEY=sk-not-ours\nAMBIENT_DELEGATE=takeover\n")
+        return env, __import__("hashlib").sha1(
+            open(env, "rb").read()).hexdigest()
+
+    def test_default_scrubs_key_keeps_state_removes_launcher(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".config", "ambient-codex")
+            os.makedirs(root)
+            with open(os.path.join(root, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_API_KEY=sk-x\nAMBIENT_MODEL=z-ai/glm-5.2\n")
+            binp = os.path.join(home, ".local", "bin")
+            os.makedirs(binp)
+            subprocess.run([sys.executable, str(CLI), "link", "--dir", binp],
+                           env=sandbox_env(home), capture_output=True, timeout=120)
+            foreign_env, foreign_hash = self._seed_foreign(home)
+
+            proc = self._run(home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            body = open(os.path.join(root, "env"), encoding="utf-8").read()
+            self.assertNotIn("AMBIENT_API_KEY", body)      # key scrubbed
+            self.assertIn("AMBIENT_MODEL", body)           # settings kept
+            self.assertFalse(os.path.lexists(os.path.join(binp, "ambient-codex")))
+            self.assertEqual(
+                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                foreign_hash, "uninstall touched the other install's env")
+
+    def test_purge_deletes_only_the_codex_state_dir(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".config", "ambient-codex")
+            os.makedirs(os.path.join(root, "cache"))
+            with open(os.path.join(root, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_API_KEY=sk-x\n")
+            foreign_env, foreign_hash = self._seed_foreign(home)
+
+            proc = self._run(home, "--purge")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertFalse(os.path.isdir(root), "codex state dir not deleted")
+            self.assertTrue(os.path.isdir(os.path.dirname(foreign_env)),
+                            "the other install's dir was deleted")
+            self.assertEqual(
+                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                foreign_hash)
+
+    def test_purge_refuses_when_state_root_is_the_other_install(self):
+        with tempfile.TemporaryDirectory() as home:
+            foreign_env, foreign_hash = self._seed_foreign(home)
+            foreign_dir = os.path.dirname(foreign_env)
+            proc = self._run(home, "--purge", codex_home=foreign_dir)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("another Ambient install", proc.stderr + proc.stdout)
+            self.assertTrue(os.path.isdir(foreign_dir))
+            self.assertEqual(
+                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                foreign_hash)
+
+    def test_it_prints_the_codex_plugin_remove_command(self):
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(os.path.join(home, ".config", "ambient-codex"))
+            proc = self._run(home)
+            self.assertIn("codex plugin remove ambient-codex", proc.stdout)

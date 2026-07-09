@@ -90,6 +90,7 @@ is exactly:
 - `ambient_set_mode`
 - `ambient_set_model`
 - `ambient_pick_model`
+- `ambient_pick_mode`
 - `ambient_set_config`
 - `ambient_key`
 - `ambient_models`

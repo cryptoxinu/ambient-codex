@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.7.3"
+SERVER_VERSION = "1.8.0"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -332,6 +332,53 @@ def set_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     return run_ambient(["control", "mode", state])
 
 
+_MODE_OPTIONS = (
+    ("off", "Off — Codex does all the work itself"),
+    ("on", "Delegate — route token-heavy work (bulk code, audits, digests) to Ambient"),
+    ("takeover", "Takeover — run every substantive turn through Ambient to save Codex tokens"),
+)
+
+
+def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Render a native Codex picker for the delegate mode, then persist the choice.
+
+    Mirrors `ambient_pick_model`: a tap-to-choose off/on/takeover picker, with a
+    numbered text menu fallback for clients without elicitation and headless runs.
+    """
+    reject_unknown(args, set())
+    current = current_mode()
+    if not SESSION.supports_elicitation():
+        listing = "\n".join(
+            f"  {i}. {label}" for i, (_, label) in enumerate(_MODE_OPTIONS, 1))
+        return tool_text(
+            f"This client cannot render a picker (mode is currently '{current}'), so "
+            "nothing changed. Ask the user which mode they want, then call "
+            "`ambient_set_mode` with off/on/takeover:\n" + listing)
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "state": {
+                "type": "string",
+                "title": "Ambient mode",
+                "description": f"Currently: {current}",
+                "enum": [state for state, _ in _MODE_OPTIONS],
+                "enumNames": [label for _, label in _MODE_OPTIONS],
+            },
+        },
+        "required": ["state"],
+    }
+    result = elicit("Choose how much work Codex routes to Ambient", schema)
+    chosen = elicitation_choice(result, "state")
+    if not chosen:
+        action = (result or {}).get("action", "no answer")
+        return tool_text(f"Mode unchanged ({action}); still '{current}'.")
+    if chosen not in {state for state, _ in _MODE_OPTIONS}:
+        return tool_text(f"Mode unchanged — {chosen!r} is not a valid mode.",
+                         is_error=True)
+    return run_ambient(["control", "mode", chosen])
+
+
 def set_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     reject_unknown(args, {"model", "lane"})
     model = require_string(args, "model", max_chars=256)
@@ -595,6 +642,7 @@ TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "ambient_set_mode": set_mode_tool,
     "ambient_set_model": set_model_tool,
     "ambient_pick_model": pick_model_tool,
+    "ambient_pick_mode": pick_mode_tool,
     "ambient_set_config": set_config_tool,
     "ambient_key": key_tool,
     "ambient_models": models_tool,
@@ -667,6 +715,16 @@ TOOLS = [
         "inputSchema": tool_schema({
             "lane": {"type": "string", "enum": ["both", "chat", "code"]},
         }),
+    },
+    {
+        "name": "ambient_pick_mode",
+        "description": (
+            "Let the user pick the Ambient delegate mode (off / on / takeover) from a "
+            "native Codex picker. Use when the user wants to change how much work Codex "
+            "routes to Ambient without naming a mode. The tool persists the choice. "
+            "Falls back to a numbered menu on clients without a picker."
+        ),
+        "inputSchema": tool_schema({}),
     },
     {
         "name": "ambient_set_config",

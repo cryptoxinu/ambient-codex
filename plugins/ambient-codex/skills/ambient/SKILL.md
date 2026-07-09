@@ -39,14 +39,39 @@ Use this skill for explicit `$ambient` requests and for plain-language requests
 such as "use Ambient to audit this diff", "ask Ambient", "build this on Ambient",
 "save tokens", or "get another model's opinion".
 
+### The control panel (bare `$ambient`, or right after setup)
+
+When the user invokes Ambient without a specific task — a bare `$ambient`, "open
+ambient", "ambient settings", or immediately after they finish `ambient-codex setup`
+— DON'T just say "say use Ambient to...". Show them the panel and let them drive it,
+the way a settings screen would:
+
+1. Call MCP `ambient_control` and show, in plain words: whether a key is configured,
+   the current mode (off / delegate / takeover), the current chat and code models,
+   and which models are serving right now.
+2. Then offer the two native pickers directly — do not make them type anything:
+   - **Pick a model** → call MCP `ambient_pick_model` (a tap-to-choose picker of the
+     serving models; it persists the choice itself).
+   - **Set the mode** → call MCP `ambient_pick_mode` (a tap-to-choose off / delegate /
+     takeover picker; it persists the choice).
+3. Close with one line of what to do next: "or just say `use Ambient to audit this
+   diff` / `use Ambient to build X` and I'll route it."
+
+If the client cannot render a picker (older client, or headless `codex exec`), both
+picker tools return a numbered menu instead — read it to the user and act on their
+answer with `ambient_set_model` / `ambient_set_mode`.
+
+### Intent table
+
 Use the native control surface for setup, mode, model, key, and setting changes:
 
 | User intent | Codex action |
 |---|---|
 | Ambient status or control panel | Prefer MCP `ambient_control`; otherwise run bundled `control --json` or bundled `control`. Show key state, delegate state, default lanes, settings, and serving models. |
-| Turn delegation on | Prefer MCP `ambient_set_mode` with `state=on`; otherwise run bundled `control mode on`. Explain the delegate contract and follow it for the session. |
-| Turn takeover on | Prefer MCP `ambient_set_mode` with `state=takeover`; otherwise run bundled `control mode takeover`. Explain the takeover contract and route substantive work through Ambient until turned off. |
-| Turn Ambient off | Prefer MCP `ambient_set_mode` with `state=off`; otherwise run bundled `control mode off`. This exits both delegate and takeover. |
+| User wants to change mode but didn't name one | Call MCP `ambient_pick_mode` — a native off / delegate / takeover picker; it persists the choice. Don't ask which mode first; the picker asks. |
+| Turn delegation on | MCP `ambient_set_mode` with `state=on`, or bundled `control mode on`. Explain the delegate contract and follow it for the session. |
+| Turn takeover on | MCP `ambient_set_mode` with `state=takeover`, or bundled `control mode takeover`. Explain the takeover contract and route substantive work through Ambient until turned off. |
+| Turn Ambient off | MCP `ambient_set_mode` with `state=off`, or bundled `control mode off`. This exits both delegate and takeover. |
 | User wants to switch/choose a model without naming one | Call MCP `ambient_pick_model`. Codex renders a native picker of the models serving right now; the tool persists the choice itself. Do NOT transcribe a menu into chat, and do NOT ask which model first — the picker asks. Pass `lane` only when the user already said chat-only or code-only. |
 | User names a specific model | MCP `ambient_set_model` with that id, or bundled `control model MODEL --chat|--code`. |
 | Inspect the catalog | MCP `ambient_models`, or bundled `models --json` for raw inspection. |
@@ -220,7 +245,10 @@ Notes for you (the agent), not the user:
   work, but `ambient-codex setup` is the one to show.
 - If they paste a key into chat anyway, refuse to use it and tell them to rotate it
   at app.ambient.xyz and run `ambient-codex setup` locally.
-- After they confirm setup, smoke-test with bundled `ask "Reply with exactly: AMBIENT-OK"`.
+- After they confirm setup, smoke-test with bundled `ask "Reply with exactly: AMBIENT-OK"`,
+  then IMMEDIATELY show the control panel (see **The control panel** above): call
+  `ambient_control`, then offer `ambient_pick_model` and `ambient_pick_mode`. Setup is
+  not "done" until the user has seen the panel and can pick a model and a mode.
 
 Settings live behind commands, not manual env editing:
 

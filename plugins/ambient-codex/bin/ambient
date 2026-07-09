@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.7.3"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.8.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -1109,28 +1109,29 @@ def build_banner():
     else:
         status = (f"status: no API key yet — run: {LAUNCHER_NAME} setup   "
                   f"(keys at {KEY_CONSOLE_URL})")
-    return f"""ambient {__version__} — a second pair of eyes from the Ambient decentralized
-inference network (ambient.xyz): open-source models, paid per token.
+    return f"""ambient-codex {__version__} — open frontier models in your terminal,
+from the Ambient decentralized inference network (ambient.xyz): paid per token,
+~10-40x cheaper than the closed frontier models.
 
 Get started
   ambient-codex setup      store + verify your API key (one time)
-  ambient models           see which models are serving right now
-  ambient use              pick your sticky default model
+  ambient-codex models     see which models are serving right now
+  ambient-codex use        pick your sticky default model
 
 Do work
   ambient-codex ask "question"   one-shot answer; big docs: cat doc.txt | ambient-codex ask "sum" -
-  ambient audit FILE...    adversarial code review; diffs: git diff | ambient audit
+  ambient-codex audit FILE...    adversarial code review; diffs: git diff | ambient-codex audit
   ambient-codex code "task"      generate code (-f app.py attaches context)
   ambient-codex build "task"     plan + generate a whole set of files (never executes)
-  ambient agent            interactive agentic terminal on Ambient (opencode)
+  ambient-codex agent      interactive agentic terminal on Ambient (opencode)
 
 Keep it healthy
-  ambient doctor           pinpoint key / funds / model-availability / network trouble
-  ambient usage            local spend summary (--days N)
-  ambient mode on|off|takeover   delegate / full-takeover mode for Codex
+  ambient-codex doctor     pinpoint key / funds / model-availability / network trouble
+  ambient-codex usage      local spend summary (--days N)
+  ambient-codex mode on|off|takeover   delegate / full-takeover mode for Codex
 
 {status}
-more:   ambient -h · ambient-codex audit -h · use the $ambient skill inside Codex"""
+more:   ambient-codex -h · use the $ambient skill inside Codex"""
 
 
 def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
@@ -1147,8 +1148,8 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
     print(f"Key verified — {probe_detail}.")
     print(f"Stored in: {where}")
     print(net)
-    print("\nWelcome to Ambient — a second pair of eyes, ~10-40x cheaper than "
-          "frontier models.\n")
+    print("\nWelcome to Ambient — open frontier models from your terminal, "
+          "~10-40x cheaper than the closed ones.\n")
     if funds_issue:
         print(f"  NOTE: your account is OUT OF FUNDS — completions will fail until\n"
               f"  you top up at {KEY_CONSOLE_URL}, then run: ambient-codex doctor\n")
@@ -12481,6 +12482,76 @@ def _configure_link(sub):
                    help="remove the launcher symlink")
 
 
+def _configure_uninstall(sub):
+    p = sub.add_parser(
+        "uninstall",
+        help="remove THIS install's key, launcher, and (with --purge) all its state")
+    p.add_argument("--purge", action="store_true",
+                   help=f"also delete the whole state dir ({STATE_DIR})")
+    p.add_argument("--yes", action="store_true",
+                   help="skip the confirmation prompt")
+
+
+def cmd_uninstall(args):
+    """Cleanly offboard Ambient Codex. Touches ONLY this install's own resources —
+    the ambient-codex keychain item, ~/.config/ambient-codex, and the ambient-codex
+    launcher — never another Ambient install's key, state, launcher, or git hooks.
+
+    Removing the plugin itself is a Codex action, so we print the command rather than
+    run it."""
+    purge = getattr(args, "purge", False)
+    if not getattr(args, "yes", False) and sys.stdin.isatty():
+        print("This removes Ambient Codex's API key and PATH launcher"
+              + (f", and deletes {STATE_DIR}" if purge else "")
+              + ".")
+        print("It does NOT touch any other Ambient install.")
+        try:
+            if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("Cancelled.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            return
+
+    # 1. Key: keychain item (ambient-codex only) + the env-file entry.
+    kc_ok = keychain_delete()
+    save_config_values({"AMBIENT_API_KEY": None, "AMBIENT_KEY_BACKEND": None})
+    if kc_ok and not keychain_read():
+        print("• API key removed (keychain + env file).")
+    else:
+        print(f"• Could not fully remove the key from the OS keychain (locked?). "
+              f"Remove it manually: Keychain Access → search '{KEYCHAIN_SERVICE}'.",
+              file=sys.stderr)
+
+    # 2. PATH launcher: cmd_link already refuses anything not ours.
+    try:
+        cmd_link(argparse.Namespace(remove=True, dir=None))
+    except SystemExit as exc:
+        print(f"• Launcher not removed: {exc}", file=sys.stderr)
+
+    # 3. State dir — ONLY with --purge, and ONLY if it is truly ours.
+    if purge:
+        root = os.path.realpath(STATE_DIR)
+        if foreign_root(root) is not None:
+            print(f"• Refusing to delete {root} — it is inside another install's tree.",
+                  file=sys.stderr)
+        elif os.path.isdir(root):
+            import shutil
+            shutil.rmtree(root, ignore_errors=True)
+            print(f"• Deleted all state: {root}")
+        else:
+            print(f"• No state dir to delete ({root}).")
+    else:
+        print(f"• Kept your settings and usage history in {STATE_DIR} "
+              "(run with --purge to delete them).")
+
+    # 4. The plugin itself is Codex's to remove.
+    print("\nTo remove the plugin from Codex, run:")
+    print("  codex plugin remove ambient-codex@ambient-codex")
+    print("Git audit hooks, if you installed any, stay until you run "
+          f"`{LAUNCHER_NAME} audit --uninstall-hook <hook>` in each repo.")
+
+
 def _configure_cache(sub):
     p = sub.add_parser(
         "cache", help="inspect or clear the local chunk cache"
@@ -12887,6 +12958,8 @@ COMMANDS = (
      "configure": _configure_setup, "handler": "cmd_setup"},
     {"name": "link", "needs_key": False,
      "configure": _configure_link, "handler": "cmd_link"},
+    {"name": "uninstall", "needs_key": False,
+     "configure": _configure_uninstall, "handler": "cmd_uninstall"},
     {"name": "cache", "needs_key": False,
      "configure": _configure_cache, "handler": "cmd_cache"},
     {"name": "trust-url", "needs_key": False,
