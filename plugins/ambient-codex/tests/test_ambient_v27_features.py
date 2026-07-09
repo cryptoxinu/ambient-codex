@@ -96,7 +96,7 @@ class TakeoverModeTests(_EnvIsolated):
                 low = out.lower()
                 self.assertIn("takeover", low)
                 # The exit path must always be visible when turning it on.
-                self.assertIn("ambient control mode off", low)
+                self.assertIn("ambient-codex control mode off", low)
 
     def test_off_clears_takeover(self):
         with tempfile.TemporaryDirectory() as td:
@@ -416,7 +416,7 @@ class HookTakeoverContractTests(unittest.TestCase):
         r = self._run("AMBIENT_DELEGATE=takeover\n")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("TAKEOVER", r.stdout)
-        self.assertIn("ambient control mode off", r.stdout)
+        self.assertIn("ambient-codex control mode off", r.stdout)
 
     def test_whitespace_and_duplicate_config_detected(self):
         # Codex A: the hook's sed must trim + take last-wins like the CLI parser,
@@ -439,7 +439,7 @@ class HookTakeoverContractTests(unittest.TestCase):
         r = self._run("AMBIENT_DELEGATE=takeover\n")
         banner = [ln for ln in r.stdout.splitlines() if "Ambient Takeover ON" in ln]
         self.assertEqual(len(banner), 1)
-        self.assertIn("ambient control mode off to stop", banner[0])
+        self.assertIn("ambient-codex control mode off to stop", banner[0])
 
 
 if __name__ == "__main__":

@@ -118,8 +118,8 @@ class ControlSnapshotTests(ControlCase):
         self.assertEqual(data["key"], {"configured": True, "backend": "keychain"})
         self.assertEqual(data["defaults"]["chat"], "z-ai/glm-5.2")
         self.assertEqual(data["models"]["serving_count"], 1)
-        self.assertIn("ambient control mode on", data["actions"])
-        self.assertIn("ambient control key setup", data["actions"])
+        self.assertIn("ambient-codex control mode on", data["actions"])
+        self.assertIn("ambient-codex control key setup", data["actions"])
 
     def test_text_panel_exposes_controls_without_network_requirement(self):
         amb.save_config_values({"AMBIENT_DELEGATE": "off"})
@@ -128,7 +128,7 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("Ambient Codex Control", out)
         self.assertIn("API key", out)
         self.assertIn("Mode", out)
-        self.assertIn("ambient control model MODEL --chat", out)
+        self.assertIn("ambient-codex control model MODEL --chat", out)
 
 
 class ControlWriteTests(ControlCase):
@@ -156,8 +156,8 @@ class ControlWriteTests(ControlCase):
     def test_key_setup_in_non_tty_gives_instructions_not_prompt(self):
         with patched(amb.sys, stdin=NotATTY(), stdout=io.StringIO(), stderr=io.StringIO()):
             out, _ = self.run_control("key", "setup")
-        self.assertIn("ambient control key setup", out)
-        self.assertIn("ambient setup", out)
+        self.assertIn("ambient-codex control key setup", out)
+        self.assertIn("ambient-codex setup", out)
 
     def test_key_remove_scrubs_file_and_secret_store(self):
         amb.save_config_values({

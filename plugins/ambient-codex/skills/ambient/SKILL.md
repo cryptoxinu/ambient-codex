@@ -26,8 +26,9 @@ binary directly, for example `"${PLUGIN_ROOT}/bin/ambient"` when Codex has the
 plugin root substitution available. For small bounded actions and state changes,
 use the Ambient MCP server instead of shelling out.
 
-Credentials live in the OS keychain when available, or in `~/.config/ambient/env`
-with `0600` permissions. Never print, paste, echo, commit, or construct a command
+Credentials live in the OS keychain item `ambient-codex` when available, or in
+`~/.config/ambient-codex/env` with `0600` permissions. Ambient Codex never reads or
+writes another Ambient install's state. Never print, paste, echo, commit, or construct a command
 containing an Ambient API key.
 
 ## Native Codex Invocation
@@ -132,7 +133,7 @@ Delegate mode persists across sessions until bundled `control mode off`.
 When bundled `control` reports `mode=takeover`, the user wants Ambient tokens used
 for as much substantive work as is safe. Begin each substantive reply with:
 
-`Ambient Takeover ON - running substantive work through Ambient; use ambient control mode off to stop.`
+`Ambient Takeover ON - running substantive work through Ambient; use ambient-codex control mode off to stop.`
 
 Route work this way:
 

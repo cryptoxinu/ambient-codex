@@ -159,7 +159,12 @@ class TestPickModelTool(unittest.TestCase):
         self.assertEqual(list(captured["schema"]["properties"]), ["model"])
         self.assertEqual(captured["schema"]["required"], ["model"])
 
-    def test_schema_is_a_titled_single_select_of_serving_models(self):
+    def test_schema_uses_the_restricted_enum_shape(self):
+        """`enum` + `enumNames` is the MCP restricted-subset enum shape.
+
+        `oneOf: [{const, title}]` also renders in Codex but is a Codex extension a
+        stricter client may reject, and both produce the same picker.
+        """
         captured = {}
 
         def fake_elicit(message, schema, *a, **k):
@@ -171,9 +176,10 @@ class TestPickModelTool(unittest.TestCase):
             self.mcp.pick_model_tool({})
         model = captured["schema"]["properties"]["model"]
         self.assertEqual(model["type"], "string")
-        self.assertEqual([o["const"] for o in model["oneOf"]],
-                         ["z-ai/glm-5.2", "deepseek/deepseek-v3"])
-        self.assertTrue(all(o["title"] for o in model["oneOf"]))
+        self.assertNotIn("oneOf", model)
+        self.assertEqual(model["enum"], ["z-ai/glm-5.2", "deepseek/deepseek-v3"])
+        self.assertEqual(len(model["enumNames"]), len(model["enum"]))
+        self.assertTrue(all(model["enumNames"]))
         self.assertIn("model", captured["schema"]["required"])
 
     def test_cancel_changes_nothing(self):

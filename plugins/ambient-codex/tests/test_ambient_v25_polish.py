@@ -30,7 +30,7 @@ class TestV25Polish(unittest.TestCase):
         body = json.dumps({"error": {"message": "Unknown model: 'foo/bar'"}})
         cat, diag = amb.classify_error(400, body, "")
         self.assertEqual(cat, "model")
-        self.assertIn("ambient models", diag)
+        self.assertIn("ambient-codex models", diag)
 
     def test_other_400_still_unknown(self):
         cat, _ = amb.classify_error(

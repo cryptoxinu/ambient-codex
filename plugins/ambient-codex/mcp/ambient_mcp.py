@@ -60,6 +60,7 @@ class Session:
         self.stdin = None
         self.stdout = None
         self.reader: Optional["MessageReader"] = None
+        self.elicit_in_flight: bool = False
         self._elicit_seq = 0
 
     def next_elicit_id(self) -> str:
@@ -397,6 +398,9 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "`ambient_set_model` with their answer:\n" + listing)
 
     lane_label = {"both": "chat + code", "chat": "chat", "code": "code"}[lane]
+    # `enum` + `enumNames` is the enum shape in the MCP restricted schema subset.
+    # Codex also accepts a richer `oneOf: [{const, title}]`, but that is a Codex
+    # extension a stricter client may reject, and both render the same picker.
     schema = {
         "type": "object",
         "properties": {
@@ -404,9 +408,8 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "string",
                 "title": "Ambient model",
                 "description": "Serving right now on the Ambient network",
-                "oneOf": [
-                    {"const": str(m["id"]), "title": _model_label(m)} for m in serving
-                ],
+                "enum": [str(m["id"]) for m in serving],
+                "enumNames": [_model_label(m) for m in serving],
             },
         },
         "required": ["model"],
@@ -902,7 +905,7 @@ def session_instructions() -> str:
             "\n\nAmbient TAKEOVER is ON. Route every substantive turn through Ambient "
             "(ask/code/build/audit) so the user spends Ambient credit rather than Codex "
             "tokens, and open each substantive reply with a one-line takeover banner. "
-            "`ambient control mode off` stops it."
+            "`ambient-codex control mode off` stops it."
         )
     if mode == "on":
         return SERVER_INSTRUCTIONS + (
@@ -970,6 +973,11 @@ def elicit(message: str, requested_schema: Dict[str, Any],
     """
     if not SESSION.supports_elicitation() or SESSION.reader is None:
         return None
+    if SESSION.elicit_in_flight:
+        # A picker is already open. A nested elicit() would read from the same
+        # stream and drop the outer picker's reply as an unmatched id, hanging the
+        # first tool call until it timed out. Let the caller fall back instead.
+        return None
     request_id = SESSION.next_elicit_id()
     request = {
         "jsonrpc": "2.0",
@@ -978,32 +986,35 @@ def elicit(message: str, requested_schema: Dict[str, Any],
         "params": {"message": message, "requestedSchema": requested_schema},
     }
     trace_event("elicit_request", request)
-    write_message(SESSION.stdout, request, framing=SESSION.framing)
-
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            trace_event("elicit_timeout", {"id": request_id})
-            return None
-        try:
-            framed = SESSION.reader.get(timeout=remaining)
-        except queue.Empty:
-            trace_event("elicit_timeout", {"id": request_id})
-            return None
-        if framed is None:  # client hung up mid-picker
-            return None
-        payload = framed["payload"]
-        trace_event("request", payload)
-        if is_response(payload):
-            if payload.get("id") != request_id:
-                continue  # a late reply to an abandoned picker; drop it
-            result = payload.get("result")
-            # An `error` reply means no picker was ever drawn for the human.
-            return result if isinstance(result, dict) else None
-        response = handle_payload(payload)
-        if response is not None:
-            write_message(SESSION.stdout, response, framing=str(framed["framing"]))
+    SESSION.elicit_in_flight = True
+    try:
+        write_message(SESSION.stdout, request, framing=SESSION.framing)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                trace_event("elicit_timeout", {"id": request_id})
+                return None
+            try:
+                framed = SESSION.reader.get(timeout=remaining)
+            except queue.Empty:
+                trace_event("elicit_timeout", {"id": request_id})
+                return None
+            if framed is None:  # client hung up mid-picker
+                return None
+            payload = framed["payload"]
+            trace_event("request", payload)
+            if is_response(payload):
+                if payload.get("id") != request_id:
+                    continue  # a late reply to an abandoned picker; drop it
+                result = payload.get("result")
+                # An `error` reply means no picker was ever drawn for the human.
+                return result if isinstance(result, dict) else None
+            response = handle_payload(payload)
+            if response is not None:
+                write_message(SESSION.stdout, response, framing=str(framed["framing"]))
+    finally:
+        SESSION.elicit_in_flight = False
 
 
 def elicitation_choice(result: Optional[Dict[str, Any]], field: str) -> Optional[str]:

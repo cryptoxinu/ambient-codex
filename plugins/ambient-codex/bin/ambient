@@ -8,7 +8,7 @@ Commands:
   use       [model]    Pick the sticky default model (interactive menu if no arg)
   curate    [verb]     Choose which models the menus surface (hide/show/only/note)
   ask       [prompt]   One-shot completion (prompt arg, stdin, or both via '-':
-                       cat doc.txt | ambient ask "summarize" -)
+                       cat doc.txt | ambient-codex ask "summarize" -)
   audit     [paths…]   Second-opinion code audit (files as args, diff via
                        stdin, or --repo [DIR] for a whole repository —
                        git-aware walk, upfront file/cost plan)
@@ -75,6 +75,7 @@ import os
 import random
 import re
 import select
+import shlex
 import shutil
 import queue
 import stat
@@ -118,7 +119,7 @@ STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
 # Distinct from the `ambient.xyz` item the Claude install owns: a shared item would
-# mean `ambient control key remove` in Codex deletes the other install's key too.
+# mean `ambient-codex control key remove` in Codex deletes the other install's key too.
 KEYCHAIN_SERVICE = "ambient-codex"
 KEYCHAIN_ACCOUNT = "api-key"
 LEGACY_KEYCHAIN_SERVICE = "ambient.xyz"  # read-only, opt-in import source
@@ -371,7 +372,7 @@ def read_config_file():
         # shield.
         print(
             f"ambient: {CONFIG_PATH} is corrupt (not valid UTF-8) — ignoring it. "
-            "Re-run: ambient setup",
+            f"Re-run: {LAUNCHER_NAME} setup",
             file=sys.stderr,
         )
         return {}
@@ -486,13 +487,62 @@ def resolve_key_and_backend(conf):
     return None, None
 
 
+def keychain_has(service):
+    """True when the OS secret store holds an item, WITHOUT reading its value.
+
+    `security find-generic-password` without `-w` prints attributes only, and
+    `secret-tool search` reports matches without emitting the secret. Probing
+    presence this way means declining the import never pulls another install's
+    credential into this process.
+    """
+    b = secret_backend()
+    try:
+        if b == "keychain":
+            proc = subprocess.run(
+                ["security", "find-generic-password", "-s", service,
+                 "-a", KEYCHAIN_ACCOUNT],
+                capture_output=True, text=True, timeout=10)
+        elif b == "secret-tool":
+            proc = subprocess.run(
+                ["secret-tool", "search", "service", service,
+                 "account", KEYCHAIN_ACCOUNT],
+                capture_output=True, text=True, timeout=10)
+        else:
+            return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def _legacy_env_has_key():
+    """(has_key, path) for another install's env file. Never returns the secret."""
+    legacy_env = os.path.join(LEGACY_SHARED_DIR, "env")
+    try:
+        with open(legacy_env, encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped.startswith("AMBIENT_API_KEY="):
+                    if stripped.split("=", 1)[1].strip().strip("'\""):
+                        return True, legacy_env
+    except OSError:
+        pass
+    return False, legacy_env
+
+
+def find_foreign_key_source():
+    """Where another Ambient install keeps a key, or None. Never reads the secret."""
+    if keychain_has(LEGACY_KEYCHAIN_SERVICE):
+        return f"OS keychain `{LEGACY_KEYCHAIN_SERVICE}`"
+    has_key, legacy_env = _legacy_env_has_key()
+    return legacy_env if has_key else None
+
+
 def read_foreign_key():
     """Return another Ambient install's key, or (None, None). READ-ONLY.
 
-    Ambient Codex keeps its own credential so the two installs stay independent.
-    That would otherwise force the user to paste the same key twice, so `setup`
-    offers a one-time import. This never writes to, deletes from, or migrates the
-    source; it only reads it after the user has explicitly said yes.
+    Only ever called AFTER the user opts in; `find_foreign_key_source()` is what
+    detects a key without reading it, so declining leaves the secret untouched.
+    This never writes to, deletes from, or migrates the source.
     """
     kc = keychain_read(LEGACY_KEYCHAIN_SERVICE)
     if kc:
@@ -528,8 +578,9 @@ def offer_foreign_key_import():
         interactive = False
     if not interactive:
         return None
-    key, source = read_foreign_key()
-    if not key:
+    # Detect WITHOUT reading: a declined prompt must not have loaded the secret.
+    source = find_foreign_key_source()
+    if not source:
         return None
     print(f"Found an existing Ambient API key from another install ({source}).",
           file=sys.stderr)
@@ -541,7 +592,10 @@ def offer_foreign_key_import():
     except (EOFError, KeyboardInterrupt):
         print(file=sys.stderr)
         return None
-    return key if answer in ("y", "yes") else None
+    if answer not in ("y", "yes"):
+        return None
+    key, _ = read_foreign_key()
+    return key or None
 
 
 def _is_local_host(host):
@@ -601,7 +655,7 @@ def resolve_api_url(conf):
         None, _argv_command(), "config",
         f"refusing to send your API key to non-Ambient endpoint "
         f"'{host or api_url}'. If this is deliberate (a self-hosted gateway), "
-        "record the trust decision first: ambient trust-url <url>"
+        "record the trust decision first: ambient-codex trust-url <url>"
     )
 
 
@@ -633,7 +687,7 @@ def cmd_trust_url(args):
     if typed != host:
         sys.exit("ambient: hostname mismatch — nothing saved")
     save_config_values({"AMBIENT_TRUSTED_URL": url, "AMBIENT_API_URL": url})
-    print(f"Trusted endpoint saved: {url}\nRevert any time: ambient trust-url --reset",
+    print(f"Trusted endpoint saved: {url}\nRevert any time: ambient-codex trust-url --reset",
           file=sys.stderr)
 
 
@@ -680,9 +734,9 @@ def load_config():
             return api_key, resolve_api_url(conf), conf
     print(
         "ambient [setup]: no API key configured.\n"
-        "  Interactive:      ambient setup\n"
+        f"  Interactive:      {LAUNCHER_NAME} setup\n"
         "  Non-interactive:  export AMBIENT_API_KEY=<key>   "
-        "(or: ambient setup --key-stdin)\n"
+        f"(or: {LAUNCHER_NAME} setup --key-stdin)\n"
         f"  Get a key:        {KEY_CONSOLE_URL}  →  API Keys",
         file=sys.stderr,
     )
@@ -1037,7 +1091,7 @@ def curation(conf):
                         notes[k] = v  # "" = the user cleared a default note
         except json.JSONDecodeError:
             print("ambient: AMBIENT_MODEL_NOTES in config is malformed — "
-                  "ignoring it (reset: ambient curate reset)", file=sys.stderr)
+                  "ignoring it (reset: ambient-codex curate reset)", file=sys.stderr)
     return allow, hide, show, notes
 
 
@@ -1063,7 +1117,7 @@ def note_if_hidden(model_id, conf, source="-m"):
         print(
             f"ambient: note — '{model_id}' is hidden by your model curation; "
             f"using it anyway (explicit {source} always wins). Surface it "
-            f"with: ambient curate show {model_id}",
+            f"with: ambient-codex curate show {model_id}",
             file=sys.stderr,
         )
 
@@ -1081,21 +1135,21 @@ def build_banner():
         status = (f"status: key configured ({backend}) · {_mode_str} · "
                   f"model {resolve_model(ns, conf, 'chat')}")
     else:
-        status = (f"status: no API key yet — run: ambient setup   "
+        status = (f"status: no API key yet — run: {LAUNCHER_NAME} setup   "
                   f"(keys at {KEY_CONSOLE_URL})")
     return f"""ambient {__version__} — a second pair of eyes from the Ambient decentralized
 inference network (ambient.xyz): open-source models, paid per token.
 
 Get started
-  ambient setup            store + verify your API key (one time)
+  ambient-codex setup      store + verify your API key (one time)
   ambient models           see which models are serving right now
   ambient use              pick your sticky default model
 
 Do work
-  ambient ask "question"   one-shot answer; big docs: cat doc.txt | ambient ask "sum" -
+  ambient-codex ask "question"   one-shot answer; big docs: cat doc.txt | ambient-codex ask "sum" -
   ambient audit FILE...    adversarial code review; diffs: git diff | ambient audit
-  ambient code "task"      generate code (-f app.py attaches context)
-  ambient build "task"     plan + generate a whole set of files (never executes)
+  ambient-codex code "task"      generate code (-f app.py attaches context)
+  ambient-codex build "task"     plan + generate a whole set of files (never executes)
   ambient agent            interactive agentic terminal on Ambient (opencode)
 
 Keep it healthy
@@ -1104,7 +1158,7 @@ Keep it healthy
   ambient mode on|off|takeover   delegate / full-takeover mode for Codex
 
 {status}
-more:   ambient -h · ambient audit -h · use the $ambient skill inside Codex"""
+more:   ambient -h · ambient-codex audit -h · use the $ambient skill inside Codex"""
 
 
 def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
@@ -1114,10 +1168,10 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
     ns = argparse.Namespace(model=None)
     chat_model = resolve_model(ns, conf, "chat")
     net = (f"Network:   {len(models)} models, {ready} serving right now "
-           "(capacity scales with demand — `ambient models`)")
+           "(capacity scales with demand — `ambient-codex models`)")
     if not ready:
         net += ("\n           models spin up as demand arrives — your key is "
-                "verified; check `ambient models` in a few minutes")
+                "verified; check `ambient-codex models` in a few minutes")
     print(f"Key verified — {probe_detail}.")
     print(f"Stored in: {where}")
     print(net)
@@ -1125,29 +1179,29 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
           "frontier models.\n")
     if funds_issue:
         print(f"  NOTE: your account is OUT OF FUNDS — completions will fail until\n"
-              f"  you top up at {KEY_CONSOLE_URL}, then run: ambient doctor\n")
+              f"  you top up at {KEY_CONSOLE_URL}, then run: ambient-codex doctor\n")
     else:
         print("  Try it now (30 seconds):\n"
-              '    ambient ask "Reply with exactly: AMBIENT-OK"\n')
+              '    ambient-codex ask "Reply with exactly: AMBIENT-OK"\n')
     print("""  Everyday:
     git diff | ambient audit              second-opinion review of your changes
     ambient audit src/*.py --focus security   audit files (any size — auto-split)
-    ambient ask "question"                one-shot Q&A (pipe docs: cat doc | ambient ask "…" -)
-    ambient code "write a ..."            code generation
-    ambient build "make a ..." --dir out  plan + generate a set of files (never executes)
+    ambient-codex ask "question"                one-shot Q&A (pipe docs: cat doc | ambient-codex ask "…" -)
+    ambient-codex code "write a ..."            code generation
+    ambient-codex build "make a ..." --dir out  plan + generate a set of files (never executes)
 
   Manage:
-    ambient models         what's serving (READY) right now
+    ambient-codex models         what's serving (READY) right now
     ambient use            pick your sticky default model
     ambient usage          local spend estimate
     ambient doctor         one-command diagnosis when anything fails
     ambient link           put `ambient` on your PATH
-    ambient setup --force  rotate/replace your key · --remove deletes it
+    ambient-codex setup --force  rotate/replace your key · --remove deletes it
 
-  In Codex: use the $ambient skill or say "use Ambient" · ambient mode on = delegate mode
+  In Codex: use the $ambient skill or say "use Ambient" · ambient-codex mode on = delegate mode
             · ambient mode takeover = Ambient handles substantive work (ambient mode off)
 """)
-    print(f"Default model: {chat_model} — change any time: ambient use")
+    print(f"Default model: {chat_model} — change any time: ambient-codex use")
 
 
 def key_paste_problem(key):
@@ -2768,10 +2822,10 @@ def resolve_auto_model(spec, catalog, conf, input_chars=0, args=None,
         if ready:  # READY models exist but curation hides every one of them
             _bail(f"{label} {spec}: every READY model is hidden by your curation "
                   f"(READY: {', '.join(ready)}) — surface one with "
-                  "`ambient curate show <id>` or pick it explicitly with -m.")
+                  "`ambient-codex curate show <id>` or pick it explicitly with -m.")
         _bail(f"{label} {spec}: no model is serving at this moment — the "
               "network scales up with demand; try again shortly, or check: "
-              "ambient models")
+              "ambient-codex models")
     if variant == "largest":
         ranked = sorted(
             candidates,
@@ -2870,7 +2924,7 @@ def _validate_reduce_id(chosen, catalog, args, source):
     close = difflib.get_close_matches(chosen, ids, n=3, cutoff=0.4)
     hint = f" — did you mean: {', '.join(close)}?" if close else ""
     msg = (f"unknown reduce model '{chosen}' (from {source}){hint} "
-           "— nothing was run or billed. See: ambient models")
+           "— nothing was run or billed. See: ambient-codex models")
     _fail_exit(args, _argv_command(), "model", msg,
                prose=f"ambient [model]: {msg}")
 
@@ -3169,13 +3223,13 @@ def classify_error(status, body, api_key):
         return "key", (
             f"Ambient rejected your API key (HTTP {status}). The key may be revoked, "
             "expired, or mistyped — this is NOT an Ambient outage. "
-            "Fix: ambient setup --force"
+            f"Fix: {LAUNCHER_NAME} setup --force"
         )
     if status == 429 and "no workers" in lower:
         return "model", (
             "That model isn't serving right now — Ambient spins models up and "
             "down with demand. Your key and account are fine — pick a model "
-            "that's serving (ambient models) or retry shortly."
+            "that's serving (ambient-codex models) or retry shortly."
         )
     if status == 429:
         return "rate", (f"The network asked us to slow down ({msg}) — "
@@ -3202,7 +3256,7 @@ def classify_error(status, body, api_key):
             # and point at the catalog so the fix is one command away.
             return "model", (
                 f"'{msg}'. That model id isn't in the catalog — check the "
-                "spelling or run `ambient models` to see what's available."
+                "spelling or run `ambient-codex models` to see what's available."
             )
     return "unknown", f"HTTP {status}: {msg}"
 
@@ -4341,7 +4395,7 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
                 "stall",
                 f"'{model}' produced almost no output before stalling ({err}) "
                 "— retry shortly, or pick another serving model: "
-                "ambient models",
+                "ambient-codex models",
             )
         if status != 200:
             category, diagnosis = classify_error(status, body, api_key)
@@ -5434,7 +5488,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
         if missed_ranges:
             reasons.append("UNREVIEWED: " + "; ".join(dict.fromkeys(missed_ranges)))
         if partial:
-            print(f"[ambient map-reduce: PARTIAL — {'; '.join(reasons)}]",
+            print(f"[ambient-codex map-reduce: PARTIAL — {'; '.join(reasons)}]",
                   file=sys.stderr)
         return final, partial, "; ".join(reasons)
     synth_failed = False
@@ -5487,7 +5541,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
         reasons.append("UNREVIEWED: " + "; ".join(dict.fromkeys(missed_ranges)))
     if partial:
         print(
-            f"[ambient map-reduce: PARTIAL — {'; '.join(reasons)}]",
+            f"[ambient-codex map-reduce: PARTIAL — {'; '.join(reasons)}]",
             file=sys.stderr,
         )
     return final, partial, "; ".join(reasons)
@@ -5717,7 +5771,7 @@ def _model_badges(m):
 
 
 def format_model_line(m, chat_default, code_default, note=None, hidden=False):
-    # Same vocabulary as `ambient models`' section headers: a model is either
+    # Same vocabulary as `ambient-codex models`' section headers: a model is either
     # serving now (READY) or spins up on demand — never a bare mystery glyph.
     # Both labels render 9 columns wide so every row stays aligned.
     flag = (paint("READY", "32") + "    " if _as_bool(m.get("is_ready"))
@@ -5790,7 +5844,7 @@ def cmd_models(args, api_key, api_url, conf):
     show_all = getattr(args, "all", False)
     if hidden_ids and len(hidden_ids) == len(models) and not show_all:
         print("ambient: your curation hides every model — showing all "
-              "(fix: ambient curate reset)", file=sys.stderr)
+              "(fix: ambient-codex curate reset)", file=sys.stderr)
         show_all = True
     visible = [m for m in models if show_all or m["id"] not in hidden_ids]
     if getattr(args, "json", False):
@@ -5827,19 +5881,19 @@ def cmd_models(args, api_key, api_url, conf):
                                     hidden=m["id"] in hidden_ids))
     print(
         f"\nDefaults: chat/audit={chat_default}  code={code_default}"
-        "   (change with: ambient use)   badges: reason vision tools json",
+        "   (change with: ambient-codex use)   badges: reason vision tools json",
         file=sys.stderr,
     )
     if hidden_ids and not show_all:
         print(
             f"+ {len(hidden_ids)} hidden by your curation — see everything: "
-            "ambient models --all",
+            f"{LAUNCHER_NAME} models --all",
             file=sys.stderr,
         )
     if not configured:
         print(
             f"No API key configured — browsing only. Get one at "
-            f"{KEY_CONSOLE_URL}, then run: ambient setup",
+            f"{KEY_CONSOLE_URL}, then run: {LAUNCHER_NAME} setup",
             file=sys.stderr,
         )
 
@@ -5853,7 +5907,7 @@ def cmd_use(args, api_key, api_url, conf):
     chosen = args.model_id
     if not chosen:
         if not sys.stdin.isatty():
-            sys.exit("ambient: no TTY for interactive picker; use: ambient use <model-id>")
+            sys.exit("ambient: no TTY for interactive picker; use: ambient-codex use <model-id>")
         chat_default = resolve_model(argparse.Namespace(model=None), conf, "chat")
         code_default = resolve_model(argparse.Namespace(model=None), conf, "code")
         pick_from = [m for m in models
@@ -5868,7 +5922,7 @@ def cmd_use(args, api_key, api_url, conf):
             print(f"  {i:2}. {format_model_line(m, chat_default, code_default, note=notes.get(m['id']))}")
         if n_hidden:
             print(f"\n  (+{n_hidden} hidden by curation — "
-                  "`ambient use --all` picks from everything)")
+                  "`ambient-codex use --all` picks from everything)")
         try:
             raw = input("\nModel number: ").strip()
             idx = int(raw)
@@ -5899,18 +5953,18 @@ def cmd_use(args, api_key, api_url, conf):
                                                      n=3, cutoff=0.4)
             hint = f" Did you mean: {', '.join(sugg[:3])}?" if sugg else ""
             sys.exit(f"ambient: unknown model '{chosen}'.{hint} "
-                     "Run 'ambient models' for the list.")
+                     "Run 'ambient-codex models' for the list.")
     if not is_auto_model(chosen) and is_hidden(chosen, allow, hide, show):
         print(
             f"note: '{chosen}' is hidden from the model menu — saving anyway "
-            f"(surface it with: ambient curate show {chosen}).",
+            f"(surface it with: ambient-codex curate show {chosen}).",
             file=sys.stderr,
         )
     picked = next((m for m in models if m["id"] == chosen), None)
     if picked and not _as_bool(picked.get("is_ready")):
         print(
             f"note: '{chosen}' isn't serving at this moment — saving anyway; "
-            "Ambient brings models up as demand arrives (`ambient models` "
+            "Ambient brings models up as demand arrives (`ambient-codex models` "
             "shows what's serving now).",
             file=sys.stderr,
         )
@@ -5987,7 +6041,7 @@ def cmd_curate(args):
     # editing curation concurrently can't lose each other's entries.
     if verb == "note":
         if not ids:
-            usage_exit('usage: ambient curate note <model-id> ["text"]')
+            usage_exit('usage: ambient-codex curate note <model-id> ["text"]')
         target, text = ids[0], " ".join(ids[1:]).replace("\n", " ")[:120]
 
         def _merge_note(fresh):
@@ -6004,7 +6058,7 @@ def cmd_curate(args):
         print(f"note for {target}: {text or '(cleared)'}")
         return
     if not ids:
-        usage_exit(f'usage: ambient curate {verb} <model-id-or-glob> ...')
+        usage_exit(f'usage: ambient-codex curate {verb} <model-id-or-glob> ...')
     ns = argparse.Namespace(model=None)
     defaults = {resolve_model(ns, conf, "chat"), resolve_model(ns, conf, "code")}
     if verb == "hide":
@@ -6024,7 +6078,7 @@ def cmd_curate(args):
         for e in ids:
             if e in defaults:
                 print(f"note: '{e}' is a current lane default — it keeps "
-                      "working; pick a new default with: ambient use",
+                      "working; pick a new default with: ambient-codex use",
                       file=sys.stderr)
         print(f"hidden: {', '.join(ids)}")
     elif verb == "show":
@@ -6052,13 +6106,13 @@ def cmd_curate(args):
                             "AMBIENT_MODELS_SHOW": None})
         print(f"menu restricted to: {', '.join(ids)} "
               "(new catalog models stay hidden until added — "
-              "ambient curate reset undoes this)")
+              f"{LAUNCHER_NAME} curate reset undoes this)")
     _print_status()
 
 
 def cmd_ask(args, api_key, api_url, conf):
     # '-' in the prompt args means "also read stdin" (e.g. cat big.txt |
-    # ambient ask "summarize" -). Otherwise stdin is only read when no prompt
+    # ambient-codex ask "summarize" -). Otherwise stdin is only read when no prompt
     # was given — a wrapper holding stdin open (backgrounded shells, cron)
     # must never block us.
     words = [w for w in args.prompt if w != "-"]
@@ -6130,7 +6184,7 @@ def cmd_ask(args, api_key, api_url, conf):
         render_result(final, partial, reason, args, api_key)
 
     if not doc and len(question) > single:
-        # No-refusal invariant: a giant argv prompt (ambient ask "$(cat big.md)")
+        # No-refusal invariant: a giant argv prompt (ambient-codex ask "$(cat big.md)")
         # flows into the same split machinery as piped input instead of dying
         # on a context 400 after billing the attempt.
         doc, question = question, (
@@ -6724,7 +6778,7 @@ def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
         print(redact(f"Agreement: {level} — {note}", api_key))
     else:
         print("No usable answer from any model — this is NOT a clean result. "
-              "Retry or check `ambient models`.")
+              "Retry or check `ambient-codex models`.")
         sys.exit(EXIT_PARTIAL)
     if partial and not spec.allow_partial:
         sys.exit(EXIT_PARTIAL)
@@ -6738,7 +6792,7 @@ def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
 # up-front batch cost gate. map only READS items and PRINTS results — it
 # never writes files and never executes model output.
 
-MAP_OVERSIZE_MSG = ("input too large for map — use ambient audit for large "
+MAP_OVERSIZE_MSG = ("input too large for map — use ambient-codex audit for large "
                     "files (map is one single-shot call per item)")
 
 
@@ -6767,7 +6821,7 @@ def _read_map_item(path):
         # somehow exceeded the ceiling, a half-read answered authoritatively
         # is worse than a per-item refusal.
         return None, (f"file exceeds the {ABS_MAX_CHARS:,}-char ceiling — "
-                      "too large for map; run ambient audit on it instead")
+                      "too large for map; run ambient-codex audit on it instead")
     text = raw.decode("utf-8", errors="replace")
     if not text.strip():
         return None, "empty file"
@@ -6868,7 +6922,7 @@ def cmd_map(args, api_key, api_url, conf):
     prompt = (args.prompt or "").strip()
     if not prompt:
         _fail_exit(args, "map", "usage",
-                   'map needs a per-item instruction: ambient map "<prompt>" '
+                   'map needs a per-item instruction: ambient-codex map "<prompt>" '
                    "[FILES...] (or pipe one item per line on stdin)",
                    exit_code=EXIT_USAGE, api_key=api_key)
     items = _map_gather_items(args)
@@ -6951,7 +7005,7 @@ def cmd_map(args, api_key, api_url, conf):
     if to_run:
         total_chars = (sum(len(t) for _, t, _, _ in to_run)
                        + len(prompt) * len(to_run))
-        print(f"ambient map: {len(items)} item(s), {len(to_run)} to run"
+        print(f"ambient-codex map: {len(items)} item(s), {len(to_run)} to run"
               + (f" ({len(cached_hits)} cached)" if cached_hits else "")
               + (f" ({fails} refused up front)" if fails else "")
               + f" — one {model} call per item", file=sys.stderr)
@@ -7109,7 +7163,7 @@ def cmd_map(args, api_key, api_url, conf):
         # exit-130 from prompt into minutes.
         if not aborted:
             pool.shutdown(wait=True)
-    print(f"ambient map: {ok} ok / {fails} failed / {cached_n} cached "
+    print(f"ambient-codex map: {ok} ok / {fails} failed / {cached_n} cached "
           f"(of {len(items)} item(s))", file=sys.stderr)
     if fails and not getattr(args, "allow_partial", False):
         sys.exit(EXIT_PARTIAL)
@@ -8218,21 +8272,32 @@ def _render_hook(name):
         audit_args = '--diff "@{u}...HEAD" --json'
         what = "outgoing commits (upstream...HEAD)"
         bypass = "git push --no-verify"
+    # Resolve THIS install's CLI, never a bare `ambient` on PATH: that name may
+    # belong to a different Ambient install, whose key, model lanes, and usage
+    # ledger the hook would then silently use. The versioned plugin cache dir
+    # moves on every update, so prefer the stable `ambient-codex` launcher and
+    # fall back to the absolute path recorded at install time.
+    bundled = shlex.quote(_bundled_cli_path())
     return f"""#!/bin/sh
 {AMBIENT_HOOK_MARKER} ({name})
-# Installed by: ambient audit --install-hook {name}
-# FIXED script - it only RUNS `ambient audit` on the {what}
+# Installed by: {LAUNCHER_NAME} audit --install-hook {name}
+# FIXED script - it only RUNS `ambient-codex audit` on the {what}
 # and reads the verdict; it never contains or executes model output.
 #
 # Threshold: BLOCKS only on verdict "FIX FIRST" (CRITICAL/HIGH findings).
 #   AMBIENT_HOOK_MODE=warn      report findings but never block
 #   bypass once:                {bypass}
-#   uninstall:                  ambient audit --uninstall-hook {name}
-command -v ambient >/dev/null 2>&1 || {{
-    echo "ambient-hook: ambient not on PATH - skipping audit" >&2
+#   uninstall:                  ambient-codex audit --uninstall-hook {name}
+AMBIENT_BIN=""
+if command -v ambient-codex >/dev/null 2>&1; then
+    AMBIENT_BIN=ambient-codex
+elif [ -x {bundled} ]; then
+    AMBIENT_BIN={bundled}
+else
+    echo "ambient-hook: ambient-codex not found - skipping audit" >&2
     exit 0
-}}
-out=$(ambient audit {audit_args} --yes 2>/dev/null)
+fi
+out=$("$AMBIENT_BIN" audit {audit_args} --yes 2>/dev/null)
 rc=$?
 if [ -z "$out" ]; then
     echo "ambient-hook: audit produced no output (rc=$rc) - skipping (fail-open)" >&2
@@ -8281,17 +8346,25 @@ def _hook_is_ours(existing, name):
         return True
     lines = existing.splitlines()
     markers = (AMBIENT_HOOK_MARKER, *LEGACY_AMBIENT_HOOK_MARKERS)
+    # 1.5.x wrote the installed-by line as `ambient audit ...` before the launcher
+    # was renamed. The MARKER line is what proves ownership and only we ever write
+    # it, so accept either installed-by wording; refusing the old one would leave
+    # upgraded users unable to uninstall their own hook.
+    installed_by = (
+        f"# Installed by: {LAUNCHER_NAME} audit --install-hook {name}",
+        f"# Installed by: ambient audit --install-hook {name}",
+    )
     return any(
         len(lines) >= 3
         and lines[0] == "#!/bin/sh"
         and lines[1] == f"{marker} ({name})"
-        and lines[2] == f"# Installed by: ambient audit --install-hook {name}"
+        and lines[2] in installed_by
         for marker in markers
     )
 
 
 def cmd_audit_hook(args):
-    """Install/remove the ambient audit git hook. Pure hooks-file management:
+    """Install/remove the ambient-codex audit git hook. Pure hooks-file management:
     needs no API key and makes no network call. Refuses to CLOBBER a hook it
     did not install (strict template/header match — _hook_is_ours) unless
     --force (which backs the original up first); uninstall removes ONLY an
@@ -8344,15 +8417,15 @@ def cmd_audit_hook(args):
         raise
     bypass = ("git commit --no-verify" if name == "pre-commit"
               else "git push --no-verify")
-    audit_cmd = ("ambient audit --staged --json" if name == "pre-commit"
-                 else 'ambient audit --diff "@{u}...HEAD" --json')
+    audit_cmd = (f"{LAUNCHER_NAME} audit --staged --json" if name == "pre-commit"
+                 else f'{LAUNCHER_NAME} audit --diff "@{{u}}...HEAD" --json')
     print(f"ambient: installed the {name} hook → {path}\n"
           f"  runs:        {audit_cmd}\n"
           "  blocks on:   verdict FIX FIRST (CRITICAL/HIGH findings); "
           "everything else passes\n"
           "  warn-only:   AMBIENT_HOOK_MODE=warn (reports, never blocks)\n"
           f"  bypass once: {bypass}\n"
-          f"  uninstall:   ambient audit --uninstall-hook {name}")
+          f"  uninstall:   ambient-codex audit --uninstall-hook {name}")
 
 
 def _audit_sample_prep(model, catalog, labeled, sys_prompt, args):
@@ -8789,7 +8862,7 @@ def cmd_audit(args, api_key, api_url, conf):
         _fail_exit(
             args, "audit", "usage",
             "nothing to audit. Pass file paths and/or pipe a diff:\n"
-            "  git diff | ambient audit\n  ambient audit src/foo.py src/bar.py",
+            "  git diff | ambient-codex audit\n  ambient-codex audit src/foo.py src/bar.py",
             exit_code=EXIT_USAGE, api_key=api_key,
         )
     focus = f"\nAudit focus: {args.focus}" if args.focus else ""
@@ -8877,7 +8950,7 @@ def cmd_audit(args, api_key, api_url, conf):
                         "n_chunks_by_model": chunks_by}
                 print(redact(json.dumps(plan, separators=(",", ":")), api_key))
                 return
-            print("ambient audit plan (dry run — nothing sent):")
+            print("ambient-codex audit plan (dry run — nothing sent):")
             print(f"  models:       consensus: {', '.join(consensus_models)}")
             print(f"  input:        {total:,} chars across "
                   f"{len(labeled)} labeled item(s)")
@@ -8918,7 +8991,7 @@ def cmd_audit(args, api_key, api_url, conf):
                 plan["reduce_model"] = reduce_model
             print(redact(json.dumps(plan, separators=(",", ":")), api_key))
             return
-        print("ambient audit plan (dry run — nothing sent):")
+        print("ambient-codex audit plan (dry run — nothing sent):")
         print(f"  model:        {model} ({'reasoning' if profile.is_reasoning else 'direct'})")
         if best_of_k:
             print(f"  best-of:      {best_of_k} independent samples "
@@ -9111,7 +9184,7 @@ def cmd_audit(args, api_key, api_url, conf):
             if len(failed) == len(models):
                 print("No usable audit from any model (all failed or weren't "
                       "serving) — this "
-                      "is NOT a clean result. Retry or check `ambient models`.")
+                      "is NOT a clean result. Retry or check `ambient-codex models`.")
                 sys.exit(EXIT_PARTIAL)
             print("No defects found by the models that responded.")
         for s in ranked:
@@ -9445,7 +9518,7 @@ def cmd_code(args, api_key, api_url, conf):
     task = " ".join(args.task).strip()
     if not task:
         usage_exit('describe the task: '
-                   'ambient code "write a rate limiter" -f context.py')
+                   'ambient-codex code "write a rate limiter" -f context.py')
     warn_if_stdin_ignored("`code` does not read stdin — pass context with -f FILE")
     refuse_if_secrets([("task", task)], args.allow_secrets)
     # 7a validated UP FRONT: an invalid --best-of must fail usage
@@ -9639,8 +9712,8 @@ def cmd_chat(args, api_key, api_url, conf):
     if not _stdin_is_tty():
         _fail_exit(
             args, "chat", "usage",
-            "ambient chat is an interactive REPL and needs a terminal — "
-            "for piped/scripted use, call `ambient ask` instead.",
+            "ambient-codex chat is an interactive REPL and needs a terminal — "
+            "for piped/scripted use, call `ambient-codex ask` instead.",
             exit_code=EXIT_USAGE, api_key=api_key)
     # --system is prepended to every turn and sent to the network — scan it once
     # up front with the same tripwire the per-turn lines get.
@@ -9660,7 +9733,7 @@ def cmd_chat(args, api_key, api_url, conf):
     # explicit DELEGATION, so fallback stays available there.
     model_pinned = False
     history = []
-    print(f"ambient chat — {model} · /help for commands · /exit or Ctrl-D "
+    print(f"ambient-codex chat — {model} · /help for commands · /exit or Ctrl-D "
           "to quit", file=sys.stderr)
     while True:
         try:
@@ -9721,7 +9794,7 @@ def cmd_chat(args, api_key, api_url, conf):
                 f"ambient: that message is too large for {model}'s context "
                 f"window ({sys_len + len(line):,} chars > "
                 f"{profile.single_shot_chars:,}) — nothing was sent. "
-                "Shorten it, or use `ambient ask -f FILE` for large inputs.",
+                "Shorten it, or use `ambient-codex ask -f FILE` for large inputs.",
                 file=sys.stderr)
             continue
         # Never publish a credential typed into the REPL (Codex round 4: chat
@@ -10150,7 +10223,7 @@ def cmd_build(args, api_key, api_url, conf):
     task = " ".join(args.task).strip()
     if not task:
         usage_exit('describe what to build: '
-                   'ambient build "a flask todo API with tests" --dir out')
+                   'ambient-codex build "a flask todo API with tests" --dir out')
     # Validate the caps UP FRONT (before resume/catalog/spend). A non-positive
     # --max-files becomes a negative Python slice (obj["plan"][:args.max_files])
     # that keeps all-but-the-last file — an invalid "cap" that still proceeds.
@@ -10257,7 +10330,7 @@ def cmd_build(args, api_key, api_url, conf):
                 catalog, model, gen_call_chars, gen_calls,
                 args.max_tokens, args, conf,
                 per_call_chars=[gen_call_chars] * gen_calls)
-        print("ambient build plan (dry run — nothing sent):")
+        print("ambient-codex build plan (dry run — nothing sent):")
         print(f"  model:         {model} "
               f"({'reasoning' if profile.is_reasoning else 'direct'})")
         if needs_distill and reduce_model != model:
@@ -10861,7 +10934,7 @@ def cmd_mode(args):
             print("Ambient Takeover: ON — Codex will route substantive work (chat, "
                   "questions, building, reviews) through Ambient, so you spend "
                   "Ambient tokens instead of Codex's.\n"
-                  "Turn it off any time:  ambient control mode off   "
+                  "Turn it off any time:  ambient-codex control mode off   "
                   "(or ask Codex to use Ambient off)")
         else:
             print(f"Ambient delegate mode: {args.state.upper()}")
@@ -10873,7 +10946,7 @@ def cmd_mode(args):
     print(f"chat_model={resolve_model(ns, conf, 'chat')}")
     print(f"code_model={resolve_model(ns, conf, 'code')}")
     print(
-        f"key={f'configured ({backend})' if api_key else 'MISSING (run: ambient setup)'}"
+        f"key={f'configured ({backend})' if api_key else f'MISSING (run: {LAUNCHER_NAME} setup)'}"
     )
 
 
@@ -10883,7 +10956,7 @@ def cmd_mode(args):
 # uses, so a `config set` takes effect with NO reader change. set/unset may touch
 # ONLY the CONFIG_SETTINGS whitelist below — never the model/mode/curation/
 # endpoint/key keys (those keep their own commands). The API key is never a config
-# value: it can only be set via `ambient setup` (hidden input, user's terminal).
+# value: it can only be set via `ambient-codex setup` (hidden input, user's terminal).
 def _config_fmt_num(x):
     """5.0 → '5', 1.5 → '1.5' — clean display of an often-integral float."""
     return str(int(x)) if float(x).is_integer() else str(x)
@@ -10982,27 +11055,27 @@ def _config_curation_summary(conf):
 
 
 def _config_print_status():
-    """The `ambient config` table. Two aligned blocks: settings OWNED by other
+    """The `ambient-codex config` table. Two aligned blocks: settings OWNED by other
     commands (pointers, not duplicated), then the config-owned knobs. Purely local
     reads — the API key VALUE is never printed, only its backend."""
     conf = read_config_file()
     key, backend = resolve_key_and_backend(conf)
     ns = argparse.Namespace(model=None)
-    key_state = f"configured ({backend})" if key else "MISSING — run: ambient setup"
+    key_state = f"configured ({backend})" if key else f"MISSING — run: {LAUNCHER_NAME} setup"
     owned = [
-        ("API key", key_state, "ambient setup --force / --remove"),
-        ("Model · chat", resolve_model(ns, conf, "chat"), "ambient use"),
-        ("Model · code", resolve_model(ns, conf, "code"), "ambient use --code"),
+        ("API key", key_state, f"{LAUNCHER_NAME} setup --force / --remove"),
+        ("Model · chat", resolve_model(ns, conf, "chat"), f"{LAUNCHER_NAME} use"),
+        ("Model · code", resolve_model(ns, conf, "code"), f"{LAUNCHER_NAME} use --code"),
         ("Delegate mode", (conf.get("AMBIENT_DELEGATE") or "off").lower(),
-         "ambient mode on|takeover|off"),
-        ("Curation", _config_curation_summary(conf), "ambient curate"),
+         f"{LAUNCHER_NAME} mode on|takeover|off"),
+        ("Curation", _config_curation_summary(conf), f"{LAUNCHER_NAME} curate"),
     ]
     rows = []
     for s in CONFIG_SETTINGS:
         val = s["current"](conf)
         if os.environ.get(s["env"]) is not None:
             val += "  (env override)"
-        rows.append((s["name"], val, f"ambient config set {s['name']} {s['how']}"))
+        rows.append((s["name"], val, f"ambient-codex config set {s['name']} {s['how']}"))
     allrows = owned + rows
     lw = max(len(r[0]) for r in allrows) + 2
     vw = max(len(str(r[1])) for r in allrows) + 2
@@ -11014,7 +11087,7 @@ def _config_print_status():
     emit(owned)
     print()
     emit(rows)
-    print("\n  reset any knob to its default:  ambient config unset <name>")
+    print("\n  reset any knob to its default:  ambient-codex config unset <name>")
 
 
 def cmd_config(args):
@@ -11035,15 +11108,15 @@ def cmd_config(args):
     bare = name.split("=", 1)[0].strip()
     if bare.lower().replace("_", "-") in ("key", "api-key", "apikey", "ambient-api-key"):
         usage_exit(
-            "the API key isn't a config value — rotate it with `ambient setup "
-            "--force`, remove it with `ambient setup --remove` (hidden input, in "
+            f"the API key isn't a config value — rotate it with `{LAUNCHER_NAME} setup "
+            f"--force`, remove it with `{LAUNCHER_NAME} setup --remove` (hidden input, in "
             "your OWN terminal). It never passes through config.")
     setting = _CONFIG_BY_NAME.get(bare.lower())
     if setting is None:
         usage_exit(
             f"unknown setting '{_config_redact(bare)}'. Valid: {_config_names()}. "
-            "(Model → ambient use · delegate mode → ambient mode · curation → "
-            "ambient curate · endpoint → ambient trust-url · key → ambient setup)")
+            "(Model → ambient-codex use · delegate mode → ambient-codex mode · curation → "
+            f"{LAUNCHER_NAME} curate · endpoint → {LAUNCHER_NAME} trust-url · key → {LAUNCHER_NAME} setup)")
     env = setting["env"]
     value = getattr(args, "value", None)
     if verb == "unset":
@@ -11065,18 +11138,24 @@ def cmd_config(args):
 
 
 # ── ambient control: Codex-native settings panel and safe state router ─────
-CONTROL_ACTIONS = (
-    "ambient control",
-    "ambient control mode on",
-    "ambient control mode takeover",
-    "ambient control mode off",
-    "ambient control model MODEL --chat",
-    "ambient control model MODEL --code",
-    "ambient control key setup",
-    "ambient control key rotate",
-    "ambient control key remove",
-    "ambient control setting fallback on|off",
-    "ambient control setting streaming on|off",
+# Printed for the user to copy-paste. They MUST name this install's launcher: a bare
+# `ambient` on PATH may belong to a different Ambient install, and pasting
+# `ambient-codex control mode on` would flip that install's mode instead of this one's.
+CONTROL_ACTIONS = tuple(
+    f"{LAUNCHER_NAME} {suffix}".rstrip()
+    for suffix in (
+        "control",
+        "control mode on",
+        "control mode takeover",
+        "control mode off",
+        "control model MODEL --chat",
+        "control model MODEL --code",
+        "control key setup",
+        "control key rotate",
+        "control key remove",
+        "control setting fallback on|off",
+        "control setting streaming on|off",
+    )
 )
 
 
@@ -11170,7 +11249,7 @@ def _control_snapshot(include_all=False, offline=False):
 def _control_print_status(payload):
     key = payload["key"]
     key_state = f"configured ({key['backend']})" if key["configured"] else \
-        "MISSING - run: ambient control key setup"
+        "MISSING - run: ambient-codex control key setup"
     print("Ambient Codex Control")
     print("Native surface: Codex plugin bundle")
     print(f"API key: {key_state}")
@@ -11196,7 +11275,7 @@ def _control_print_status(payload):
             label = f" ({', '.join(marks)})" if marks else ""
             print(f"  {model['id']} - {state}{label}")
         if models["total_count"] > 8:
-            print(f"  ... {models['total_count'] - 8} more; run: ambient models")
+            print(f"  ... {models['total_count'] - 8} more; run: ambient-codex models")
     else:
         print("\nServing models right now: unavailable in this status view")
     print("\nActions:")
@@ -11209,19 +11288,20 @@ def _control_print_key_status():
     api_key, backend = resolve_key_and_backend(conf)
     if api_key:
         print(f"API key: configured ({backend})")
-        print("Rotate: ambient control key rotate")
-        print("Remove: ambient control key remove")
+        print("Rotate: ambient-codex control key rotate")
+        print("Remove: ambient-codex control key remove")
     else:
         print("API key: MISSING")
-        print("Setup: ambient control key setup")
+        print("Setup: ambient-codex control key setup")
 
 
 def _control_setup_instruction(action):
-    direct = "ambient setup --force" if action == "rotate" else "ambient setup"
+    direct = (f"{LAUNCHER_NAME} setup --force" if action == "rotate"
+              else f"{LAUNCHER_NAME} setup")
     print("API key setup is terminal-only so the key never enters chat, MCP "
           "arguments, process argv, or logs.")
     print("Run this in your own terminal:")
-    print(f"  ambient control key {action}")
+    print(f"  ambient-codex control key {action}")
     print("Equivalent direct command:")
     print(f"  {direct}")
     print(f"Create or manage keys at: {KEY_CONSOLE_URL}")
@@ -11395,7 +11475,7 @@ def _collect_key_interactive():
         except (ImportError, OSError, ValueError):
             sys.exit(
                 "ambient: this terminal cannot hide typed input — the key "
-                "would be visible. Pipe it instead: ambient setup --key-stdin"
+                f"would be visible. Pipe it instead: {LAUNCHER_NAME} setup --key-stdin"
             )
     print(SETUP_PREAMBLE)
     for attempt in range(3):
@@ -11411,7 +11491,7 @@ def _collect_key_interactive():
             sys.exit(
                 "ambient: this terminal echoed the input — treat that key as "
                 f"exposed: rotate it at {KEY_CONSOLE_URL}, then use: "
-                "ambient setup --key-stdin"
+                f"{LAUNCHER_NAME} setup --key-stdin"
             )
         key = key.strip()
         if key.lower().startswith("bearer "):
@@ -11468,7 +11548,7 @@ def _verify_and_store_key(key, conf, use_file):
             sys.exit(
                 f"ambient [{category}]: could not verify the key right now "
                 f"({detail}) — an Ambient-side problem, not your key. Nothing "
-                f"was saved. Retry in a minute: ambient setup\n{SUPPORT_LINE}"
+                f"was saved. Retry in a minute: {LAUNCHER_NAME} setup\n{SUPPORT_LINE}"
             )
         else:
             sys.exit(f"ambient [{category}]: key check FAILED: {detail} — "
@@ -11478,7 +11558,7 @@ def _verify_and_store_key(key, conf, use_file):
             # Fail closed: never silently downgrade to plaintext on a Mac.
             sys.exit(
                 "ambient: Keychain write failed — nothing saved. Retry, or store "
-                "in the env file explicitly with: ambient setup --force --file"
+                f"in the env file explicitly with: {LAUNCHER_NAME} setup --force --file"
             )
         # Key lives in the Keychain; scrub any plaintext copy from the file.
         save_config_values({
@@ -11512,17 +11592,17 @@ def _setup_remove():
         sys.exit(
             "ambient: the env file was scrubbed, but the OS secret store "
             "REFUSED the delete (locked keychain?) — the key may still be "
-            "stored there. Unlock your keychain and re-run: ambient setup --remove"
+            f"stored there. Unlock your keychain and re-run: {LAUNCHER_NAME} setup --remove"
         )
     if keychain_read():
         sys.exit(
             "ambient: the key still resolves from the OS secret store after "
             "the delete — remove it manually (Keychain Access → search "
-            f"'{KEYCHAIN_SERVICE}') or re-run: ambient setup --remove"
+            f"'{KEYCHAIN_SERVICE}') or re-run: {LAUNCHER_NAME} setup --remove"
         )
     print("Key removed from the OS secret store and the env file.")
     print("Sticky settings (default models, delegate mode) were kept — delete")
-    print(f"{CONFIG_PATH} to reset everything. Reconfigure any time: ambient setup")
+    print(f"{CONFIG_PATH} to reset everything. Reconfigure any time: {LAUNCHER_NAME} setup")
     if os.environ.get("AMBIENT_API_KEY"):
         print(
             "note: AMBIENT_API_KEY is still set in this shell's environment "
@@ -11549,8 +11629,8 @@ def cmd_setup(args):
         }.get(backend, backend or "unknown")
         sys.exit(
             f"ambient: a key is already configured ({where}).\n"
-            "  Rotate/replace: ambient setup --force\n"
-            "  Remove:         ambient setup --remove"
+            f"  Rotate/replace: {LAUNCHER_NAME} setup --force\n"
+            f"  Remove:         {LAUNCHER_NAME} setup --remove"
         )
     imported = None if (existing or args.key_stdin) else offer_foreign_key_import()
     if imported:
@@ -11565,7 +11645,7 @@ def cmd_setup(args):
             stdin_is_tty = False
         if stdin_is_tty:
             sys.exit("ambient: --key-stdin expects a piped key (echo-safe). "
-                     "For interactive entry with hidden input, run: ambient setup")
+                     f"For interactive entry with hidden input, run: {LAUNCHER_NAME} setup")
         key = sys.stdin.readline().strip()
         if key.lower().startswith("bearer "):
             key = key[7:].strip()
@@ -11575,7 +11655,7 @@ def cmd_setup(args):
     elif sys.stdin.isatty():
         key = _collect_key_interactive()
     else:
-        sys.exit("ambient: no TTY — pipe the key via: ambient setup --key-stdin")
+        sys.exit(f"ambient: no TTY — pipe the key via: {LAUNCHER_NAME} setup --key-stdin")
     models, detail, where, funds_issue = _verify_and_store_key(
         key, conf, args.file)
     print()
@@ -11611,14 +11691,14 @@ def cmd_doctor(args):
         report("config", mode_bits == 0o600,
                f"{CONFIG_PATH} (perms {oct(mode_bits)[2:]})")
     else:
-        report("config", False, f"{CONFIG_PATH} missing — run: ambient setup")
+        report("config", False, f"{CONFIG_PATH} missing — run: {LAUNCHER_NAME} setup")
     if api_key:
         hardening = ""
         if backend == "file" and keychain_available():
-            hardening = " — harden: `ambient setup --force` moves it into the Keychain"
+            hardening = f" — harden: `{LAUNCHER_NAME} setup --force` moves it into the Keychain"
         report("key", True, f"present ({backend}){hardening}")
     else:
-        report("key", False, "MISSING — run: ambient setup")
+        report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
 
     try:
         status, body = api_request(api_url, api_key or "none", "/v1/models", timeout=30)
@@ -11639,13 +11719,13 @@ def cmd_doctor(args):
            f"api reachable; {len(models)} models, {len(ready)} serving")
 
     if not api_key:
-        print("\nDIAGNOSIS: no API key configured. Run: ambient setup")
+        print(f"\nDIAGNOSIS: no API key configured. Run: {LAUNCHER_NAME} setup")
         sys.exit(1)
     try:
         ok, category, detail = auth_probe(api_url, api_key, models)
     except NetworkError as err:
         report("auth", False, str(err))
-        print("\nDIAGNOSIS: network dropped mid-check — retry ambient doctor.")
+        print("\nDIAGNOSIS: network dropped mid-check — retry ambient-codex doctor.")
         sys.exit(1)
     report("auth+billing", ok, detail)
 
@@ -11665,7 +11745,7 @@ def cmd_doctor(args):
         hidden_tag = (" (hidden by curation — still works)"
                       if is_hidden(m, allow_c, hide_c, show_c) else "")
         report(f"{kind}_model", known,
-               f"{m} — {'READY' if live else 'not serving at this moment (scales up on demand)' if known else 'NOT IN CATALOG — pick again: ambient use'}{hidden_tag}")
+               f"{m} — {'READY' if live else 'not serving at this moment (scales up on demand)' if known else 'NOT IN CATALOG — pick again: ambient-codex use'}{hidden_tag}")
     if allow_c or hide_c:
         cat_ids = [x.get("id") for x in models
                    if isinstance(x, dict) and x.get("id")]
@@ -11674,7 +11754,7 @@ def cmd_doctor(args):
         report("curation", bool(vis) or not cat_ids,
                f"{len(vis)} surfaced / {len(cat_ids) - len(vis)} hidden"
                + ("" if vis or not cat_ids
-                  else " — the menu is EMPTY; fix: ambient curate reset"))
+                  else " — the menu is EMPTY; fix: ambient-codex curate reset"))
 
     # --- environment checks (informational; never flip the diagnosis) -------
     which_amb = shutil.which("ambient")
@@ -11684,10 +11764,10 @@ def cmd_doctor(args):
     elif which_amb:
         report("launcher", True,
                f"`ambient` on PATH points at {which_amb} (another install) — "
-               "refresh with: ambient link")
+               "refresh with: ambient-codex link")
     else:
         report("launcher", False,
-               "`ambient` is not on your PATH — fix: ambient link")
+               "`ambient` is not on your PATH — fix: ambient-codex link")
     py_ok = sys.version_info >= (3, 8)
     report("python", py_ok,
            f"{sys.version.split()[0]}"
@@ -11702,13 +11782,13 @@ def cmd_doctor(args):
             if "ambient" in (oc.get("provider") or {}):
                 agent_detail += "; ambient provider configured"
             else:
-                agent_detail += "; provider auto-configures on first `ambient agent`"
+                agent_detail += "; provider auto-configures on first `ambient-codex agent`"
         except FileNotFoundError:
-            agent_detail += "; config auto-creates on first `ambient agent`"
+            agent_detail += "; config auto-creates on first `ambient-codex agent`"
         except (OSError, json.JSONDecodeError):
             agent_ok = False
             agent_detail = (f"{OPENCODE_CONFIG_PATH} is invalid JSON — "
-                            "`ambient agent` will misbehave; fix or delete it")
+                            "`ambient-codex agent` will misbehave; fix or delete it")
         report("agent", agent_ok, agent_detail)
     else:
         report("agent", True,
@@ -11850,7 +11930,7 @@ def cmd_usage(args):
     # Savings compare frontier vs the FULLY-priced subset only — partial
     # models are in `grand` (spend honesty) but never in the saving.
     grand_saved = grand_frontier - priced_cost
-    unmetered_note = ("`ambient agent` spend is billed by Ambient but not "
+    unmetered_note = ("`ambient-codex agent` spend is billed by Ambient but not "
                       "visible to local metering — these totals cover only "
                       "ambient CLI calls")
     if getattr(args, "json", False):
@@ -11915,6 +11995,17 @@ def _this_script():
     return os.path.realpath(os.path.abspath(sys.argv[0] or __file__))
 
 
+def _bundled_cli_path():
+    """Absolute real path of THIS source file.
+
+    `_this_script()` reads sys.argv[0], which is what `link` wants but is wrong
+    when the module is imported rather than executed (argv[0] is then `-c`, a
+    test runner, or a REPL). Anything baked into a generated artifact must use
+    the module's own path.
+    """
+    return os.path.realpath(os.path.abspath(__file__))
+
+
 def _link_is_ours(dest):
     """True only if `dest` is a launcher symlink WE own — its stored target has
     an `/ambient-codex/` path component (every real install: dev
@@ -11950,7 +12041,7 @@ def cmd_link(args):
     """Put a stable `ambient-codex` launcher on PATH. Marketplace installs live in a
     VERSIONED cache dir that changes on every update — a symlink in
     ~/.local/bin survives updates (no stable path for
-    `ambient setup`, which needs the user's own terminal).
+    `ambient-codex setup`, which needs the user's own terminal).
 
     The launcher is deliberately NOT named `ambient`: another Ambient install
     (e.g. the Claude plugin) owns that name on PATH, and the two must coexist."""
@@ -12060,7 +12151,7 @@ def cmd_cache(args):
         except OSError:
             pass
     print(f"cache: {len(entries)} entries, {total:,} bytes at {CACHE_DIR}")
-    print("clear with: ambient cache clear [--older-than DAYS]")
+    print("clear with: ambient-codex cache clear [--older-than DAYS]")
 
 
 OPENCODE_CONFIG_PATH = os.path.expanduser("~/.config/opencode/opencode.json")
@@ -12081,14 +12172,14 @@ def ensure_opencode_config(api_url, model):
         # meets an inexplicable opencode failure (doctor also flags this).
         print(
             f"ambient: {OPENCODE_CONFIG_PATH} could not be parsed — leaving it "
-            "alone; `ambient agent` may misbehave (see: ambient doctor)",
+            "alone; `ambient-codex agent` may misbehave (see: ambient-codex doctor)",
             file=sys.stderr,
         )
         return
     if not isinstance(cfg, dict):    # M13: valid JSON but not an object ([] / "x")
         print(
             f"ambient: {OPENCODE_CONFIG_PATH} is not a JSON object — leaving it "
-            "alone; `ambient agent` may misbehave (see: ambient doctor)",
+            "alone; `ambient-codex agent` may misbehave (see: ambient-codex doctor)",
             file=sys.stderr,
         )
         return
@@ -12096,7 +12187,7 @@ def ensure_opencode_config(api_url, model):
     if "ambient" in providers:
         # Non-destructively union the CURRENT model into the provider's model
         # map (the map was written once at install, so after
-        # `ambient use <new>` the agent passed a model id opencode didn't
+        # `ambient-codex use <new>` the agent passed a model id opencode didn't
         # know). User-tuned options stay untouched.
         amb = providers["ambient"]
         if not isinstance(amb, dict):
@@ -12217,7 +12308,7 @@ def cmd_codex(args, api_key, api_url, conf):
         "Codex's 'namespace' tool type and typed message content (verified "
         "2026-07-02). The provider config is already in place in ~/.codex; once "
         "Ambient's validator accepts/ignores unknown tool types this will work.\n"
-        "Use the working agentic terminal instead:  ambient agent"
+        "Use the working agentic terminal instead:  ambient-codex agent"
     )
 
 
@@ -12251,7 +12342,7 @@ class _Parser(argparse.ArgumentParser):
 def add_common_flags(parser):
     parser.add_argument(
         "-m", "--model", default=None, metavar="ID",
-        help="model id for this run only (see: ambient models); overrides the "
+        help="model id for this run only (see: ambient-codex models); overrides the "
              "sticky default. 'auto' delegates: cheapest READY model that "
              "fits the input, resolved per call and printed "
              "(auto:cheapest / auto:largest)")
@@ -12439,7 +12530,7 @@ def _configure_config(sub):
     p.add_argument("verb", nargs="?", choices=["status", "set", "unset"],
                    default="status",
                    help="status (default) · set <name> <value> · unset <name>")
-    p.add_argument("name", nargs="?", help="setting name (see: ambient config)")
+    p.add_argument("name", nargs="?", help="setting name (see: ambient-codex config)")
     p.add_argument("value", nargs="?", help="new value (for set)")
 
 
@@ -12484,7 +12575,7 @@ def _configure_control(sub):
                      help="store key in the env file instead of the OS secret store")
 
     setting = actions.add_parser("setting", help="set or unset a config knob")
-    setting.add_argument("name", help="setting name (see: ambient control)")
+    setting.add_argument("name", help="setting name (see: ambient-codex control)")
     setting.add_argument("value", nargs="?", help="new value")
     setting.add_argument("--unset", action="store_true",
                          help="remove the setting and use the default")
@@ -12521,13 +12612,13 @@ def _configure_ask(sub):
         "ask", help="one-shot completion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""examples:
-  ambient ask "explain CRDTs in two paragraphs"
-  cat design.md | ambient ask "list the open questions" -
-  ambient ask "summarize" --json           (stable machine envelope)""")
+  ambient-codex ask "explain CRDTs in two paragraphs"
+  cat design.md | ambient-codex ask "list the open questions" -
+  ambient-codex ask "summarize" --json           (stable machine envelope)""")
     p.add_argument(
         "prompt", nargs="*",
         help="the question; add '-' to ALSO read stdin "
-             "(cat doc.txt | ambient ask \"summarize\" -)")
+             "(cat doc.txt | ambient-codex ask \"summarize\" -)")
     p.add_argument("-s", "--system", help="system prompt")
     p.add_argument(
         "--allow-secrets", action="store_true",
@@ -12557,7 +12648,7 @@ def _configure_audit(sub):
   ambient audit --staged --json
   ambient audit src/*.py --dry-run       (plan + cost, nothing sent)
   ambient audit --repo . --focus security   (whole repo — git-aware walker)
-  ambient audit app.py --consensus moonshotai/kimi-k2.7-code,z-ai/glm-5.2""")
+  ambient-codex audit app.py --consensus moonshotai/kimi-k2.7-code,z-ai/glm-5.2""")
     p.add_argument("paths", nargs="*",
                    help="files to audit (or pipe a diff on stdin)")
     p.add_argument(
@@ -12606,12 +12697,12 @@ def _configure_audit(sub):
     p.add_argument(
         "--consensus", metavar="M1,M2",
         help="audit with several models and rank findings corroborated by 2+ "
-             "first (`ambient models` shows what's serving)",
+             "first (`ambient-codex models` shows what's serving)",
     )
     p.add_argument(
         "--install-hook", metavar="HOOK", nargs="?", const="pre-commit",
         choices=["pre-commit", "pre-push"], dest="install_hook",
-        help="install a FIXED git hook that runs `ambient audit` on the "
+        help="install a FIXED git hook that runs `ambient-codex audit` on the "
              "staged/outgoing diff and blocks on verdict FIX FIRST "
              "(default: pre-commit; needs no API key)",
     )
@@ -12637,9 +12728,9 @@ def _configure_map(sub):
              "(files or stdin lines), streaming one result per item",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""examples:
-  ambient map "summarize this file in one sentence" src/*.py
-  cat titles.txt | ambient map "classify: bug, feature, or question?"
-  cat q.jsonl | ambient map "answer concisely" --jsonl --json
+  ambient-codex map "summarize this file in one sentence" src/*.py
+  cat titles.txt | ambient-codex map "classify: bug, feature, or question?"
+  cat q.jsonl | ambient-codex map "answer concisely" --jsonl --json
 Each item is ONE single-shot call (the prompt is the system instruction,
 the item is the user message). Output streams per item as it completes —
 under --json as JSONL (one envelope per line, always carrying the item id).
@@ -12737,7 +12828,7 @@ def _configure_agent(sub):
     p = sub.add_parser(
         "agent",
         help="interactive agentic terminal on Ambient (opencode TUI). For "
-             "headless builds Codex can review, use: ambient build",
+             "headless builds Codex can review, use: ambient-codex build",
     )
     p.add_argument("-m", "--model", default=None,
                    help="model id for this session only")
@@ -12747,7 +12838,7 @@ def _configure_agent(sub):
 
 
 def _configure_codex(sub):
-    p = sub.add_parser("codex", help="blocked upstream; see `ambient agent`")
+    p = sub.add_parser("codex", help="blocked upstream; see `ambient-codex agent`")
     p.add_argument("codex_args", nargs=argparse.REMAINDER)
 
 
@@ -12896,7 +12987,7 @@ def main():
             ).replace("_", "-") in _keyname:
                 sys.exit(
                     "ambient: don't pass an API key on the command line — it lands "
-                    "in your shell history. Run `ambient setup` (interactive, "
+                    f"in your shell history. Run `{LAUNCHER_NAME} setup` (interactive, "
                     f"hidden input) instead, and ROTATE that key at {KEY_CONSOLE_URL}."
                 )
             if tok.startswith("-"):
@@ -12911,7 +13002,7 @@ def main():
                 sys.exit(
                     "ambient: it looks like you passed your API key on the "
                     "command line — it is now in your shell history. Run "
-                    "`ambient setup` (interactive, hidden input) instead, and "
+                    f"`{LAUNCHER_NAME} setup` (interactive, hidden input) instead, and "
                     f"ROTATE that key at {KEY_CONSOLE_URL}."
                 )
     args = _parse_args_with_stdin_dash(parser)
@@ -12991,7 +13082,7 @@ def main():
             emit_json_error(args.command, "network", str(err), api_key)
         sys.exit(
             f"ambient [network]: {err}. Check your internet connection; if other "
-            "sites work, Ambient may be unreachable — run: ambient doctor"
+            "sites work, Ambient may be unreachable — run: ambient-codex doctor"
         )
 
 
@@ -13016,7 +13107,7 @@ def shielded_main():
         raise
     except NetworkError as err:
         msg = (f"{err}. Check your internet connection; if other "
-               "sites work, Ambient may be unreachable — run: ambient doctor")
+               "sites work, Ambient may be unreachable — run: ambient-codex doctor")
         _fail_exit(None, _argv_command(), "network", msg,
                    prose=f"ambient [network]: {msg}")
     except Exception as err:  # noqa: BLE001 — the whole point is a clean floor
@@ -13032,7 +13123,7 @@ def shielded_main():
             pass
         detail = redact(f"{type(err).__name__}: {err}", key)[:300]
         msg = (f"unexpected error ({detail}). Nothing was harmed. "
-               "Run 'ambient doctor' to check the basics; set AMBIENT_DEBUG=1 to see "
+               "Run 'ambient-codex doctor' to check the basics; set AMBIENT_DEBUG=1 to see "
                "full details.")
         # Even the last-resort floor honors the --json contract (redacted).
         _fail_exit(None, _argv_command(), "internal", msg, api_key=key,

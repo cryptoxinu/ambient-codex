@@ -184,8 +184,8 @@ class UnknownAndKeyNameTests(_ConfigCase):
             amb.cmd_config(argparse.Namespace(verb="set", name="bogus", value="on"))
         msg = err.getvalue()
         self.assertIn("streaming", msg)          # lists valid names
-        self.assertIn("ambient use", msg)        # points to the model command
-        self.assertIn("ambient setup", msg)      # points key to setup
+        self.assertIn("ambient-codex use", msg)  # points at THIS install's launcher
+        self.assertIn("ambient-codex setup", msg)  # never a bare `ambient` on PATH
 
     def test_key_refusal_does_not_echo_the_value(self):
         err = io.StringIO()
@@ -207,7 +207,7 @@ class UnknownAndKeyNameTests(_ConfigCase):
                 verb="set", name="key=sk-topsecret-abcdef123456", value=None))
         self.assertEqual(cm.exception.code, 64)
         self.assertNotIn("sk-topsecret-abcdef123456", err.getvalue())
-        self.assertIn("ambient setup", err.getvalue())
+        self.assertIn("ambient-codex setup", err.getvalue())
         self.assertFalse(os.path.exists(self._cfg))
 
     def test_secret_shaped_unknown_name_is_redacted(self):
@@ -302,8 +302,8 @@ class StatusRenderTests(_ConfigCase):
     def test_status_shows_settings_and_pointers(self):
         out, _ = self.config()   # bare = status
         for token in ("Ambient settings", "API key", "streaming", "fallback",
-                      "spend-cap", "reference-price", "ambient use", "ambient mode",
-                      "ambient curate"):
+                      "spend-cap", "reference-price", "ambient-codex use", "ambient-codex mode",
+                      "ambient-codex curate"):
             self.assertIn(token, out, token)
 
     def test_status_reports_missing_key_when_unset(self):

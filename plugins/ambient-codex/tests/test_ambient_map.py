@@ -297,7 +297,7 @@ class TestMapFailureModes(unittest.TestCase):
         big = next(e for e in envs if e["status"] == "error")
         self.assertEqual(big["id"], paths[1])
         self.assertIn("too large for map", big["diagnosis"])
-        self.assertIn("ambient audit", big["diagnosis"])
+        self.assertIn("ambient-codex audit", big["diagnosis"])
         oks = [e for e in envs if e["status"] == "ok"]
         self.assertEqual(len(oks), 2)
 

@@ -8,6 +8,7 @@ green the whole time. These tests assert the *state* boundary instead.
 """
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -165,6 +166,46 @@ class TestPathLauncherName(unittest.TestCase):
             self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex")))
             self.assertFalse(os.path.lexists(os.path.join(dest, "ambient")),
                              "Codex claimed the shared `ambient` name on PATH")
+
+
+class TestGuidanceNeverNamesTheSharedLauncher(unittest.TestCase):
+    def test_no_printed_command_starts_with_a_bare_ambient(self):
+        """Copy-pasteable guidance must name THIS install's launcher.
+
+        `ambient use ...`, `ambient mode on`, and `ambient config set ...` all mutate
+        state, and a bare `ambient` on PATH is the other install. `ambient audit`
+        would even spend its credits.
+        """
+        subcommands = (
+            "config", "use", "mode", "control", "curate", "trust-url", "setup",
+            "models", "audit", "usage", "doctor", "link", "cache", "chat", "ask",
+            "code", "build", "map", "agent",
+        )
+        pattern = re.compile(
+            r"(?<![-\w./])ambient (?=(?:" + "|".join(subcommands) + r")\b)")
+        offenders = []
+        for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
+            stripped = line.lstrip()
+            if stripped.startswith("#") or "LAUNCHER_NAME" in line:
+                continue
+            if '"' not in line and "'" not in line:
+                continue
+            if "audit hook v1" in line:  # ownership marker, not guidance
+                continue
+            if "Installed by:" in line:  # 1.5.x header we still recognise on uninstall
+                continue
+            if pattern.search(line):
+                offenders.append(f"{lineno}: {stripped[:70]}")
+        self.assertEqual(offenders, [], "bare `ambient <subcommand>` in user-facing text")
+
+    def test_the_git_hook_never_invokes_a_bare_ambient(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            for name in ("pre-commit", "pre-push"):
+                body = cli._render_hook(name)
+                self.assertIn("command -v ambient-codex", body)
+                self.assertNotIn("command -v ambient >", body)
+                self.assertIn('"$AMBIENT_BIN" audit', body)
 
 
 class TestForeignKeyImportIsReadOnlyAndOptIn(unittest.TestCase):

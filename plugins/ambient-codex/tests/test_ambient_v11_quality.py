@@ -422,7 +422,7 @@ class ChatReplTests(unittest.TestCase):
                 self.assertRaises(SystemExit) as cm:
             amb.cmd_chat(chat_args(), KEY, "https://api.ambient.xyz", {})
         self.assertEqual(cm.exception.code, 64)
-        self.assertIn("ambient ask", err.getvalue())
+        self.assertIn("ambient-codex ask", err.getvalue())
 
     def test_turn_streams_and_prints_receipt(self):
         rec = CompleteRecorder(answers=["hi there"], stream=True)
@@ -511,7 +511,11 @@ class InstallHookTests(unittest.TestCase):
         # model output, and it runs `ambient audit` on the staged diff.
         self.assertEqual(body, amb._render_hook("pre-commit"))
         self.assertIn(amb.AMBIENT_HOOK_MARKER, body)
-        self.assertIn("ambient audit --staged --json", body)
+        # Never a bare `ambient` on PATH: that name may belong to a different
+        # Ambient install, whose key and usage ledger the hook would then use.
+        self.assertIn('out=$("$AMBIENT_BIN" audit --staged --json --yes', body)
+        self.assertIn("command -v ambient-codex", body)
+        self.assertNotIn("command -v ambient >", body)
         self.assertTrue(body.startswith("#!/bin/sh"))
         # tells the user how to bypass
         self.assertIn("--no-verify", out.getvalue() + body)
@@ -522,7 +526,9 @@ class InstallHookTests(unittest.TestCase):
             amb.cmd_audit_hook(hook_args(install_hook="pre-push"))
         with open(self._hook("pre-push")) as fh:
             body = fh.read()
-        self.assertIn("ambient audit --diff", body)
+        self.assertIn('out=$("$AMBIENT_BIN" audit --diff', body)
+        self.assertIn("command -v ambient-codex", body)
+        self.assertNotIn("command -v ambient >", body)
 
     def test_refuses_to_clobber_foreign_hook_without_force(self):
         os.makedirs(self.hooks, exist_ok=True)

@@ -535,7 +535,7 @@ class TestTotalJsonFailureContract(unittest.TestCase):
 
     _AUDIT_NO_INPUT_PROSE = (
         "ambient: nothing to audit. Pass file paths and/or pipe a diff:\n"
-        "  git diff | ambient audit\n  ambient audit src/foo.py src/bar.py")
+        "  git diff | ambient-codex audit\n  ambient-codex audit src/foo.py src/bar.py")
 
     def _audit_no_input(self, fmt):
         args = _consensus_args(_src_file(), consensus=None, paths=[],
@@ -690,7 +690,7 @@ class TestTotalJsonFailureContract(unittest.TestCase):
                 amb.shielded_main()
         self.assertEqual(str(cm.exception), (
             "ambient [internal]: unexpected error (ValueError: wires crossed). "
-            "Nothing was harmed. Run 'ambient doctor' to check the basics; set "
+            "Nothing was harmed. Run 'ambient-codex doctor' to check the basics; set "
             "AMBIENT_DEBUG=1 to see full details."))
 
     def test_spend_ceiling_emits_envelope_under_json_argv(self):

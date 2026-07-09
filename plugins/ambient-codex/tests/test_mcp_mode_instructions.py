@@ -82,7 +82,7 @@ class TestSessionInstructions(unittest.TestCase):
         with mock.patch.object(self.mcp, "current_mode", return_value="takeover"):
             text = self.mcp.session_instructions()
         self.assertIn("TAKEOVER is ON", text)
-        self.assertIn("ambient control mode off", text)
+        self.assertIn("ambient-codex control mode off", text)
         self.assertIn("bundled Ambient CLI", text)  # base contract preserved
 
     def test_delegate_announces_itself(self):

@@ -61,8 +61,8 @@ minimal. Keep these with Codex (never route to Ambient): trivial one-liners; any
 safety-critical/destructive/irreversible turn (auth, crypto, secret handling, rm,
 force-push, migrations, prod ops); and NEVER send secrets or user/health data.
 Begin each substantive turn with exactly this one line:
-Ambient Takeover ON - running substantive work through Ambient; use ambient control mode off to stop.
-The user turns it off with ambient control mode off.
+Ambient Takeover ON - running substantive work through Ambient; use ambient-codex control mode off to stop.
+The user turns it off with ambient-codex control mode off.
 MSG
 elif [ "$mode" = "on" ]; then
   cat <<'MSG'
