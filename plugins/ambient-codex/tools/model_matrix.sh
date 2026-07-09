@@ -97,7 +97,8 @@ run wk "$AMB" use kimi --code < /dev/null   # ambiguous → refuse + suggest
 [ $RC -ne 0 ] && grep -q "Did you mean" "$OUT" && pass "use refuses ambiguous substring with suggestions" || fail "use ambiguous" "rc=$RC"
 run "$AMB" mode on;  grep -q "ON" "$OUT" && pass "mode on" || fail "mode on" "?"
 run "$AMB" mode;     grep -q "delegate=on" "$OUT" && pass "mode status reflects on" || fail "mode status" "?"
-run "$AMB" mode takeover; grep -q "TAKEOVER" "$OUT" && pass "mode takeover" || fail "mode takeover" "?"
+run "$AMB" mode takeover
+grep -qi "takeover" "$OUT" && grep -q "ON" "$OUT" && pass "mode takeover" || fail "mode takeover" "?"
 run "$AMB" control --json
 python3 -c "
 import json; raw=open('$OUT').read()
