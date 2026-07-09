@@ -2,6 +2,34 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.7.2 - 2026-07-09
+
+### Second-auditor hardening of the isolation boundary
+
+An independent audit (Codex + an adversarial Opus pass) found the 1.7.1 boundary was
+bypassable several ways. All fixed:
+
+- **State-root guard was exact-match only.** `AMBIENT_CODEX_HOME=~/.config/ambient/cache`
+  slipped past it and rooted this install's state inside the other install's tree. The
+  guard now compares realpaths and rejects the override at ANY depth under
+  `~/.config/ambient` or `~/.claude`.
+- **The MCP server and the SessionStart hook bypassed the guard entirely.** Both read
+  `$AMBIENT_CODEX_HOME/env` directly, so a hostile override surfaced the OTHER install's
+  delegate/takeover mode in Codex. Both now apply the same validation and refuse a
+  foreign root.
+- **`AMBIENT_API_KEY` is no longer a key source.** Every Ambient install reads that name,
+  so honouring it shared one key; a `setup --file` neighbour even leaked its key outright.
+  Only `AMBIENT_CODEX_API_KEY` (or this install's own keychain/config) supplies the key.
+  `doctor` reports the shared variable as present-and-ignored.
+- **The opencode `agent` provider is re-pinned.** Its `apiKey` placeholder is
+  `{env:AMBIENT_CODEX_API_KEY}` and the child inherits that variable, and an entry left
+  by an older version is corrected rather than trusted.
+- **`plugin_root()` no longer trusts a stale `PLUGIN_ROOT`.** A directory that merely
+  looked like a plugin let a new MCP server drive an old CLI after an update; the
+  manifest must now name this plugin and match its version (cachebuster tag ignored).
+- The MCP trace variable is `AMBIENT_CODEX_MCP_TRACE_FILE`, and the last bare
+  `ambient control mode off` in the MCP/hook copy is now `ambient-codex`.
+
 ## 1.7.1 - 2026-07-09
 
 ### `AMBIENT_CODEX_HOME` can no longer be aimed at another install

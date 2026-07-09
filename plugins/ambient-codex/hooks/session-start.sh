@@ -39,9 +39,20 @@ if [ -n "$plugin_root" ] && [ -x "${plugin_root}/bin/ambient" ]; then
   fi
 fi
 
-# Ambient Codex's own state root, never the shared ~/.config/ambient the other
-# Ambient install owns — reading that would let its delegate mode drive Codex.
-conf="${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}/env"
+# Ambient Codex's own state root, never a tree another Ambient install owns — reading
+# that would let ITS delegate mode drive Codex. AMBIENT_CODEX_HOME may relocate our
+# root, so validate it the same way bin/ambient does before reading anything.
+state_root="${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}"
+if [ -n "${AMBIENT_CODEX_HOME:-}" ]; then
+  resolved="$(cd "$state_root" 2>/dev/null && pwd -P || echo "$state_root")"
+  for foreign in "$HOME/.config/ambient" "$HOME/.claude"; do
+    foreign_resolved="$(cd "$foreign" 2>/dev/null && pwd -P || echo "$foreign")"
+    case "$resolved" in
+      "$foreign_resolved"|"$foreign_resolved"/*) exit 0 ;;
+    esac
+  done
+fi
+conf="${state_root}/env"
 [ -f "$conf" ] || exit 0
 # Last assignment wins AND key/value whitespace is trimmed, matching the CLI's
 # config parser (key.strip()/val.strip()) — a duplicate OR hand-spaced
@@ -71,7 +82,7 @@ contract: the user plans with Codex, Ambient writes the code or audit draft, Cod
 reviews and integrates. Route substantive code writing through the bundled `build`
 (multi-file, manifest + --apply) or bundled `code` (single file); review every
 generated diff and run the tests yourself. Trivial edits stay with Codex. The user
-toggles this with ambient control mode off.
+toggles this with ambient-codex control mode off.
 MSG
 fi
 exit 0

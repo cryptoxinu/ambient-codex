@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.7.1"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.7.2"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -104,32 +104,70 @@ AMBIENT_CODEX_HOME_ENV = "AMBIENT_CODEX_HOME"
 # Dropped into our state root the first time we write it. A root that already holds an
 # `env` but no marker belongs to somebody else, and we refuse to touch it.
 STATE_MARKER = ".ambient-codex"
-# The conventional root every OTHER Ambient install uses.
-FOREIGN_STATE_DIR = os.path.expanduser("~/.config/ambient")
+# Trees another Ambient install (or its host agent) owns. We never place our state
+# inside any of them, at any depth.
+FOREIGN_STATE_DIRS = (
+    os.path.expanduser("~/.config/ambient"),
+    os.path.expanduser("~/.claude"),
+)
 
 
-def _state_dir():
-    """This install's state root. AMBIENT_CODEX_HOME may relocate it, but never onto
-    another Ambient install: `AMBIENT_CODEX_HOME=~/.config/ambient` would otherwise make
-    this install read that install's key and rewrite its delegate mode."""
-    override = os.environ.get(AMBIENT_CODEX_HOME_ENV)
-    if not override:
-        return os.path.expanduser("~/.config/ambient-codex")
-    root = os.path.abspath(os.path.expanduser(override))
-    if os.path.normcase(root) == os.path.normcase(FOREIGN_STATE_DIR):
+def _resolve(path):
+    """realpath so `..`, symlinks, and `/private` aliasing cannot dodge a prefix check."""
+    return os.path.normcase(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
+
+
+def _is_within(child, parent):
+    """True when `child` IS `parent` or lives beneath it. Prefix-safe."""
+    child, parent = _resolve(child), _resolve(parent)
+    if child == parent:
+        return True
+    try:
+        return os.path.commonpath([child, parent]) == parent
+    except ValueError:      # different drives on Windows
+        return False
+
+
+def foreign_root(path):
+    """The foreign tree `path` falls inside, or None."""
+    for root in FOREIGN_STATE_DIRS:
+        if os.path.exists(root) or os.path.isabs(root):
+            if _is_within(path, root):
+                return root
+    return None
+
+
+def validate_state_root(root):
+    """Reject a state root that is not ours. Returns the root, or exits.
+
+    `AMBIENT_CODEX_HOME=~/.config/ambient` used to make this install read the other
+    install's key and rewrite its delegate mode, and `~/.config/ambient/cache` dodged an
+    exact-match check. Compare on realpath, at any depth.
+    """
+    owner = foreign_root(root)
+    if owner is not None:
         sys.exit(
-            f"ambient: refusing to use {root} as a state root — that directory belongs "
-            f"to another Ambient install. Unset {AMBIENT_CODEX_HOME_ENV}, or point it "
-            "at a directory of your own."
+            f"ambient: refusing to use {root} as a state root — it is inside {owner}, "
+            f"which belongs to another Ambient install. Unset {AMBIENT_CODEX_HOME_ENV}, "
+            "or point it at a directory of your own."
         )
     if os.path.exists(os.path.join(root, "env")) \
             and not os.path.exists(os.path.join(root, STATE_MARKER)):
         sys.exit(
             f"ambient: refusing to use {root} as a state root — it already holds an "
             f"Ambient config this install did not create (no {STATE_MARKER} marker). "
-            "Point AMBIENT_CODEX_HOME at an empty directory."
+            f"Point {AMBIENT_CODEX_HOME_ENV} at an empty directory."
         )
     return root
+
+
+def _state_dir():
+    """This install's state root. AMBIENT_CODEX_HOME may relocate it, never onto another
+    Ambient install."""
+    override = os.environ.get(AMBIENT_CODEX_HOME_ENV)
+    if not override:
+        return os.path.expanduser("~/.config/ambient-codex")
+    return validate_state_root(os.path.abspath(os.path.expanduser(override)))
 
 
 def _claim_state_dir(conf_dir):
@@ -508,26 +546,20 @@ def keychain_delete():
         return False
 
 
-def key_env_source():
-    """Which env var supplied the key, if any. `doctor` uses it to warn about sharing."""
-    if os.environ.get(API_KEY_ENV):
-        return API_KEY_ENV
-    if os.environ.get(SHARED_API_KEY_ENV):
-        return SHARED_API_KEY_ENV
-    return None
+def shared_key_env_is_set():
+    """True when the cross-install `AMBIENT_API_KEY` is exported. We IGNORE it."""
+    return bool(os.environ.get(SHARED_API_KEY_ENV))
 
 
 def resolve_key_and_backend(conf):
-    """Key lookup: AMBIENT_CODEX_API_KEY > AMBIENT_API_KEY > Keychain > config file.
+    """Key lookup: AMBIENT_CODEX_API_KEY > Keychain > config file.
 
-    The namespaced variable wins because every Ambient install reads `AMBIENT_API_KEY`,
-    so exporting that one hands a single key to all of them. An explicit
-    AMBIENT_KEY_BACKEND=file skips the Keychain so `setup --file` can't be shadowed by a
-    stale Keychain entry."""
+    `AMBIENT_API_KEY` is deliberately NOT consulted. Every Ambient install reads that
+    name, so honouring it would hand one key to all of them — the exact coupling this
+    install exists to avoid. An explicit AMBIENT_KEY_BACKEND=file skips the Keychain so
+    `setup --file` can't be shadowed by a stale Keychain entry."""
     if os.environ.get(API_KEY_ENV):
         return os.environ[API_KEY_ENV], "env"
-    if os.environ.get(SHARED_API_KEY_ENV):
-        return os.environ[SHARED_API_KEY_ENV], "env"
     if conf.get("AMBIENT_KEY_BACKEND") != "file":
         kc = keychain_read()
         if kc:
@@ -674,7 +706,7 @@ def load_config():
     print(
         "ambient [setup]: no API key configured.\n"
         f"  Interactive:      {LAUNCHER_NAME} setup\n"
-        "  Non-interactive:  export AMBIENT_API_KEY=<key>   "
+        f"  Non-interactive:  export {API_KEY_ENV}=<key>   "
         f"(or: {LAUNCHER_NAME} setup --key-stdin)\n"
         f"  Get a key:        {KEY_CONSOLE_URL}  →  API Keys",
         file=sys.stderr,
@@ -11543,9 +11575,9 @@ def _setup_remove():
     print("Key removed from the OS secret store and the env file.")
     print("Sticky settings (default models, delegate mode) were kept — delete")
     print(f"{CONFIG_PATH} to reset everything. Reconfigure any time: {LAUNCHER_NAME} setup")
-    if os.environ.get("AMBIENT_API_KEY"):
+    if os.environ.get(API_KEY_ENV):
         print(
-            "note: AMBIENT_API_KEY is still set in this shell's environment "
+            f"note: {API_KEY_ENV} is still set in this shell's environment "
             "and will keep working until you unset it.",
             file=sys.stderr,
         )
@@ -11565,7 +11597,7 @@ def cmd_setup(args):
             "keychain": "macOS Keychain",
             "secret-tool": "OS secret store",
             "file": CONFIG_PATH,
-            "env": "the AMBIENT_API_KEY environment variable",
+            "env": f"the {API_KEY_ENV} environment variable",
         }.get(backend, backend or "unknown")
         sys.exit(
             f"ambient: a key is already configured ({where}).\n"
@@ -11634,12 +11666,12 @@ def cmd_doctor(args):
         if backend == "file" and keychain_available():
             hardening = f" — harden: `{LAUNCHER_NAME} setup --force` moves it into the Keychain"
         report("key", True, f"present ({backend}){hardening}")
-        if key_env_source() == SHARED_API_KEY_ENV:
-            report("key isolation", False,
-                   f"key came from ${SHARED_API_KEY_ENV}, which EVERY Ambient install "
-                   f"reads — export ${API_KEY_ENV} instead to keep this install separate")
     else:
         report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
+    if shared_key_env_is_set():
+        report("key isolation", True,
+               f"${SHARED_API_KEY_ENV} is exported and IGNORED here (every Ambient "
+               f"install reads it) — use ${API_KEY_ENV} to override this install's key")
 
     try:
         status, body = api_request(api_url, api_key or "none", "/v1/models", timeout=30)
@@ -12140,26 +12172,32 @@ def ensure_opencode_config(api_url, model):
     # other Ambient install writes a provider under the bare name. Sharing that entry
     # means whichever install ran `agent` first pins the baseURL, and the other one
     # then sends ITS key to that endpoint.
+    desired_options = {"baseURL": f"{api_url}/v1",
+                       "apiKey": "{env:AMBIENT_CODEX_API_KEY}"}
     if OPENCODE_PROVIDER in providers:
-        # Non-destructively union the CURRENT model into the provider's model
-        # map (the map was written once at install, so after
-        # `ambient-codex use <new>` the agent passed a model id opencode didn't
-        # know). User-tuned options stay untouched.
+        # This entry is OURS (keyed by LAUNCHER_NAME). Keep the current model in the
+        # map, and re-pin baseURL + apiKey: an entry left by an older version could
+        # still carry the shared `{env:AMBIENT_API_KEY}` placeholder or a stale
+        # endpoint, which would send the wrong key on the next `agent` run.
         amb = providers[OPENCODE_PROVIDER]
         if not isinstance(amb, dict):
             return
         models_map = amb.setdefault("models", {})
+        changed = False
         if isinstance(models_map, dict) and model not in models_map:
             models_map[model] = {"name": model}
-        else:
-            return  # nothing to add — don't rewrite the file
+            changed = True
+        if amb.get("options") != desired_options:
+            amb["options"] = desired_options
+            changed = True
+        if not changed:
+            return  # already correct — don't rewrite the file
     else:
         cfg.setdefault("$schema", "https://opencode.ai/config.json")
         providers[OPENCODE_PROVIDER] = {
             "npm": "@ai-sdk/openai-compatible",
             "name": "Ambient Codex (ambient.xyz)",
-            "options": {"baseURL": f"{api_url}/v1",
-                        "apiKey": "{env:AMBIENT_API_KEY}"},
+            "options": desired_options,
             "models": {model: {"name": model}},
         }
     tmp = None
@@ -12233,7 +12271,8 @@ def cmd_agent(args, api_key, api_url, conf):
     # The key is passed to opencode via its process environment — the standard
     # credential model used by aws/gh/docker/codex (env_key). It is NOT hidden
     # from opencode; do not ask an agent to print its environment.
-    env = dict(os.environ, AMBIENT_API_KEY=api_key)
+    # The child resolves `{env:AMBIENT_CODEX_API_KEY}` from OUR provider entry.
+    env = dict(os.environ, AMBIENT_CODEX_API_KEY=api_key)
     extra = list(args.agent_args)
     if extra and extra[0] == "run":
         argv = ["opencode", "run", "--model", f"{OPENCODE_PROVIDER}/{model}"] + extra[1:]

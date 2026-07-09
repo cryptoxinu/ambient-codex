@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.7.1"
+SERVER_VERSION = "1.7.2"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -87,6 +87,12 @@ class AmbientCommandError(RuntimeError):
 
 
 def plugin_root() -> Path:
+    """Where THIS server's plugin lives.
+
+    Codex can hand us a stale `PLUGIN_ROOT` after an update. Accepting any directory
+    that merely looks like a plugin let a 1.7.1 server drive a 1.7.0 CLI from an old
+    cache, so the manifest must name us and match our version.
+    """
     module_root = Path(__file__).resolve().parents[1]
     configured = os.environ.get("PLUGIN_ROOT")
     if configured:
@@ -97,10 +103,16 @@ def plugin_root() -> Path:
 
 
 def is_plugin_root(root: Path) -> bool:
-    return (
-        (root / "bin" / "ambient").is_file()
-        and (root / ".codex-plugin" / "plugin.json").is_file()
-    )
+    manifest = root / ".codex-plugin" / "plugin.json"
+    if not ((root / "bin" / "ambient").is_file() and manifest.is_file()):
+        return False
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    # Codex appends a `+codex.<cachebuster>` build tag on local reinstall.
+    version = str(data.get("version", "")).split("+", 1)[0]
+    return data.get("name") == SERVER_NAME and version == SERVER_VERSION
 
 
 def ambient_bin() -> Path:
@@ -108,7 +120,7 @@ def ambient_bin() -> Path:
 
 
 def trace_file() -> Optional[Path]:
-    configured = os.environ.get("AMBIENT_MCP_TRACE_FILE")
+    configured = os.environ.get("AMBIENT_CODEX_MCP_TRACE_FILE")
     if not configured:
         return None
     return Path(configured).expanduser()
@@ -151,7 +163,7 @@ def trace_event(event: str, message: Any) -> None:
 
 
 SECRET_PATTERNS = (
-    re.compile(r"(AMBIENT_API_KEY\s*=\s*)[^\s]+"),
+    re.compile(r"(AMBIENT(?:_CODEX)?_API_KEY\s*=\s*)[^\s]+"),
     re.compile(r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r"\bamb_[A-Za-z0-9._~+/=-]{12,}\b"),
     re.compile(r"\bsk-[A-Za-z0-9._~+/=-]{20,}\b"),
@@ -873,6 +885,34 @@ def write_message(stream, payload: JsonRpcPayload, *, framing: str) -> None:
     stream.flush()
 
 
+# Trees another Ambient install (or its host agent) owns. Kept in step with
+# bin/ambient's FOREIGN_STATE_DIRS; tests/test_state_isolation.py asserts they match.
+FOREIGN_STATE_DIRS = ("~/.config/ambient", "~/.claude")
+
+
+def _within(child: str, parent: str) -> bool:
+    child = os.path.normcase(os.path.realpath(os.path.expanduser(child)))
+    parent = os.path.normcase(os.path.realpath(os.path.expanduser(parent)))
+    if child == parent:
+        return True
+    try:
+        return os.path.commonpath([child, parent]) == parent
+    except ValueError:  # pragma: no cover - different Windows drives
+        return False
+
+
+def state_root() -> Optional[Path]:
+    """This install's state root, or None when AMBIENT_CODEX_HOME points somewhere
+    it must not. The CLI exits on a hostile override; the MCP server must not die on
+    startup, so it simply refuses to read anything."""
+    override = os.environ.get("AMBIENT_CODEX_HOME")
+    if not override:
+        return Path.home() / ".config" / "ambient-codex"
+    if any(_within(override, foreign) for foreign in FOREIGN_STATE_DIRS):
+        return None
+    return Path(override).expanduser()
+
+
 def current_mode() -> str:
     """Read the persisted Ambient Codex mode: off | on | takeover.
 
@@ -880,8 +920,9 @@ def current_mode() -> str:
     slow or missing CLI can never delay MCP startup (Codex kills a server that does
     not answer `initialize` inside `startup_timeout_sec`).
     """
-    override = os.environ.get("AMBIENT_CODEX_HOME")
-    root = Path(override).expanduser() if override else Path.home() / ".config" / "ambient-codex"
+    root = state_root()
+    if root is None:
+        return "off"     # a hostile AMBIENT_CODEX_HOME must never drive this install
     mode = "off"
     try:
         with (root / "env").open(encoding="utf-8") as handle:
@@ -913,7 +954,7 @@ def session_instructions() -> str:
         return SERVER_INSTRUCTIONS + (
             "\n\nAmbient delegate mode is ON. Route token-heavy work (bulk code writing, "
             "audits, digests) through Ambient; keep planning, review, and integration in "
-            "Codex. `ambient control mode off` stops it."
+            "Codex. `ambient-codex control mode off` stops it."
         )
     return SERVER_INSTRUCTIONS
 

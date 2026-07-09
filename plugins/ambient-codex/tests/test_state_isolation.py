@@ -335,7 +335,8 @@ class TestOpencodeProviderIsNamespaced(unittest.TestCase):
             cli.OPENCODE_CONFIG_PATH = cfg_path
             cli.ensure_opencode_config("https://api.ambient.xyz", "m/1")
             body = Path(cfg_path).read_text(encoding="utf-8")
-            self.assertIn("{env:AMBIENT_API_KEY}", body)
+            self.assertIn("{env:AMBIENT_CODEX_API_KEY}", body)
+            self.assertNotIn("{env:AMBIENT_API_KEY}", body)
             self.assertNotIn("sk-", body)
 
 
@@ -430,27 +431,29 @@ class TestNoCrossInstallKeyAccess(unittest.TestCase):
         self.assertNotIn('"-s", "ambient.xyz"', source)
         self.assertIn('"-s", KEYCHAIN_SERVICE', source)
 
-    ALLOWED_FOREIGN_DIR_LINE = 'FOREIGN_STATE_DIR = os.path.expanduser("~/.config/ambient")'
+    ALLOWED_FOREIGN_DIR_LINES = (
+        'os.path.expanduser("~/.config/ambient"),',
+        'os.path.expanduser("~/.claude"),',
+    )
 
     def test_the_other_installs_config_dir_is_only_ever_refused(self):
-        """The one place we may name it is the guard that refuses to use it."""
+        """The only place we may name it is the guard that refuses to use it."""
         offenders = []
         for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
             if line.lstrip().startswith("#"):
                 continue  # prose may explain the boundary
-            if line.strip() == self.ALLOWED_FOREIGN_DIR_LINE:
+            if line.strip() in self.ALLOWED_FOREIGN_DIR_LINES:
                 continue
             if ('".config/ambient/' in line or '"~/.config/ambient"' in line
                     or "'~/.config/ambient'" in line):
                 offenders.append(f"{lineno}: {line.strip()[:70]}")
         self.assertEqual(offenders, [])
 
-    def test_the_foreign_dir_constant_is_only_used_to_refuse(self):
+    def test_the_foreign_trees_are_only_used_to_refuse(self):
         source = CLI.read_text(encoding="utf-8")
         uses = [ln.strip() for ln in source.split("\n")
-                if "FOREIGN_STATE_DIR" in ln and not ln.lstrip().startswith("#")]
-        self.assertEqual(len(uses), 2, uses)          # the definition + the comparison
-        self.assertTrue(any("normcase" in u for u in uses), uses)
+                if "FOREIGN_STATE_DIRS" in ln and not ln.lstrip().startswith("#")]
+        self.assertEqual(len(uses), 2, uses)   # the definition + foreign_root()'s loop
 
     def test_setup_never_offers_an_import(self):
         source = CLI.read_text(encoding="utf-8")
@@ -518,7 +521,7 @@ class TestRunsWithTheOtherInstallLockedOut(unittest.TestCase):
 
 
 class TestKeyEnvIsNamespaced(unittest.TestCase):
-    def test_namespaced_var_wins_over_the_shared_one(self):
+    def test_namespaced_var_supplies_the_key(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
             with mock.patch.dict(os.environ, {"AMBIENT_CODEX_API_KEY": "mine",
@@ -527,23 +530,26 @@ class TestKeyEnvIsNamespaced(unittest.TestCase):
             self.assertEqual(key, "mine")
             self.assertEqual(backend, "env")
 
-    def test_shared_var_is_still_honoured_but_flagged(self):
+    def test_the_shared_var_is_ignored_entirely(self):
+        """`AMBIENT_API_KEY` is read by EVERY Ambient install; honouring it shares a key."""
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
             env = {k: v for k, v in os.environ.items() if k != "AMBIENT_CODEX_API_KEY"}
-            env["AMBIENT_API_KEY"] = "shared"
-            with mock.patch.dict(os.environ, env, clear=True):
-                key, _ = cli.resolve_key_and_backend({})
-                self.assertEqual(key, "shared")
-                self.assertEqual(cli.key_env_source(), "AMBIENT_API_KEY")
+            env["AMBIENT_API_KEY"] = "the-other-installs-key"
+            with mock.patch.dict(os.environ, env, clear=True), \
+                 mock.patch.object(cli, "keychain_read", return_value=None):
+                key, backend = cli.resolve_key_and_backend({})
+            self.assertIsNone(key, "adopted the shared AMBIENT_API_KEY")
+            self.assertIsNone(backend)
 
-    def test_no_env_key_reports_no_source(self):
+    def test_doctor_reports_the_shared_var_as_ignored(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
-            env = {k: v for k, v in os.environ.items()
-                   if k not in ("AMBIENT_API_KEY", "AMBIENT_CODEX_API_KEY")}
+            with mock.patch.dict(os.environ, {"AMBIENT_API_KEY": "x"}):
+                self.assertTrue(cli.shared_key_env_is_set())
+            env = {k: v for k, v in os.environ.items() if k != "AMBIENT_API_KEY"}
             with mock.patch.dict(os.environ, env, clear=True):
-                self.assertIsNone(cli.key_env_source())
+                self.assertFalse(cli.shared_key_env_is_set())
 
     def test_key_removal_only_targets_this_installs_item(self):
         with tempfile.TemporaryDirectory() as home:
@@ -560,8 +566,32 @@ class TestKeyEnvIsNamespaced(unittest.TestCase):
 class TestHookScriptReadsIsolatedEnv(unittest.TestCase):
     def test_session_start_reads_the_codex_root_only(self):
         script = (ROOT / "hooks" / "session-start.sh").read_text(encoding="utf-8")
-        self.assertIn('${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}/env', script)
+        self.assertIn('${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}', script)
         self.assertNotIn('conf="$HOME/.config/ambient/env"', script)
+
+    def test_session_start_validates_a_relocated_state_root(self):
+        """The hook must not read a root the CLI would refuse."""
+        script = (ROOT / "hooks" / "session-start.sh").read_text(encoding="utf-8")
+        self.assertIn('$HOME/.config/ambient"', script)   # the foreign tree it checks
+        self.assertIn('$HOME/.claude"', script)
+        self.assertIn("exit 0", script)
+
+    @unittest.skipIf(os.name == "nt", "POSIX sh hook")
+    def test_session_start_stays_silent_for_a_hostile_state_root(self):
+        with tempfile.TemporaryDirectory() as home:
+            foreign = os.path.join(home, ".config", "ambient")
+            os.makedirs(foreign)
+            with open(os.path.join(foreign, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_DELEGATE=takeover\n")
+            for override in (foreign, os.path.join(foreign, "sub"),
+                             os.path.join(home, ".claude")):
+                with self.subTest(override=override):
+                    proc = subprocess.run(
+                        ["sh", str(ROOT / "hooks" / "session-start.sh")],
+                        env={**sandbox_env(home), "PLUGIN_ROOT": str(ROOT),
+                             "AMBIENT_CODEX_HOME": override},
+                        capture_output=True, text=True, timeout=30, check=False)
+                    self.assertNotIn("TAKEOVER", proc.stdout)
 
     @unittest.skipIf(os.name == "nt", "SessionStart hook is POSIX sh")
     def test_session_start_ignores_the_other_installs_takeover_flag(self):
@@ -579,3 +609,127 @@ class TestHookScriptReadsIsolatedEnv(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestMcpHonoursTheSameStateRootGuard(unittest.TestCase):
+    """The MCP server reads the mode file directly, so it needs the CLI's guard.
+
+    Without it, `AMBIENT_CODEX_HOME=~/.config/ambient` made the server surface the
+    OTHER install's delegate mode in its `initialize` instructions.
+    """
+
+    def _mcp(self):
+        spec = importlib.util.spec_from_file_location(
+            "ambient_mcp_guard", ROOT / "mcp" / "ambient_mcp.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_foreign_trees_match_the_cli(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            mcp = self._mcp()
+        cli_trees = {os.path.basename(p.rstrip("/")) for p in cli.FOREIGN_STATE_DIRS}
+        mcp_trees = {os.path.basename(p.rstrip("/")) for p in mcp.FOREIGN_STATE_DIRS}
+        self.assertEqual(cli_trees, mcp_trees, "guards drifted apart")
+
+    def test_state_root_is_none_for_a_foreign_override(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as home:
+            for sub in (os.path.join(home, ".config", "ambient"),
+                        os.path.join(home, ".config", "ambient", "cache"),
+                        os.path.join(home, ".claude")):
+                os.makedirs(sub, exist_ok=True)
+                with self.subTest(sub=sub), \
+                     mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home,
+                                                  "AMBIENT_CODEX_HOME": sub}):
+                    self.assertIsNone(mcp.state_root())
+
+    def test_mode_is_off_when_the_override_is_foreign(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as home:
+            foreign = os.path.join(home, ".config", "ambient")
+            os.makedirs(foreign)
+            with open(os.path.join(foreign, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_DELEGATE=takeover\n")
+            with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home,
+                                              "AMBIENT_CODEX_HOME": foreign}):
+                self.assertEqual(mcp.current_mode(), "off")
+                self.assertNotIn("TAKEOVER", mcp.session_instructions())
+
+    def test_a_legitimate_override_is_still_read(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as home:
+            mine = os.path.join(home, "mine")
+            os.makedirs(mine)
+            with open(os.path.join(mine, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_DELEGATE=takeover\n")
+            with mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home,
+                                              "AMBIENT_CODEX_HOME": mine}):
+                self.assertEqual(mcp.current_mode(), "takeover")
+
+
+class TestMcpNeverDrivesAStalePluginRoot(unittest.TestCase):
+    """`PLUGIN_ROOT` survives a plugin update, so a 1.7.x server could drive an old CLI."""
+
+    def _mcp(self):
+        spec = importlib.util.spec_from_file_location(
+            "ambient_mcp_root", ROOT / "mcp" / "ambient_mcp.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _fake_plugin(self, tmp, name, version):
+        root = Path(tmp) / f"{name}-{version}"
+        (root / "bin").mkdir(parents=True)
+        (root / ".codex-plugin").mkdir()
+        (root / "bin" / "ambient").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        (root / ".codex-plugin" / "plugin.json").write_text(
+            json.dumps({"name": name, "version": version}), encoding="utf-8")
+        return root
+
+    def test_a_version_mismatched_plugin_root_is_ignored(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            stale = self._fake_plugin(tmp, mcp.SERVER_NAME, "0.0.1")
+            with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(stale)}):
+                self.assertEqual(mcp.plugin_root(), Path(ROOT).resolve())
+
+    def test_a_foreign_named_plugin_root_is_ignored(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            other = self._fake_plugin(tmp, "ambient-code", mcp.SERVER_VERSION)
+            with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(other)}):
+                self.assertEqual(mcp.plugin_root(), Path(ROOT).resolve())
+
+    def test_a_matching_plugin_root_is_honoured_including_the_cachebuster(self):
+        mcp = self._mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            good = self._fake_plugin(tmp, mcp.SERVER_NAME,
+                                     f"{mcp.SERVER_VERSION}+codex.20260709")
+            with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(good)}):
+                self.assertEqual(mcp.plugin_root(), good.resolve())
+
+
+class TestTraceFileIsNamespaced(unittest.TestCase):
+    def test_the_trace_env_var_is_install_scoped(self):
+        source = (ROOT / "mcp" / "ambient_mcp.py").read_text(encoding="utf-8")
+        self.assertIn("AMBIENT_CODEX_MCP_TRACE_FILE", source)
+        self.assertNotIn('"AMBIENT_MCP_TRACE_FILE"', source)
+
+
+class TestGuidanceNeverTellsUserToExportTheSharedKey(unittest.TestCase):
+    def test_no_user_facing_text_suggests_exporting_AMBIENT_API_KEY(self):
+        """Guiding a user to `export AMBIENT_API_KEY` would key BOTH installs at once."""
+        source = CLI.read_text(encoding="utf-8")
+        offenders = []
+        for lineno, line in enumerate(source.split("\n"), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if '"' not in line and "'" not in line:
+                continue  # code, not printed copy
+            if "export AMBIENT_API_KEY" in line:
+                offenders.append(f"{lineno}: {line.strip()[:60]}")
+            if "the AMBIENT_API_KEY environment variable" in line:
+                offenders.append(f"{lineno}: {line.strip()[:60]}")
+        self.assertEqual(offenders, [])
