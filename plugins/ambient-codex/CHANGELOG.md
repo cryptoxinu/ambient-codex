@@ -12,6 +12,10 @@ All notable changes to `ambient-codex`.
 - Kept `spend-cap` available through lower-level `ambient-codex config` and
   `AMBIENT_MAX_SPEND` for advanced users who explicitly want a local budget
   guardrail.
+- MCP now self-heals one more stale-cache case: if the running server's versioned
+  cache directory was removed but the current same-version sibling install exists,
+  bounded tools route through that current bundled CLI instead of failing on a
+  missing path.
 
 ## 1.8.5 - 2026-07-09
 

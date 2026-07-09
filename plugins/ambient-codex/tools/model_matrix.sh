@@ -97,6 +97,13 @@ run wk "$AMB" use kimi --code < /dev/null   # ambiguous → refuse + suggest
 [ $RC -ne 0 ] && grep -q "Did you mean" "$OUT" && pass "use refuses ambiguous substring with suggestions" || fail "use ambiguous" "rc=$RC"
 run "$AMB" mode on;  grep -q "ON" "$OUT" && pass "mode on" || fail "mode on" "?"
 run "$AMB" mode;     grep -q "delegate=on" "$OUT" && pass "mode status reflects on" || fail "mode status" "?"
+run "$AMB" mode takeover; grep -q "TAKEOVER" "$OUT" && pass "mode takeover" || fail "mode takeover" "?"
+run "$AMB" control --json
+python3 -c "
+import json; raw=open('$OUT').read()
+d=json.JSONDecoder().raw_decode(raw[raw.index('{'):])[0]
+assert d['mode']=='takeover' and any(o['state']=='takeover' and o['current'] for o in d['mode_options'])" 2>/dev/null \
+  && pass "control --json reflects takeover" || fail "control takeover" "$(head -c 120 "$OUT")"
 run "$AMB" mode off; grep -q "OFF" "$OUT" && pass "mode off" || fail "mode off" "?"
 run wk "$AMB" curate only moonshotai/kimi-k2.7-code
 run wk "$AMB" curate status

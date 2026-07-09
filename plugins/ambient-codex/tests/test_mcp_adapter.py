@@ -78,6 +78,26 @@ class TestMcpAdapter(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(ROOT)}):
             self.assertEqual(mcp.plugin_root(), ROOT.resolve())
 
+    def test_plugin_root_falls_back_to_current_sibling_cache(self):
+        mcp = load_mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_parent = Path(tmp) / "cache" / "ambient-codex" / "ambient-codex"
+            stale = cache_parent / "1.8.5"
+            current = cache_parent / mcp.SERVER_VERSION
+            (stale / "mcp").mkdir(parents=True)
+            (current / "bin").mkdir(parents=True)
+            (current / ".codex-plugin").mkdir()
+            (current / "bin" / "ambient").write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            (current / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": mcp.SERVER_NAME, "version": mcp.SERVER_VERSION}),
+                encoding="utf-8",
+            )
+            fake_file = stale / "mcp" / "ambient_mcp.py"
+            fake_file.write_text("# stale module path\n", encoding="utf-8")
+            with mock.patch.object(mcp, "__file__", str(fake_file)), \
+                 mock.patch.dict(os.environ, {"PLUGIN_ROOT": str(stale)}):
+                self.assertEqual(mcp.plugin_root(), current.resolve())
+
     def test_stdio_initialize_and_list_tools(self):
         init = {
             "jsonrpc": "2.0",

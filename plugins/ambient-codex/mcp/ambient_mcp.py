@@ -99,7 +99,40 @@ def plugin_root() -> Path:
         root = Path(configured).expanduser().resolve()
         if is_plugin_root(root):
             return root
+    if is_plugin_root(module_root):
+        return module_root
+    sibling = current_sibling_plugin_root(module_root)
+    if sibling is not None:
+        return sibling
     return module_root
+
+
+def current_sibling_plugin_root(module_root: Path) -> Optional[Path]:
+    """Find the current cache sibling when this server was launched from stale cwd.
+
+    A running Python MCP process can outlive the versioned cache directory it was
+    launched from. In that state `__file__` still points at the old path but the
+    current install usually exists as a sibling under the same plugin cache parent.
+    """
+    parent = module_root.parent
+    try:
+        children = list(parent.iterdir())
+    except OSError:
+        return None
+    candidates: List[Path] = []
+    for child in children:
+        try:
+            resolved = child.resolve()
+        except OSError:
+            continue
+        if resolved == module_root:
+            continue
+        if is_plugin_root(resolved):
+            candidates.append(resolved)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda path: (path.stat().st_mtime, str(path)), reverse=True)
+    return candidates[0]
 
 
 def is_plugin_root(root: Path) -> bool:
