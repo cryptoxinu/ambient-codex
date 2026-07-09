@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.7.2"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.7.3"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -11122,9 +11122,9 @@ CONTROL_ACTIONS = tuple(
         "control mode off",
         "control model MODEL --chat",
         "control model MODEL --code",
-        "control key setup",
-        "control key rotate",
-        "control key remove",
+        "setup",
+        "setup --force",
+        "setup --remove",
         "control setting fallback on|off",
         "control setting streaming on|off",
     )
@@ -11221,7 +11221,7 @@ def _control_snapshot(include_all=False, offline=False):
 def _control_print_status(payload):
     key = payload["key"]
     key_state = f"configured ({key['backend']})" if key["configured"] else \
-        "MISSING - run: ambient-codex control key setup"
+        f"MISSING — get a key at {KEY_CONSOLE_URL}, then run: {LAUNCHER_NAME} setup"
     print("Ambient Codex Control")
     print("Native surface: Codex plugin bundle")
     print(f"API key: {key_state}")
@@ -11260,23 +11260,26 @@ def _control_print_key_status():
     api_key, backend = resolve_key_and_backend(conf)
     if api_key:
         print(f"API key: configured ({backend})")
-        print("Rotate: ambient-codex control key rotate")
-        print("Remove: ambient-codex control key remove")
+        print(f"Rotate: {LAUNCHER_NAME} setup --force")
+        print(f"Remove: {LAUNCHER_NAME} setup --remove")
     else:
         print("API key: MISSING")
-        print("Setup: ambient-codex control key setup")
+        print(f"  1. Get a key at {KEY_CONSOLE_URL}")
+        print(f"  2. Run in your terminal:  {LAUNCHER_NAME} setup")
 
 
 def _control_setup_instruction(action):
-    direct = (f"{LAUNCHER_NAME} setup --force" if action == "rotate"
-              else f"{LAUNCHER_NAME} setup")
-    print("API key setup is terminal-only so the key never enters chat, MCP "
-          "arguments, process argv, or logs.")
-    print("Run this in your own terminal:")
-    print(f"  ambient-codex control key {action}")
-    print("Equivalent direct command:")
-    print(f"  {direct}")
-    print(f"Create or manage keys at: {KEY_CONSOLE_URL}")
+    cmd = (f"{LAUNCHER_NAME} setup --force" if action == "rotate"
+           else f"{LAUNCHER_NAME} setup --remove" if action == "remove"
+           else f"{LAUNCHER_NAME} setup")
+    verb = {"rotate": "rotate your key", "remove": "remove your key"}.get(
+        action, "add your key")
+    print(f"To {verb}, run this in your own terminal:")
+    print(f"  {cmd}")
+    if action not in ("rotate", "remove"):
+        print(f"Get a key first at: {KEY_CONSOLE_URL}")
+    print("The key is entered privately (hidden input, verified locally) — it never "
+          "enters chat, MCP arguments, process argv, or logs.")
 
 
 def _control_key(args):

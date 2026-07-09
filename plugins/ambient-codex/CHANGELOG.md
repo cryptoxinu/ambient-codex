@@ -2,6 +2,20 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.7.3 - 2026-07-09
+
+### Clearer first-run key setup
+
+The no-key onboarding now says, everywhere it appears: get a key at
+**https://app.ambient.xyz**, then run `ambient-codex setup`.
+
+- The skill shows a verbatim First-run block with the URL and the one command, and no
+  longer tells the user `control key setup`.
+- `control`, `control key status`, and the MCP `ambient_key` tool all lead with the key
+  console URL and the clean `ambient-codex setup` command.
+- The control-panel action list offers `setup` / `setup --force` / `setup --remove`
+  instead of the longer `control key ...` forms. (`control key setup` still works.)
+
 ## 1.7.2 - 2026-07-09
 
 ### Second-auditor hardening of the isolation boundary

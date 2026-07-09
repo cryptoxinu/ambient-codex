@@ -59,7 +59,8 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 | Generate a single-file draft | Use bundled `code "task" -f context.py --json`, then review before applying. |
 | Generate a file set | Write a precise brief, then run bundled `build "brief" --dir TARGET --json --apply --yes`; review every output file before accepting. |
 | Run the terminal agent | Use bundled `agent` for the user's interactive opencode TUI, or bundled `agent run "task"` for a headless task in a separate worktree/dir. |
-| Setup or rotate key | Tell the user to run bundled `control key setup` or bundled `control key rotate` in their own terminal. Do not accept a key in chat. |
+| No API key configured | Show the **First-run key setup** block below, verbatim. Do not run anything else until a key exists. |
+| Rotate or remove key | Tell the user to run `ambient-codex setup --force` (rotate) or `ambient-codex setup --remove` in their own terminal. Do not accept a key in chat. |
 | Diagnose failures | Use MCP doctor or run bundled `doctor` and relay the diagnosis table plainly. |
 | Usage and savings | Use MCP usage or run bundled `usage` / `usage --json`; disclose that the agent lane is billed by Ambient but not visible to local metering. |
 
@@ -200,16 +201,26 @@ repo-sized audits. If output is partial, report the coverage gap plainly.
 
 ## Setup And Settings
 
-First run:
+**First-run key setup.** When no key is configured, show the user exactly this and
+stop — do not run any Ambient command until they have added a key:
 
-1. Explain briefly that Ambient serves open models behind one paid API and keys
-   come from `https://app.ambient.xyz`.
-2. Tell the user to run the bundled binary directly, or create a distinct alias
-   such as `ambient-codex`; do not rely on a bare `ambient` PATH lookup.
-3. Tell the user to run bundled `control key setup` in their own terminal. Input is hidden and
-   locally verified. If they pasted a key into chat, do not use it; tell them to
-   rotate it and run setup locally.
-4. Smoke test with bundled `ask "Reply with exactly: AMBIENT-OK"`.
+> Ambient Codex needs its own Ambient API key.
+>
+> 1. Get a key at **https://app.ambient.xyz**
+> 2. Add it by running this in your terminal:
+>    ```
+>    ambient-codex setup
+>    ```
+>
+> Setup takes the key privately (hidden input, verified locally) — don't paste the
+> key into this chat.
+
+Notes for you (the agent), not the user:
+- The command is `ambient-codex setup`. Do not tell them `control key setup`; both
+  work, but `ambient-codex setup` is the one to show.
+- If they paste a key into chat anyway, refuse to use it and tell them to rotate it
+  at app.ambient.xyz and run `ambient-codex setup` locally.
+- After they confirm setup, smoke-test with bundled `ask "Reply with exactly: AMBIENT-OK"`.
 
 Settings live behind commands, not manual env editing:
 

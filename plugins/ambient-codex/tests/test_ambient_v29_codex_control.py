@@ -119,7 +119,7 @@ class ControlSnapshotTests(ControlCase):
         self.assertEqual(data["defaults"]["chat"], "z-ai/glm-5.2")
         self.assertEqual(data["models"]["serving_count"], 1)
         self.assertIn("ambient-codex control mode on", data["actions"])
-        self.assertIn("ambient-codex control key setup", data["actions"])
+        self.assertIn("ambient-codex setup", data["actions"])
 
     def test_text_panel_exposes_controls_without_network_requirement(self):
         amb.save_config_values({"AMBIENT_DELEGATE": "off"})
@@ -156,8 +156,8 @@ class ControlWriteTests(ControlCase):
     def test_key_setup_in_non_tty_gives_instructions_not_prompt(self):
         with patched(amb.sys, stdin=NotATTY(), stdout=io.StringIO(), stderr=io.StringIO()):
             out, _ = self.run_control("key", "setup")
-        self.assertIn("ambient-codex control key setup", out)
         self.assertIn("ambient-codex setup", out)
+        self.assertIn("app.ambient.xyz", out)   # points the user at the key console
 
     def test_key_remove_scrubs_file_and_secret_store(self):
         amb.save_config_values({
@@ -192,3 +192,38 @@ class RegistryDocsContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeyOnboardingUXTests(unittest.TestCase):
+    """The no-key path must clearly say: get a key at app.ambient.xyz, run `ambient-codex setup`."""
+
+    def _no_key(self):
+        return patched(
+            amb,
+            resolve_key_and_backend=lambda conf: (None, None),
+            read_config_file=lambda: {},
+        )
+
+    def test_key_status_names_the_console_and_the_clean_command(self):
+        with self._no_key(), patched(amb.sys, stdout=io.StringIO(),
+                                     stderr=io.StringIO()) as _:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                amb._control_print_key_status()
+            out = buf.getvalue()
+        self.assertIn("app.ambient.xyz", out)
+        self.assertIn("ambient-codex setup", out)
+        self.assertNotIn("control key setup", out)
+
+    def test_setup_instruction_leads_with_the_console_and_setup(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            amb._control_setup_instruction("setup")
+        out = buf.getvalue()
+        self.assertIn("ambient-codex setup", out)
+        self.assertIn("app.ambient.xyz", out)
+        self.assertNotIn("control key setup", out)
+
+    def test_actions_offer_setup_not_control_key_setup(self):
+        self.assertIn("ambient-codex setup", amb.CONTROL_ACTIONS)
+        self.assertNotIn("ambient-codex control key setup", amb.CONTROL_ACTIONS)
