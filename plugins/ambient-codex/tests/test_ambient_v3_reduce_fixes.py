@@ -294,6 +294,26 @@ class TestH2SynthesisSizedToReduceModel(unittest.TestCase):
         synth = [(m, mt) for m, s, mt in calls if "SYNTH" in s]
         self.assertEqual(synth, [("strong/reduce", 4000)])  # conservative
 
+    def test_deterministic_reduce_reason_keeps_worker_error_detail(self):
+        def fake(api_key, api_url, model, messages, args, **kw):
+            if "bad chunk" in messages[1]["content"]:
+                raise amb.ChatError("model", "No workers available")
+            return (json.dumps({"findings": [], "verdict": "SHIP"}),
+                    None, {"finish_reason": "stop"})
+
+        reducer = lambda texts: json.dumps({"findings": [], "verdict": "SHIP"})
+        args = mr_args(max_tokens=4000, parallel=1, no_cache=True)
+        with patched(amb, complete=fake), \
+                contextlib.redirect_stderr(io.StringIO()):
+            _final, partial, reason = amb.run_map_reduce(
+                "k", "u", "reduce/tiny", "map instructions",
+                ["bad chunk", "good chunk"], args, "SYNTH", 30_000,
+                reducer=reducer)
+
+        self.assertTrue(partial)
+        self.assertIn("chunk 1", reason)
+        self.assertIn("No workers available", reason)
+
 
 class TestM1SplitCostFormula(unittest.TestCase):
     """The split gate must not double-count synthesis input."""

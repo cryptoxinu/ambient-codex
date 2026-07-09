@@ -4,6 +4,7 @@ docs/plans/2026-07-06-stress-test-remediation.md."""
 import contextlib
 import importlib.machinery
 import importlib.util
+import argparse
 import io
 import json
 import os
@@ -63,6 +64,23 @@ def _rj(raw):
 
 def _is_clean(e):
     return e["verdict"] == "SHIP" and not e.get("findings") and e["exit_code"] == 0
+
+
+@contextlib.contextmanager
+def _patched(obj, **attrs):
+    old = {}
+    missing = object()
+    for key, value in attrs.items():
+        old[key] = getattr(obj, key, missing)
+        setattr(obj, key, value)
+    try:
+        yield
+    finally:
+        for key, value in old.items():
+            if value is missing:
+                delattr(obj, key)
+            else:
+                setattr(obj, key, value)
 
 
 class ProseRecoveryTests(unittest.TestCase):
@@ -612,6 +630,39 @@ class ProseRecoveryTests(unittest.TestCase):
                                    "_unparsed_chunks": 1, "_repaired_chunks": 0})
         _render_json(reducer_json, "reduced/model")
         assert amb.cap_state("reduced/model", "structured_json") != "ok"
+
+    def test_findings_reducer_recovers_prose_chunks(self):
+        merged = json.loads(amb.findings_reducer([
+            json.dumps({"findings": [], "verdict": "SHIP"}),
+            GLM_PROSE,
+        ]))
+        assert merged["_unparsed_chunks"] == 0
+        assert len(merged["findings"]) == 3
+        assert merged["verdict"] == "FIX FIRST"
+
+    def test_run_one_audit_worker_recovers_prose_single_shot(self):
+        catalog = [{
+            "id": "z-ai/glm-5.2",
+            "context_length": 202752,
+            "max_output_length": 65536,
+            "supported_features": ["reasoning", "structured_outputs"],
+            "pricing": {"input": 1.0, "output": 4.0},
+        }]
+        args = argparse.Namespace(
+            no_cache=True, cache_ttl=None, max_tokens=None, temperature=0.1,
+            timeout=30, response_format=None, allow_partial=False,
+            allow_cost=True, yes=True, fallback=False, parallel=None,
+        )
+
+        def fake_complete(api_key, api_url, model, messages, spec, **kwargs):
+            return GLM_PROSE, {}, {"finish_reason": "stop", "_served_model": model}
+
+        with _patched(amb, complete=fake_complete):
+            findings, ok = amb.run_one_audit(
+                "z-ai/glm-5.2", catalog, [("stats.py", " 1| def x(): pass")],
+                amb.AUDIT_SYSTEM_PROMPT, args, "key", "https://x", {})
+        assert ok is True
+        assert len(findings) == 3
 
     # --- render integration + learning --------------------------------------
     def test_json_render_recovers_findings_and_is_not_partial(self):

@@ -95,6 +95,42 @@ class TestApplyBudget(unittest.TestCase):
         self.assertLessEqual(math.ceil(p.single_shot_chars / CPT) + a.max_tokens,
                              p.context_length)
 
+    def test_auto_budget_leaves_context_for_actual_dense_input(self):
+        p = amb.ModelProfile(
+            "z-ai/glm-5.2", True, 101376, 101376,
+            65123, 108008, 91806, 65123,
+            ["reasoning", "structured_outputs"])
+        a = self._ns(max_tokens=None)
+        amb.apply_output_budget(a, p, p.chunk_chars)
+        dense_input_tokens = math.ceil(
+            p.chunk_chars / CPT * amb.INPUT_TOKEN_SAFETY)
+        self.assertLessEqual(
+            dense_input_tokens + a.max_tokens + amb.CONTEXT_OVERHEAD_TOKENS,
+            p.context_length)
+        self.assertLessEqual(
+            dense_input_tokens + a.escalation_ceiling
+            + amb.CONTEXT_OVERHEAD_TOKENS,
+            p.context_length)
+        spec = amb.RequestSpec(max_tokens=None).with_output_budget(
+            p, p.chunk_chars)
+        self.assertLessEqual(
+            dense_input_tokens + spec.escalation_ceiling
+            + amb.CONTEXT_OVERHEAD_TOKENS,
+            p.context_length)
+
+    def test_explicit_budget_clamps_to_actual_input_context(self):
+        p = amb.ModelProfile(
+            "z-ai/glm-5.2", True, 101376, 101376,
+            65123, 108008, 91806, 65123,
+            ["reasoning", "structured_outputs"])
+        a = self._ns(max_tokens=999999)
+        amb.apply_output_budget(a, p, p.chunk_chars)
+        dense_input_tokens = math.ceil(
+            p.chunk_chars / CPT * amb.INPUT_TOKEN_SAFETY)
+        self.assertLessEqual(
+            dense_input_tokens + a.max_tokens + amb.CONTEXT_OVERHEAD_TOKENS,
+            p.context_length)
+
     def test_override_never_exceeds_cap_or_context(self):
         random.seed(7)
         for _ in range(500):
@@ -158,6 +194,21 @@ class TestJSONAndFindings(unittest.TestCase):
         self.assertEqual(len(merged["findings"]), 1)
         self.assertEqual(merged["findings"][0]["severity"], "CRITICAL")
         self.assertEqual(merged["verdict"], "FIX FIRST")
+
+    def test_reducer_drops_model_labeled_split_artifacts(self):
+        chunk = {"findings": [
+            {"severity": "MEDIUM", "confidence": "HIGH", "file": "a.py",
+             "line": 2, "title": "divide by zero", "defect": "d",
+             "scenario": "s", "fix": "f"},
+            {"severity": "LOW", "confidence": "LOW", "file": "a.py",
+             "line": 5008,
+             "title": "Incomplete function definition (suspected split artifact)",
+             "defect": "function body is split across chunks",
+             "scenario": "chunk boundary", "fix": "ignore"},
+        ], "verdict": "NEEDS WORK"}
+        merged = json.loads(amb.findings_reducer([json.dumps(chunk)]))
+        self.assertEqual(len(merged["findings"]), 1)
+        self.assertEqual(merged["findings"][0]["title"], "divide by zero")
 
     def test_capability_gating(self):
         cat = catalog()

@@ -71,6 +71,7 @@ import hashlib
 import http.client
 import io
 import json
+import math
 import os
 import random
 import re
@@ -321,6 +322,7 @@ CHUNK_CHARS = 300_000         # default per-chunk budget (overridden per model)
 # against supported_sampling_parameters), so output-budget + chunk-size are the
 # only levers.
 CHARS_PER_TOKEN = 3.2                  # aligns with estimate_cost/cost_gate
+INPUT_TOKEN_SAFETY = 1.6               # guttered/source code often tokenizes denser
 REASONING_EXPANSION = 1.5              # reasoning chars produced per input char on
                                        # dense code (empirical ~1.43, rounded up)
 # --- Telemetry-EWMA routing ------------------------------------
@@ -337,6 +339,7 @@ TELEMETRY_EWMA_ALPHA = 0.3             # recent-weighted: newest sample = 30%
 _TELEMETRY_CPT_CACHE = None            # per-process ledger memo (hot path)
 ANSWER_TOKENS_RESERVE = 6000           # tokens kept for the answer after reasoning
 OUTPUT_SAFETY = 1.15                   # headroom for expansion variance
+CONTEXT_OVERHEAD_TOKENS = 2500         # system prompt + chat framing margin
 REASONING_SINGLE_SHOT_CHARS = 32_000   # minimum single-shot input for a reasoner
 # A1: single-shot is sized to the model's REAL window (not a flat 32k), so a
 # whole-repo audit stays in ONE high-quality pass on big models (GLM/Kimi have
@@ -2975,6 +2978,29 @@ def _reasoning_output_budget(input_chars, cpt=None):
     return int((reasoning_tokens + ANSWER_TOKENS_RESERVE) * OUTPUT_SAFETY)
 
 
+def _context_safe_output_cap(profile, input_chars=None, cpt=None):
+    """Maximum output tokens that leave room for this input in context.
+
+    The static 3.2 chars/token estimate is optimistic for guttered source code,
+    so context checks use an extra input-token safety factor. The lower bound is
+    a last-resort floor for tiny windows; callers still prefer smaller chunks
+    when they can.
+    """
+    cpt = cpt or CHARS_PER_TOKEN
+    chars = profile.single_shot_chars if input_chars is None else input_chars
+    input_tokens = math.ceil(max(0, chars) / cpt * INPUT_TOKEN_SAFETY)
+    return max(
+        256,
+        min(profile.max_output_length,
+            profile.context_length - input_tokens - CONTEXT_OVERHEAD_TOKENS),
+    )
+
+
+def _context_safe_escalation_ceiling(profile, input_chars=None, cpt=None):
+    cap = _context_safe_output_cap(profile, input_chars, cpt)
+    return max(256, min(profile.escalation_ceiling, cap))
+
+
 def single_shot_max_chars():
     """Cost-knob cap on how large a single-shot reasoning call may get (A1)."""
     raw = os.environ.get("AMBIENT_SINGLE_SHOT_MAX_CHARS")
@@ -2997,7 +3023,8 @@ def _reasoning_single_shot_target(ctx, max_out, cpt=None):
     # Context constraint: input_tok + output_budget(single) + overhead <= ctx.
     # input_tok = single/CPT; output ≈ (single*EXP/CPT + RESERVE)*SAFETY.
     denom = (1 + REASONING_EXPANSION * OUTPUT_SAFETY) / cpt
-    by_ctx = (ctx - ANSWER_TOKENS_RESERVE * OUTPUT_SAFETY - 2500) / denom
+    by_ctx = (ctx - ANSWER_TOKENS_RESERVE * OUTPUT_SAFETY
+              - CONTEXT_OVERHEAD_TOKENS) / denom
     target = min(by_output, by_ctx, single_shot_max_chars())
     return int(max(MIN_REASONING_CHUNK, target))
 
@@ -3071,9 +3098,9 @@ def model_profile(catalog, model):
     # the context window with overhead, for ANY model (incl. hypothetical tiny-
     # context reasoners). Shrink the input if needed; if even a floor input
     # won't fit, also trim the output budget so a call can still complete.
-    # 2500-token overhead = system prompt + chat framing + a real safety margin
+    # CONTEXT_OVERHEAD_TOKENS = system prompt + chat framing + a real safety margin
     # (not a knife's edge), so input+output never lands within a token of context.
-    overhead_tok = 2500
+    overhead_tok = CONTEXT_OVERHEAD_TOKENS
     max_input_tok = ctx - out - overhead_tok
     if max_input_tok < 1000:
         # Give input room by trimming output — but NEVER above the model's real
@@ -3104,38 +3131,46 @@ def _resolve_output_budget(max_tokens, profile, input_chars=None):
     drift. When `input_chars` is given, RIGHT-SIZE a reasoning model's budget
     to the actual input (A1) — so a small prompt gets a sane ceiling, not the
     worst-case one."""
+    cpt = _effective_cpt(profile.model)
+    cap = _context_safe_output_cap(profile, input_chars, cpt)
     if max_tokens is None:  # auto — the common path
         if input_chars is not None and profile.is_reasoning:
             # Same observed-or-static chars/token the profile itself used.
-            want = _reasoning_output_budget(input_chars,
-                                            _effective_cpt(profile.model))
+            want = _reasoning_output_budget(input_chars, cpt)
             # Floor gives room to think+answer, but must never exceed the
-            # profile's already context-safe budget.
+            # profile's already context-safe budget or this input's context cap.
             floor = min(8192, profile.output_budget)
-            return max(floor, min(want, profile.output_budget)), True
+            budget = max(floor, min(want, profile.output_budget))
+            return max(256, min(budget, cap)), True
         # let --fallback re-derive (True) vs. respect a user value (False)
-        return profile.output_budget, True
+        return max(256, min(profile.output_budget, cap)), True
     # explicit --max-tokens: respect it, but keep it sane for THIS model — clamp
     # to BOTH the output cap AND what leaves room for the input in context, so a
     # big --max-tokens on a big-context model can't overflow.
-    single_tok = int(profile.single_shot_chars / _effective_cpt(profile.model))
-    context_safe = profile.context_length - single_tok - 2500
     # The floor must never exceed the model's real output cap (a
     # 500-token-cap model must not be forced up to the 2048 floor).
-    floor = min(MIN_OUTPUT_TOKENS, profile.max_output_length)
+    floor = min(MIN_OUTPUT_TOKENS, profile.max_output_length, cap)
     resolved = max(floor,
                    min(max_tokens, profile.max_output_length,
-                       max(1, context_safe)))
+                       cap))
     # Flag an explicit --max-tokens only when it is genuinely below what THIS
     # input needs (right-sized from the actual input, not the model's worst-case
     # capacity — the old message quoted single_shot_chars and false-alarmed on
     # tiny prompts, e.g. "over a 120,000-char input" for a 5-char question).
     if profile.is_reasoning:
-        need = (_reasoning_output_budget(input_chars,
-                                         _effective_cpt(profile.model))
+        need = (_reasoning_output_budget(input_chars, cpt)
                 if input_chars is not None else profile.output_budget)
         need = min(need, profile.output_budget)
         if resolved < need:
+            if max_tokens > cap:
+                print(
+                    f"ambient: --max-tokens {max_tokens} was clamped to "
+                    f"{resolved} so input+output fit the model context; if "
+                    "the answer truncates, narrow the input or let Ambient "
+                    "split it into smaller chunks.",
+                    file=sys.stderr,
+                )
+                return resolved, False
             print(
                 f"ambient: --max-tokens {resolved} may be low for a reasoning "
                 f"model — it emits reasoning tokens before the answer and can "
@@ -3152,9 +3187,11 @@ def apply_output_budget(args, profile, input_chars=None):
     cost_gate in every command, so estimates reflect the real budget. The
     cmd_*-boundary (mutable argparse.Namespace) twin of
     RequestSpec.with_output_budget — both delegate to _resolve_output_budget."""
-    args.escalation_ceiling = profile.escalation_ceiling
     args.max_tokens, args._auto_budget = _resolve_output_budget(
         getattr(args, "max_tokens", None), profile, input_chars)
+    ceiling = _context_safe_escalation_ceiling(
+        profile, input_chars, _effective_cpt(profile.model))
+    args.escalation_ceiling = max(args.max_tokens, ceiling)
 
 
 def error_message(body):
@@ -4238,9 +4275,11 @@ class RequestSpec:
         _resolve_output_budget core — the two carriers can never drift)."""
         resolved, auto = _resolve_output_budget(
             self.max_tokens, profile, input_chars)
+        ceiling = _context_safe_escalation_ceiling(
+            profile, input_chars, _effective_cpt(profile.model))
         return dataclasses.replace(
             self, max_tokens=resolved, _auto_budget=auto,
-            escalation_ceiling=profile.escalation_ceiling)
+            escalation_ceiling=max(resolved, ceiling))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -5455,7 +5494,11 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
         partial = bool(errors or truncated)
         reasons = []
         if errors:
-            reasons.append(f"{len(errors)} of {len(chunks)} chunks failed")
+            detail = "; ".join(e[:500] for e in errors[:3])
+            if len(errors) > 3:
+                detail += f"; +{len(errors) - 3} more"
+            reasons.append(
+                f"{len(errors)} of {len(chunks)} chunks failed ({detail})")
         if truncated:
             reasons.append(f"{len(truncated)} chunk(s) truncated")
         if missed_ranges:
@@ -5504,7 +5547,11 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
     partial = bool(errors or truncated or synth_failed)
     reasons = []
     if errors:
-        reasons.append(f"{len(errors)} of {len(chunks)} chunks failed")
+        detail = "; ".join(e[:500] for e in errors[:3])
+        if len(errors) > 3:
+            detail += f"; +{len(errors) - 3} more"
+        reasons.append(
+            f"{len(errors)} of {len(chunks)} chunks failed ({detail})")
     if truncated:
         reasons.append(f"{len(truncated)} chunk(s) truncated")
     if synth_failed:
@@ -7298,6 +7345,21 @@ def _titles_match(a, b):
     return a[:n] == b[:n]
 
 
+_SPLIT_ARTIFACT_RE = re.compile(
+    r"(?i)\b(?:suspected\s+)?split artifact\b"
+    r"|\bfile (?:being )?split across chunks\b")
+
+
+def _is_split_artifact_finding(finding):
+    if not isinstance(finding, dict):
+        return False
+    text = " ".join(
+        str(finding.get(key, ""))
+        for key in ("title", "defect", "scenario", "fix")
+    )
+    return bool(_SPLIT_ARTIFACT_RE.search(text))
+
+
 def dedupe_findings(findings):
     """Deterministically dedupe findings across chunks (A5): same file, title
     prefix, and line within ±3 = the same bug. True proximity (not //3 buckets,
@@ -7306,6 +7368,8 @@ def dedupe_findings(findings):
     kept = []  # [(sig, finding)]
     for f in findings:
         if not isinstance(f, dict):
+            continue
+        if _is_split_artifact_finding(f):
             continue
         path, line, title = _finding_sig(f)
         slot = None
@@ -7344,6 +7408,30 @@ def _verdict_from(findings, partial):
     return "SHIP"
 
 
+def parse_audit_object(raw):
+    """Parse one model audit reply into a findings object.
+
+    Strict JSON is preferred, but map-reduce workers can receive the same
+    GLM-style prose that render_findings already recovers in the single-shot
+    path. A finding-shaped but unrecoverable reply returns None so coverage
+    remains partial instead of becoming a clean pass.
+    """
+    obj = extract_json(raw) if isinstance(raw, str) else raw
+    if isinstance(raw, str) and obj and isinstance(obj.get("findings"), list):
+        if not obj["findings"]:
+            recovered = parse_prose_findings(raw)
+            if recovered and recovered.get("findings"):
+                return recovered
+            if _text_has_unparsed_finding(raw):
+                return None
+        return obj
+    if obj and isinstance(obj.get("findings"), list):
+        return obj
+    if isinstance(raw, str):
+        return parse_prose_findings(raw)
+    return None
+
+
 def findings_reducer(texts):
     """Structured reduce (A5): parse each chunk's JSON findings, dedupe in
     Python, recompute the verdict — no re-billed LLM synthesis call. A chunk
@@ -7354,7 +7442,7 @@ def findings_reducer(texts):
     parse_fail = 0
     repaired = 0
     for t in texts:
-        obj = extract_json(t)
+        obj = parse_audit_object(t)
         if obj and isinstance(obj.get("findings"), list):
             collected.extend(obj["findings"])
             if obj.get("_repaired"):
@@ -8453,7 +8541,7 @@ def run_one_audit(model, catalog, labeled, sys_prompt, args, api_key, api_url,
         if use_cache:
             cached = _cache_get(key, cache_ttl)
             if cached is not None:
-                obj = extract_json(cached)
+                obj = parse_audit_object(cached)
                 if obj is not None and isinstance(obj.get("findings"), list):
                     # only clean (ok) results are ever cached below, so a
                     # hit is a full-coverage sample — billed NOTHING.
@@ -8471,7 +8559,7 @@ def run_one_audit(model, catalog, labeled, sys_prompt, args, api_key, api_url,
                     return [], False  # cancelled while waiting for a gate slot
                 content, _u, _b = complete(api_key, api_url, model, messages,
                                            a, session=session)
-            obj = extract_json(content)
+            obj = parse_audit_object(content)
             if obj is None or not isinstance(obj.get("findings"), list):
                 return [], False  # unparseable ≠ clean
             # A cap-truncated or salvaged reply parsed fine but is missing its
