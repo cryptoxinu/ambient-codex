@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.8.5"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.8.6"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -11132,7 +11132,6 @@ CONTROL_ACTIONS = tuple(
         "control setting streaming on|off",
         "control setting fallback on|off",
         "control setting fleet-budget on|off",
-        "control setting spend-cap NUMBER",
         "control setting reference-price IN/OUT",
         "ask PROMPT",
         "audit --staged --json",
@@ -11145,6 +11144,8 @@ CONTROL_ACTIONS = tuple(
         "agent",
     )
 )
+
+CONTROL_SETTING_NAMES = ("streaming", "fallback", "fleet-budget", "reference-price")
 
 CONTROL_MODE_OPTIONS = (
     ("off", "Off", "Codex works normally; Ambient runs only when you ask."),
@@ -11167,7 +11168,7 @@ CONTROL_CHAT_ACTIONS = (
     ("change chat model", "choose the chat/audit model lane only"),
     ("change code model", "choose the code/build/agent model lane only"),
     ("change mode", "choose off / delegate / takeover"),
-    ("change settings", "edit streaming, fallback, fleet-budget, spend-cap, reference-price"),
+    ("change settings", "edit streaming, fallback, fleet-budget, and reference-price"),
     ("audit this diff", "audit the current git diff"),
     ("audit this repo", "run a repository audit"),
     ("build <task>", "draft a file set with Codex review"),
@@ -11202,6 +11203,8 @@ def _control_catalog(conf, include_all=False, offline=False):
 
 
 def _control_settings(conf):
+    control_settings = [setting for setting in CONFIG_SETTINGS
+                        if setting["name"] in CONTROL_SETTING_NAMES]
     return [{
         "name": setting["name"],
         "value": setting["current"](conf),
@@ -11209,7 +11212,11 @@ def _control_settings(conf):
         "env": setting["env"],
         "env_override": os.environ.get(setting["env"]) is not None,
         "syntax": setting["how"],
-    } for setting in CONFIG_SETTINGS]
+    } for setting in control_settings]
+
+
+def _control_setting_names():
+    return ", ".join(CONTROL_SETTING_NAMES)
 
 
 def _control_model_item(model, chat_default, code_default, hidden_ids, notes):
@@ -11393,7 +11400,18 @@ def _control_model(args):
 
 
 def _control_setting(args):
-    name = getattr(args, "name", None)
+    name = (getattr(args, "name", None) or "").strip().lower()
+    if name not in CONTROL_SETTING_NAMES:
+        if name == "spend-cap":
+            usage_exit(
+                "spend-cap is an advanced local budget guardrail, not a normal "
+                f"Codex control setting. Use `{LAUNCHER_NAME} config set "
+                "spend-cap VALUE` only if you explicitly need a pay-per-token "
+                "ceiling.")
+        usage_exit(
+            f"unknown control setting '{_config_redact(name)}'. Valid: "
+            f"{_control_setting_names()}. Advanced settings live under "
+            f"`{LAUNCHER_NAME} config`.")
     value = getattr(args, "value", None)
     if getattr(args, "unset", False):
         cmd_config(argparse.Namespace(verb="unset", name=name, value=None))
@@ -11445,7 +11463,7 @@ def _control_menu(args):
             else:
                 print("cancelled - expected status, setup, rotate, or remove")
         elif choice == "6":
-            print("Settings: " + _config_names())
+            print("Settings: " + _control_setting_names())
             name = input("Name: ").strip()
             value = input("Value (blank to unset): ").strip()
             _control_setting(argparse.Namespace(
@@ -12812,7 +12830,7 @@ def _configure_audit(sub):
   git diff | ambient-codex audit
   ambient-codex audit src/pay.py --focus security --format report
   ambient-codex audit --staged --json
-  ambient-codex audit src/*.py --dry-run       (plan + cost, nothing sent)
+  ambient-codex audit src/*.py --dry-run       (plan, nothing sent)
   ambient-codex audit --repo . --focus security   (whole repo — git-aware walker)
   ambient-codex audit app.py --consensus moonshotai/kimi-k2.7-code,z-ai/glm-5.2""")
     p.add_argument("paths", nargs="*",
@@ -12974,7 +12992,7 @@ def _configure_build(sub):
         help="run just the cheap planning call, print the plan, stop")
     p.add_argument(
         "--dry-run", action="store_true",
-        help="show model/budget/caps/cost with NO API calls")
+        help="show model/budget/caps with NO API calls")
     p.add_argument("--max-files", type=int, default=32,
                    help="cap on planned files (default 32)")
     p.add_argument("--max-file-bytes", type=int, default=200_000,

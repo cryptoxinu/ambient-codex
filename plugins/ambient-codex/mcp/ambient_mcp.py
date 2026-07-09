@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.8.5"
+SERVER_VERSION = "1.8.6"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -530,7 +530,7 @@ def set_config_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     name = require_choice(
         args,
         "name",
-        ("streaming", "fallback", "fleet-budget", "spend-cap", "reference-price"),
+        ("streaming", "fallback", "fleet-budget", "reference-price"),
     )
     unset = optional_bool(args, "unset", False)
     value = optional_string(args, "value", max_chars=128)
@@ -770,7 +770,6 @@ TOOLS = [
                     "streaming",
                     "fallback",
                     "fleet-budget",
-                    "spend-cap",
                     "reference-price",
                 ],
             },

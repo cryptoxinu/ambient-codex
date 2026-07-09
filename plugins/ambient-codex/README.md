@@ -41,8 +41,8 @@ The two can be installed side by side.
 keychain item or config file, not even to offer a convenience, so you run
 `ambient-codex setup` and enter a key for this install. Everything else — model lanes,
 delegate/takeover mode, curation, settings, usage history, fleet reservations — is
-per-install too, so fleet budget and spend cap are per-install rather than
-per-billing-key.
+per-install too. The advanced local spend cap is also per-install when a
+pay-per-token user explicitly enables it through lower-level config.
 
 `AMBIENT_CODEX_HOME` relocates this install's state root. It refuses to point at
 another Ambient install's directory, or at any directory already holding an Ambient

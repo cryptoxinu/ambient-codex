@@ -366,6 +366,12 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertEqual(calls[2][-4:], ["control", "setting", "fallback", "on"])
         self.assertEqual(calls[3][-4:], ["control", "setting", "fallback", "--unset"])
 
+    def test_set_config_schema_excludes_advanced_spend_cap(self):
+        mcp = load_mcp()
+        tool = next(tool for tool in mcp.TOOLS if tool["name"] == "ambient_set_config")
+        names = tool["inputSchema"]["properties"]["name"]["enum"]
+        self.assertEqual(names, ["streaming", "fallback", "fleet-budget", "reference-price"])
+
     def test_setters_validate_before_subprocess(self):
         mcp = load_mcp()
         with mock.patch.object(mcp.subprocess, "run") as run:
@@ -373,6 +379,8 @@ class TestMcpAdapter(unittest.TestCase):
                 mcp.call_tool("ambient_set_mode", {"state": "bogus"})
             with self.assertRaises(mcp.ToolInputError):
                 mcp.call_tool("ambient_set_model", {"model": "x", "lane": "bad"})
+            with self.assertRaises(mcp.ToolInputError):
+                mcp.call_tool("ambient_set_config", {"name": "spend-cap", "value": "12"})
             with self.assertRaises(mcp.ToolInputError):
                 mcp.call_tool("ambient_set_config", {"name": "fallback", "value": "on", "unset": True})
             with self.assertRaises(mcp.ToolInputError):

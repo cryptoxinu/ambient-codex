@@ -248,10 +248,12 @@ Let the CLI size jobs. It knows model context windows, output caps, reasoning mo
 budgets, map-reduce splitting, and fleet-wide spend reservations. Avoid setting
 `--max-tokens` unless the user or a previous failure requires it.
 
-Use `AMBIENT_MAX_SPEND` or bundled `control setting spend-cap VALUE` only with user
-intent. Do not quote dollar figures unless the CLI printed them. Savings receipts
-are relative estimates against `AMBIENT_REFERENCE_PRICE`; relay percentages only
-when the CLI provides them.
+The normal Codex control panel deliberately does not expose `spend-cap`; it is an
+advanced local budget guardrail for pay-per-token users, not a required API
+setting. Use `AMBIENT_MAX_SPEND` or bundled `config set spend-cap VALUE` only with
+explicit user intent. Do not quote dollar figures unless the CLI printed them.
+Savings receipts are relative estimates against `AMBIENT_REFERENCE_PRICE`; relay
+percentages only when the CLI provides them.
 
 Fleet-wide gating is controlled by `AMBIENT_FLEET_BUDGET` or
 bundled `control setting fleet-budget on|off`. Reservations self-heal; on platforms
@@ -291,8 +293,9 @@ Notes for you (the agent), not the user:
 Settings live behind commands, not manual env editing:
 
 - MCP `ambient_control` or bundled `control` shows key state, model defaults,
-  delegate mode, curation, and config-owned knobs.
-- MCP `ambient_set_config` or bundled `control setting` changes config-owned knobs.
+  delegate mode, curation, and user-facing settings.
+- MCP `ambient_set_config` or bundled `control setting` changes user-facing
+  settings.
 - MCP `ambient_set_mode` or bundled `control mode` changes delegate/takeover mode.
 - MCP `ambient_set_model` or bundled `control model` changes model lanes.
 - MCP `ambient_key` or bundled `control key` handles key status, setup guidance,
@@ -303,6 +306,7 @@ Settings live behind commands, not manual env editing:
 - Bundled `control setting fallback on|off` controls authorized model fallback.
 - Bundled `control setting fleet-budget on|off` controls fleet-wide spend reservations.
 - Bundled `control setting reference-price VALUE` changes the savings baseline.
+- Bundled `config set spend-cap VALUE` changes the advanced local budget guardrail.
 - Bundled `control key rotate` rotates the key in a local terminal.
 - Bundled `control key remove` removes the key.
 

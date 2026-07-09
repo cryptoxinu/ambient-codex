@@ -127,7 +127,7 @@ class ControlSnapshotTests(ControlCase):
         )
         self.assertIn(
             {"phrase": "change settings",
-             "description": "edit streaming, fallback, fleet-budget, spend-cap, reference-price"},
+             "description": "edit streaming, fallback, fleet-budget, and reference-price"},
             data["chat_actions"],
         )
         self.assertIn(
@@ -142,6 +142,12 @@ class ControlSnapshotTests(ControlCase):
         )
         self.assertIn("ambient-codex control mode on", data["actions"])
         self.assertIn("ambient-codex setup", data["actions"])
+        setting_names = [setting["name"] for setting in data["settings"]]
+        self.assertEqual(
+            setting_names,
+            ["streaming", "fallback", "fleet-budget", "reference-price"],
+        )
+        self.assertNotIn("spend-cap", "\n".join(data["actions"]))
 
     def test_text_panel_exposes_controls_without_network_requirement(self):
         amb.save_config_values({"AMBIENT_DELEGATE": "off"})
@@ -155,6 +161,7 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("Ambient-first", out)
         self.assertIn("Workflows:", out)
         self.assertIn("ambient-codex control model MODEL --chat", out)
+        self.assertNotIn("spend-cap", out)
         self.assertIn("In Codex chat, say:", out)
         for phrase, _description in amb.CONTROL_CHAT_ACTIONS:
             self.assertIn(phrase, out)
@@ -185,6 +192,16 @@ class ControlWriteTests(ControlCase):
         out, _ = self.run_control("setting", "fallback", "--unset")
         self.assertIn("back to default", out)
         self.assertNotIn("AMBIENT_FALLBACK", amb.read_config_file())
+
+    def test_spend_cap_is_advanced_config_not_control_setting(self):
+        args = self.parse("setting", "spend-cap", "12")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                amb.cmd_control(args)
+        self.assertEqual(caught.exception.code, amb.EXIT_USAGE)
+        self.assertIn("advanced local budget guardrail", err.getvalue())
+        self.assertNotIn("AMBIENT_MAX_SPEND", amb.read_config_file())
 
     def test_key_setup_in_non_tty_gives_instructions_not_prompt(self):
         with patched(amb.sys, stdin=NotATTY(), stdout=io.StringIO(), stderr=io.StringIO()):

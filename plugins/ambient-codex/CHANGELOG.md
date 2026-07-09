@@ -2,6 +2,17 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.6 - 2026-07-09
+
+### Control-panel settings cleanup
+
+- Removed `spend-cap` from the default Codex control panel, MCP
+  `ambient_set_config` schema, and advertised `control setting` actions so regular
+  users are not asked to reason about pay-per-token budget ceilings.
+- Kept `spend-cap` available through lower-level `ambient-codex config` and
+  `AMBIENT_MAX_SPEND` for advanced users who explicitly want a local budget
+  guardrail.
+
 ## 1.8.5 - 2026-07-09
 
 ### Model browsing and mode clarity
