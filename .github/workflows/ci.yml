@@ -63,12 +63,16 @@ jobs:
         run: |
           test ! -e mcp/ambient_mcp_launcher.js
           ! grep -q '"node"' .mcp.json
-      - name: MCP server starts with node removed from PATH
+      - name: MCP server starts on a PATH that has python3 and nothing else
+        # Deleting the runner's node is unreliable -- GitHub images ship several
+        # (hostedtoolcache, /usr/local/bin, nvm), so removing one leaves another.
+        # Build the PATH instead: it holds exactly one binary, python3.
         run: |
-          sudo rm -f "$(command -v node)" || true
-          ! command -v node
-          python3 - <<'PY'
-          import json, subprocess, sys
+          BIN="$(mktemp -d)"
+          ln -s "$(command -v python3)" "$BIN/python3"
+          env -i PATH="$BIN" sh -c 'command -v node' && { echo "node reachable"; exit 1; }
+          env -i PATH="$BIN" HOME="$BIN" python3 - <<'PY'
+          import json, subprocess
           cfg = json.load(open(".mcp.json"))["mcpServers"]["ambient"]
           assert cfg["command"] == "python3", cfg
           msgs = (
