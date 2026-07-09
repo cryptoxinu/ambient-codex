@@ -37,12 +37,16 @@ writes `~/.config/ambient`, never touches the `ambient.xyz` keychain item, insta
 its PATH launcher as `ambient-codex`, and never claims another install's git hook.
 The two can be installed side by side.
 
-So that a key is not pasted twice, `ambient-codex setup` offers a one-time, opt-in
-import of an existing key. It copies once and never writes back to the source, and it
-only asks in a real terminal. `ambient-codex doctor` names where an importable key was
-found. Everything else — model lanes, delegate/takeover mode, curation, settings, usage
-history, fleet reservations — starts fresh and stays independent, so fleet budget and
-spend cap are per-install rather than per-billing-key.
+**Each install holds its own API key.** Ambient Codex never reads another install's
+keychain item or config file, not even to offer a convenience, so you run
+`ambient-codex setup` and enter a key for this install. Everything else — model lanes,
+delegate/takeover mode, curation, settings, usage history, fleet reservations — is
+per-install too, so fleet budget and spend cap are per-install rather than
+per-billing-key.
+
+Set `AMBIENT_CODEX_API_KEY` if you want to override the key from the environment.
+`AMBIENT_API_KEY` still works, but **every** Ambient install reads that name, so
+exporting it hands one key to all of them; `ambient-codex doctor` flags it.
 
 Codex plugin workflows use the bundled CLI at `bin/ambient` through the plugin
 root or the bundled MCP server. Do not make Codex rely on a bare `ambient` from

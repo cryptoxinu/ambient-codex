@@ -102,7 +102,7 @@ class TestStateRootIsolation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
             self.assertEqual(cli.KEYCHAIN_SERVICE, "ambient-codex")
-            self.assertNotEqual(cli.KEYCHAIN_SERVICE, cli.LEGACY_KEYCHAIN_SERVICE)
+            self.assertNotEqual(cli.KEYCHAIN_SERVICE, "ambient.xyz")
 
     def test_state_root_is_overridable(self):
         with tempfile.TemporaryDirectory() as home:
@@ -297,86 +297,169 @@ class TestGuidanceNeverNamesTheSharedLauncher(unittest.TestCase):
                 self.assertIn('"$AMBIENT_BIN" audit', body)
 
 
-class TestForeignKeyImportIsReadOnlyAndOptIn(unittest.TestCase):
-    def test_import_is_skipped_without_a_tty(self):
+class TestNoCrossInstallKeyAccess(unittest.TestCase):
+    """Each install holds its own key. There is no import, no probe, no peeking.
+
+    1.6.0 briefly offered a TTY-gated import that read the other install's keychain
+    item. That is still sharing a secret across installs, so the whole path is gone.
+    """
+
+    FORBIDDEN_SYMBOLS = (
+        "keychain_has", "find_foreign_key_source", "read_foreign_key",
+        "offer_foreign_key_import", "maybe_import_foreign_key",
+        "LEGACY_KEYCHAIN_SERVICE", "LEGACY_SHARED_DIR",
+    )
+
+    def test_no_cross_install_symbol_survives(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
-            self.assertIsNone(cli.offer_foreign_key_import())
+            for name in self.FORBIDDEN_SYMBOLS:
+                self.assertFalse(hasattr(cli, name),
+                                 f"{name} still exists; it can reach another install")
 
-    def test_import_is_skipped_when_onboarding_disabled(self):
+    def test_keychain_read_cannot_be_pointed_at_another_item(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
-            prior = os.environ.get("AMBIENT_NO_ONBOARD")
-            os.environ["AMBIENT_NO_ONBOARD"] = "1"
-            try:
-                self.assertIsNone(cli.offer_foreign_key_import())
-            finally:
-                if prior is None:
-                    os.environ.pop("AMBIENT_NO_ONBOARD", None)
-                else:
-                    os.environ["AMBIENT_NO_ONBOARD"] = prior
+            import inspect
+            params = list(inspect.signature(cli.keychain_read).parameters)
+            self.assertEqual(params, [], "keychain_read takes a service argument")
 
-    def test_read_foreign_key_finds_the_legacy_env_without_writing_it(self):
-        with tempfile.TemporaryDirectory() as home:
-            cli = load_cli(home)
-            shared_dir = os.path.join(home, ".config", "ambient")
-            os.makedirs(shared_dir, mode=0o700)
-            legacy = os.path.join(shared_dir, "env")
-            with open(legacy, "w", encoding="utf-8") as fh:
-                fh.write("AMBIENT_API_KEY=sk-legacy-value\n")
-            before = Path(legacy).read_text(encoding="utf-8")
-            cli.LEGACY_SHARED_DIR = shared_dir
-            # NEVER touch the developer's real OS keychain from a test: the real
-            # `ambient.xyz` item would be read and echoed by an assertion diff.
-            with mock.patch.object(cli, "keychain_read", return_value=None):
-                key, source = cli.read_foreign_key()
-            self.assertTrue(key == "sk-legacy-value", "legacy env key not read")
-            self.assertEqual(source, legacy)
-            self.assertEqual(Path(legacy).read_text(encoding="utf-8"), before)
+    def test_source_never_uses_ambient_xyz_as_a_keychain_service(self):
+        """`ambient.xyz` is the API domain AND the other install's keychain service.
 
-    def test_read_foreign_key_reads_the_legacy_keychain_service_only(self):
-        with tempfile.TemporaryDirectory() as home:
-            cli = load_cli(home)
-            cli.LEGACY_SHARED_DIR = os.path.join(home, ".config", "ambient")
-            with mock.patch.object(cli, "keychain_read",
-                                   return_value="stub") as reader:
-                key, source = cli.read_foreign_key()
-            reader.assert_called_once_with(cli.LEGACY_KEYCHAIN_SERVICE)
-            self.assertTrue(key == "stub")
-            self.assertIn(cli.LEGACY_KEYCHAIN_SERVICE, source)
-
-    def test_presence_probe_never_reads_the_secret(self):
-        """Declining the import must not have pulled the other install's key into memory.
-
-        `security find-generic-password` WITHOUT `-w` reports the item without
-        decrypting it, so this also avoids a keychain-unlock prompt.
+        The domain is legitimate; naming it near secret-store code is not.
         """
-        with tempfile.TemporaryDirectory() as home:
-            cli = load_cli(home)
-            cli.LEGACY_SHARED_DIR = os.path.join(home, ".config", "ambient")
-            with mock.patch.object(cli, "keychain_read") as reader, \
-                 mock.patch.object(cli, "keychain_has", return_value=True):
-                source = cli.find_foreign_key_source()
-            reader.assert_not_called()
-            self.assertIn(cli.LEGACY_KEYCHAIN_SERVICE, source)
+        offenders = []
+        for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
+            low = line.lower()
+            if "ambient.xyz" not in low:
+                continue
+            if any(t in low for t in ("keychain", "secret-tool", "security",
+                                      "find-generic-password", "service")):
+                offenders.append(f"{lineno}: {line.strip()[:70]}")
+        self.assertEqual(offenders, [], "ambient.xyz used as a secret-store service")
 
-    def test_keychain_presence_probe_omits_the_password_flag(self):
+    def test_keychain_service_is_only_ever_this_installs_item(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
-            with mock.patch.object(cli.subprocess, "run") as run, \
-                 mock.patch.object(cli, "secret_backend", return_value="keychain"):
+            self.assertEqual(cli.KEYCHAIN_SERVICE, "ambient-codex")
+        source = CLI.read_text(encoding="utf-8")
+        # every `-s` service argument must be the module constant, never a literal
+        self.assertNotIn('"-s", "ambient.xyz"', source)
+        self.assertIn('"-s", KEYCHAIN_SERVICE', source)
+
+    def test_source_never_names_the_other_installs_config_dir(self):
+        source = CLI.read_text(encoding="utf-8")
+        for line in source.split("\n"):
+            if line.lstrip().startswith("#"):
+                continue  # prose may explain the boundary
+            self.assertNotIn('".config/ambient/', line)
+            self.assertNotIn('"~/.config/ambient"', line)
+            self.assertNotIn("'~/.config/ambient'", line)
+
+    def test_setup_never_offers_an_import(self):
+        source = CLI.read_text(encoding="utf-8")
+        self.assertNotIn("Import that key", source)
+        self.assertNotIn("offers to import", source)
+        self.assertNotIn("Found an existing Ambient API key", source)
+
+
+class TestRunsWithTheOtherInstallLockedOut(unittest.TestCase):
+    """The strongest statement of isolation: make the other install unreadable.
+
+    If `~/.config/ambient` and `~/.claude` are mode 000 and every command still
+    succeeds, nothing in this plugin reads them. Root bypasses file permissions, so
+    the test is meaningless there.
+    """
+
+    COMMANDS = (
+        ["control"],
+        ["control", "mode", "on"],
+        ["control", "mode", "takeover"],
+        ["control", "mode", "off"],
+        ["control", "setting", "streaming", "off"],
+        ["config", "set", "spend-cap", "3"],
+        ["config", "unset", "spend-cap"],
+        ["curate", "reset"],
+        ["control", "key", "status"],
+        ["control", "key", "remove"],
+    )
+
+    @unittest.skipIf(os.name == "nt", "POSIX permission bits")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores mode 000")
+    def test_every_command_works_with_the_other_install_unreadable(self):
+        with tempfile.TemporaryDirectory() as home:
+            other = os.path.join(home, ".config", "ambient")
+            claude = os.path.join(home, ".claude")
+            os.makedirs(other)
+            os.makedirs(claude)
+            secret = os.path.join(other, "env")
+            with open(secret, "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_API_KEY=sk-other-install-secret\nAMBIENT_DELEGATE=takeover\n")
+            os.chmod(other, 0o000)
+            os.chmod(claude, 0o000)
+            try:
+                with open(secret, encoding="utf-8"):  # sanity: really locked
+                    self.fail("the other install's env is still readable")
+            except PermissionError:
+                pass
+
+            try:
+                for argv in self.COMMANDS:
+                    with self.subTest(cmd=" ".join(argv)):
+                        proc = subprocess.run(
+                            [sys.executable, str(CLI), *argv], env=sandbox_env(home),
+                            capture_output=True, text=True, timeout=120, check=False)
+                        self.assertNotIn("Permission denied", proc.stderr)
+                        self.assertIn(proc.returncode, (0, 1, 3),
+                                      f"{argv} failed: {proc.stderr[:200]}")
+                # this install's own mode must NOT have inherited `takeover`
+                codex_env = Path(home) / ".config" / "ambient-codex" / "env"
+                self.assertNotIn("AMBIENT_DELEGATE=takeover",
+                                 codex_env.read_text(encoding="utf-8"))
+            finally:
+                os.chmod(other, 0o700)
+                os.chmod(claude, 0o700)
+
+
+class TestKeyEnvIsNamespaced(unittest.TestCase):
+    def test_namespaced_var_wins_over_the_shared_one(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            with mock.patch.dict(os.environ, {"AMBIENT_CODEX_API_KEY": "mine",
+                                              "AMBIENT_API_KEY": "shared"}):
+                key, backend = cli.resolve_key_and_backend({})
+            self.assertEqual(key, "mine")
+            self.assertEqual(backend, "env")
+
+    def test_shared_var_is_still_honoured_but_flagged(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            env = {k: v for k, v in os.environ.items() if k != "AMBIENT_CODEX_API_KEY"}
+            env["AMBIENT_API_KEY"] = "shared"
+            with mock.patch.dict(os.environ, env, clear=True):
+                key, _ = cli.resolve_key_and_backend({})
+                self.assertEqual(key, "shared")
+                self.assertEqual(cli.key_env_source(), "AMBIENT_API_KEY")
+
+    def test_no_env_key_reports_no_source(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("AMBIENT_API_KEY", "AMBIENT_CODEX_API_KEY")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertIsNone(cli.key_env_source())
+
+    def test_key_removal_only_targets_this_installs_item(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            with mock.patch.object(cli, "secret_backend", return_value="keychain"), \
+                 mock.patch.object(cli.subprocess, "run") as run:
                 run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-                cli.keychain_has("ambient.xyz")
+                cli.keychain_delete()
             argv = run.call_args[0][0]
-            self.assertIn("find-generic-password", argv)
-            self.assertNotIn("-w", argv, "presence probe must not request the secret")
-
-    def test_read_foreign_key_returns_none_when_no_other_install(self):
-        with tempfile.TemporaryDirectory() as home:
-            cli = load_cli(home)
-            cli.LEGACY_SHARED_DIR = os.path.join(home, ".config", "ambient")
-            with mock.patch.object(cli, "keychain_read", return_value=None):
-                self.assertEqual(cli.read_foreign_key(), (None, None))
+            self.assertIn("ambient-codex", argv)
+            self.assertNotIn("ambient.xyz", argv)
 
 
 class TestHookScriptReadsIsolatedEnv(unittest.TestCase):

@@ -27,8 +27,10 @@ plugin root substitution available. For small bounded actions and state changes,
 use the Ambient MCP server instead of shelling out.
 
 Credentials live in the OS keychain item `ambient-codex` when available, or in
-`~/.config/ambient-codex/env` with `0600` permissions. Ambient Codex never reads or
-writes another Ambient install's state. Never print, paste, echo, commit, or construct a command
+`~/.config/ambient-codex/env` with `0600` permissions. This install holds its OWN key;
+it never reads another Ambient install's keychain item or config, and there is no
+import. If no key is configured, tell the user to run `ambient-codex setup` in their
+own terminal. Never print, paste, echo, commit, or construct a command
 containing an Ambient API key.
 
 ## Native Codex Invocation
@@ -51,7 +53,7 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 | Manage settings | Prefer MCP `ambient_set_config`; otherwise run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |
 | Key status/setup/rotation/removal | Prefer MCP `ambient_key` for status/instructions/removal, or bundled `control key status|setup|rotate|remove`. Never accept key material in chat or tool args. |
 | Audit code | Prefer `git diff | "<plugin-root>/bin/ambient" audit --json`, bundled `audit --staged --json`, bundled `audit FILE... --json`, or bundled `audit --repo DIR --json`. |
-| `/ambient audit <target>` | Compatibility dispatch: run the bundled binary with `audit <target> --json` or `audit --repo DIR --json`; under `--consensus`, skip the deep confirmation pass, and `--deep` / `--no-deep` have no effect with `--consensus`. |
+| Audit a named target | Run the bundled binary with `audit <target> --json`, or `audit --repo DIR --json` for a whole repository. Under `--consensus` the deep confirmation pass is skipped, and `--deep` / `--no-deep` have no effect there. |
 | Bulk summarize/classify/extract | Use bundled `map "prompt" FILE... --json` or stdin JSONL with bundled `map "prompt" --jsonl --json`. |
 | Ask a model | Use MCP `ambient_ask` for short asks or bundled `ask "question" --json`; attach context with stdin where supported by the command. |
 | Generate a single-file draft | Use bundled `code "task" -f context.py --json`, then review before applying. |

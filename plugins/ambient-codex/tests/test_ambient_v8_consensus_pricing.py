@@ -334,8 +334,10 @@ class TestSkillMdConsensusDeepDrift(unittest.TestCase):
     def test_skill_md_states_deep_pass_skipped_under_consensus(self):
         with open(SKILL_MD, encoding="utf-8") as fh:
             text = fh.read()
+        # Match on content, not on a `/ambient ...` slash-command prefix: Codex has
+        # no slash commands, so that prefix was a Claude-ism and has been removed.
         row = next((ln for ln in text.splitlines()
-                    if ln.startswith("| `/ambient audit")), None)
+                    if ln.startswith("|") and "audit" in ln and "--consensus" in ln), None)
         self.assertIsNotNone(row, "SKILL.md audit dispatch row missing")
         low = row.lower()
         self.assertIn("--consensus", row)

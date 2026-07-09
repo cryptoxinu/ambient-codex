@@ -94,18 +94,13 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.6.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.7.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
-# Ambient Codex keeps ALL mutable state under its own root, separate from any other
-# Ambient install. Through 1.5.x this fork wrote ~/.config/ambient/env — byte-identical
-# to the Claude plugin's path — so `control mode takeover` here flipped Claude into
-# takeover on its next session, and a cheap model picked here silently became Claude's
-# default. The two installs must be able to coexist untouched.
-#
-# Nothing under LEGACY_SHARED_DIR is ever written; it is read exactly once, on an
-# explicit opt-in key import (see maybe_import_foreign_key).
+# Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
+# own root. It never reads or writes another Ambient install's state, not even once and
+# not even to offer a convenience. Two installs on one machine are fully independent and
+# each holds its own API key.
 AMBIENT_CODEX_HOME_ENV = "AMBIENT_CODEX_HOME"
-LEGACY_SHARED_DIR = os.path.expanduser("~/.config/ambient")
 
 
 def _state_dir():
@@ -118,11 +113,15 @@ def _state_dir():
 STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
-# Distinct from the `ambient.xyz` item the Claude install owns: a shared item would
-# mean `ambient-codex control key remove` in Codex deletes the other install's key too.
+# This install's own secret-store item. Another Ambient install owns a different one;
+# we never name it, read it, or delete it.
 KEYCHAIN_SERVICE = "ambient-codex"
 KEYCHAIN_ACCOUNT = "api-key"
-LEGACY_KEYCHAIN_SERVICE = "ambient.xyz"  # read-only, opt-in import source
+# This install's own key override. `AMBIENT_API_KEY` is the conventional name that EVERY
+# Ambient install reads, so exporting it hands one key to all of them. Prefer the
+# namespaced variable; `doctor` flags the shared one.
+API_KEY_ENV = "AMBIENT_CODEX_API_KEY"
+SHARED_API_KEY_ENV = "AMBIENT_API_KEY"
 # NOT `ambient`: another Ambient install owns that name on PATH.
 LAUNCHER_NAME = "ambient-codex"
 DEFAULT_API_URL = "https://api.ambient.xyz"
@@ -396,13 +395,13 @@ def keychain_available():
     return secret_backend() is not None
 
 
-def keychain_read(service=None):
-    """Fetch the key from the OS secret store. None when absent/unavailable.
+def keychain_read():
+    """Fetch THIS install's key from the OS secret store. None when absent.
 
-    `service` exists so the one-time import can read ANOTHER install's item
-    (LEGACY_KEYCHAIN_SERVICE) without ever writing to or deleting it.
+    Deliberately takes no service argument: there is no supported way to point this at
+    another Ambient install's keychain item.
     """
-    service = service or KEYCHAIN_SERVICE
+    service = KEYCHAIN_SERVICE
     b = secret_backend()
     try:
         if b == "keychain":
@@ -472,12 +471,26 @@ def keychain_delete():
         return False
 
 
+def key_env_source():
+    """Which env var supplied the key, if any. `doctor` uses it to warn about sharing."""
+    if os.environ.get(API_KEY_ENV):
+        return API_KEY_ENV
+    if os.environ.get(SHARED_API_KEY_ENV):
+        return SHARED_API_KEY_ENV
+    return None
+
+
 def resolve_key_and_backend(conf):
-    """Key lookup order: env var > macOS Keychain > config file.
-    An explicit AMBIENT_KEY_BACKEND=file skips the Keychain so `setup --file`
-    can't be shadowed by a stale Keychain entry."""
-    if os.environ.get("AMBIENT_API_KEY"):
-        return os.environ["AMBIENT_API_KEY"], "env"
+    """Key lookup: AMBIENT_CODEX_API_KEY > AMBIENT_API_KEY > Keychain > config file.
+
+    The namespaced variable wins because every Ambient install reads `AMBIENT_API_KEY`,
+    so exporting that one hands a single key to all of them. An explicit
+    AMBIENT_KEY_BACKEND=file skips the Keychain so `setup --file` can't be shadowed by a
+    stale Keychain entry."""
+    if os.environ.get(API_KEY_ENV):
+        return os.environ[API_KEY_ENV], "env"
+    if os.environ.get(SHARED_API_KEY_ENV):
+        return os.environ[SHARED_API_KEY_ENV], "env"
     if conf.get("AMBIENT_KEY_BACKEND") != "file":
         kc = keychain_read()
         if kc:
@@ -485,117 +498,6 @@ def resolve_key_and_backend(conf):
     if conf.get("AMBIENT_API_KEY"):
         return conf["AMBIENT_API_KEY"], "file"
     return None, None
-
-
-def keychain_has(service):
-    """True when the OS secret store holds an item, WITHOUT reading its value.
-
-    `security find-generic-password` without `-w` prints attributes only, and
-    `secret-tool search` reports matches without emitting the secret. Probing
-    presence this way means declining the import never pulls another install's
-    credential into this process.
-    """
-    b = secret_backend()
-    try:
-        if b == "keychain":
-            proc = subprocess.run(
-                ["security", "find-generic-password", "-s", service,
-                 "-a", KEYCHAIN_ACCOUNT],
-                capture_output=True, text=True, timeout=10)
-        elif b == "secret-tool":
-            proc = subprocess.run(
-                ["secret-tool", "search", "service", service,
-                 "account", KEYCHAIN_ACCOUNT],
-                capture_output=True, text=True, timeout=10)
-        else:
-            return False
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0
-
-
-def _legacy_env_has_key():
-    """(has_key, path) for another install's env file. Never returns the secret."""
-    legacy_env = os.path.join(LEGACY_SHARED_DIR, "env")
-    try:
-        with open(legacy_env, encoding="utf-8") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if stripped.startswith("AMBIENT_API_KEY="):
-                    if stripped.split("=", 1)[1].strip().strip("'\""):
-                        return True, legacy_env
-    except OSError:
-        pass
-    return False, legacy_env
-
-
-def find_foreign_key_source():
-    """Where another Ambient install keeps a key, or None. Never reads the secret."""
-    if keychain_has(LEGACY_KEYCHAIN_SERVICE):
-        return f"OS keychain `{LEGACY_KEYCHAIN_SERVICE}`"
-    has_key, legacy_env = _legacy_env_has_key()
-    return legacy_env if has_key else None
-
-
-def read_foreign_key():
-    """Return another Ambient install's key, or (None, None). READ-ONLY.
-
-    Only ever called AFTER the user opts in; `find_foreign_key_source()` is what
-    detects a key without reading it, so declining leaves the secret untouched.
-    This never writes to, deletes from, or migrates the source.
-    """
-    kc = keychain_read(LEGACY_KEYCHAIN_SERVICE)
-    if kc:
-        return kc, f"OS keychain `{LEGACY_KEYCHAIN_SERVICE}`"
-    legacy_env = os.path.join(LEGACY_SHARED_DIR, "env")
-    try:
-        with open(legacy_env, encoding="utf-8") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if stripped.startswith("AMBIENT_API_KEY="):
-                    value = stripped.split("=", 1)[1].strip().strip("'\"")
-                    if value:
-                        return value, legacy_env
-    except OSError:
-        pass
-    return None, None
-
-
-def offer_foreign_key_import():
-    """Ask whether to reuse another install's key. Returns the key, or None.
-
-    Returns the key only; the caller stores it through the normal
-    `_verify_and_store_key` path so an imported key is validated against the API
-    exactly like a pasted one. Gated on an interactive TTY: a non-interactive run
-    must never silently adopt a credential it did not create. The key is never
-    echoed, and the source is left exactly as it was found.
-    """
-    if os.environ.get("AMBIENT_NO_ONBOARD"):
-        return None
-    try:
-        interactive = sys.stdin.isatty() and sys.stderr.isatty()
-    except Exception:  # noqa: BLE001 — closed/odd stdin is not a TTY
-        interactive = False
-    if not interactive:
-        return None
-    # Detect WITHOUT reading: a declined prompt must not have loaded the secret.
-    source = find_foreign_key_source()
-    if not source:
-        return None
-    print(f"Found an existing Ambient API key from another install ({source}).",
-          file=sys.stderr)
-    print("Ambient Codex keeps its own copy so the two installs stay independent.\n"
-          "Importing copies the key once; the original is never modified.",
-          file=sys.stderr)
-    try:
-        answer = input("Import that key into Ambient Codex? [y/N] ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print(file=sys.stderr)
-        return None
-    if answer not in ("y", "yes"):
-        return None
-    key, _ = read_foreign_key()
-    return key or None
 
 
 def _is_local_host(host):
@@ -11632,10 +11534,7 @@ def cmd_setup(args):
             f"  Rotate/replace: {LAUNCHER_NAME} setup --force\n"
             f"  Remove:         {LAUNCHER_NAME} setup --remove"
         )
-    imported = None if (existing or args.key_stdin) else offer_foreign_key_import()
-    if imported:
-        key = imported
-    elif args.key_stdin:
+    if args.key_stdin:
         # M11: --key-stdin is for a PIPED key. On a TTY, readline() echoes the
         # typed key to the screen/scrollback — refuse and point at the hidden-
         # input interactive path instead.
@@ -11697,14 +11596,12 @@ def cmd_doctor(args):
         if backend == "file" and keychain_available():
             hardening = f" — harden: `{LAUNCHER_NAME} setup --force` moves it into the Keychain"
         report("key", True, f"present ({backend}){hardening}")
+        if key_env_source() == SHARED_API_KEY_ENV:
+            report("key isolation", False,
+                   f"key came from ${SHARED_API_KEY_ENV}, which EVERY Ambient install "
+                   f"reads — export ${API_KEY_ENV} instead to keep this install separate")
     else:
-        foreign = find_foreign_key_source()
-        if foreign:
-            report("key", False,
-                   f"MISSING here — another Ambient install has one ({foreign}). "
-                   f"`{LAUNCHER_NAME} setup` offers to import it.")
-        else:
-            report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
+        report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
 
     try:
         status, body = api_request(api_url, api_key or "none", "/v1/models", timeout=30)

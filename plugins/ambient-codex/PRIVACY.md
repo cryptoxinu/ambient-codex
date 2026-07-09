@@ -20,7 +20,8 @@ No analytics, crash reporting, or background telemetry is sent by this plugin.
 - Usage ledger: `~/.config/ambient-codex/usage.jsonl`.
 - Chunk cache: `~/.config/ambient-codex/cache/`.
 - All Ambient Codex state lives under `~/.config/ambient-codex/`
-  (override: `AMBIENT_CODEX_HOME`), separate from any other Ambient install.
+  (override: `AMBIENT_CODEX_HOME`), separate from any other Ambient install. Ambient
+  Codex never reads or writes another install's config directory or keychain item.
 - Build resume state: `<build-dir>/.ambient-build.json`.
 - Codex plugin files: under the local plugin install/cache.
 

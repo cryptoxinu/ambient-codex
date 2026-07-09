@@ -2,6 +2,29 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.7.0 - 2026-07-09
+
+### Each install holds its own API key
+
+Ambient Codex no longer reads another Ambient install's credential under any
+circumstance. 1.6.0 offered a TTY-gated, opt-in import that read the `ambient.xyz`
+keychain item and copied the secret across; that is still two installs sharing one key,
+and it required reaching into a directory this plugin has no business touching.
+
+- Removed `keychain_has`, `find_foreign_key_source`, `read_foreign_key`,
+  `offer_foreign_key_import`, `LEGACY_KEYCHAIN_SERVICE`, and `LEGACY_SHARED_DIR`.
+- `keychain_read()` takes no service argument, so it cannot be pointed at another item.
+- `ambient-codex setup` asks for this install's own key. `doctor` reports a missing key
+  plainly rather than advertising a neighbour's.
+- New `AMBIENT_CODEX_API_KEY` overrides the key from the environment and takes
+  precedence over `AMBIENT_API_KEY`. The latter is still honoured, because it is the
+  conventional name, but EVERY Ambient install reads it — so `doctor` now emits a
+  `key isolation` FAIL when the key came from the shared variable.
+
+The suite proves the boundary rather than asserting it: every command runs with
+`~/.config/ambient` and `~/.claude` at mode `000`, and the install's own delegate mode
+is checked not to inherit `takeover` from the locked-out neighbour.
+
 ## 1.6.0 - 2026-07-09
 
 ### Zero-dependency MCP transport

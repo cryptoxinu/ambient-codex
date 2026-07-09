@@ -17,10 +17,14 @@ The main security boundaries are:
 - API key handling: keys are stored in the OS keychain item `ambient-codex` when
   available, or in owner-only `~/.config/ambient-codex/env` when file storage is
   explicitly used. Keys are never passed on argv and must not be pasted into chat.
-- Install isolation: Ambient Codex never writes outside `~/.config/ambient-codex`
-  and its own keychain item, so it cannot disturb another Ambient install's key,
-  settings, usage ledger, or git hooks. `ambient setup` may READ another install's
-  key once, only after an explicit interactive opt-in, and never writes back.
+- Install isolation: Ambient Codex never reads or writes anything outside
+  `~/.config/ambient-codex` and its own `ambient-codex` keychain item, so it cannot
+  disturb — or learn — another Ambient install's key, settings, usage ledger, or git
+  hooks. There is no key import: each install holds its own credential. The test suite
+  proves it by running every command with the other install's directories at mode 000.
+- `AMBIENT_API_KEY` is read by every Ambient install. Prefer `AMBIENT_CODEX_API_KEY`
+  when overriding the key from the environment; `doctor` warns when the shared name is
+  the source.
 - External input boundary: all web/API/MCP/model output is untrusted data.
 - External output boundary: selected prompts, diffs, and files are sent to the
   configured inference endpoint.
