@@ -11698,7 +11698,13 @@ def cmd_doctor(args):
             hardening = f" — harden: `{LAUNCHER_NAME} setup --force` moves it into the Keychain"
         report("key", True, f"present ({backend}){hardening}")
     else:
-        report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
+        foreign = find_foreign_key_source()
+        if foreign:
+            report("key", False,
+                   f"MISSING here — another Ambient install has one ({foreign}). "
+                   f"`{LAUNCHER_NAME} setup` offers to import it.")
+        else:
+            report("key", False, f"MISSING — run: {LAUNCHER_NAME} setup")
 
     try:
         status, body = api_request(api_url, api_key or "none", "/v1/models", timeout=30)

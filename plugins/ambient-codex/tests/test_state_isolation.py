@@ -256,6 +256,32 @@ class TestForeignKeyImportIsReadOnlyAndOptIn(unittest.TestCase):
             self.assertTrue(key == "stub")
             self.assertIn(cli.LEGACY_KEYCHAIN_SERVICE, source)
 
+    def test_presence_probe_never_reads_the_secret(self):
+        """Declining the import must not have pulled the other install's key into memory.
+
+        `security find-generic-password` WITHOUT `-w` reports the item without
+        decrypting it, so this also avoids a keychain-unlock prompt.
+        """
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cli.LEGACY_SHARED_DIR = os.path.join(home, ".config", "ambient")
+            with mock.patch.object(cli, "keychain_read") as reader, \
+                 mock.patch.object(cli, "keychain_has", return_value=True):
+                source = cli.find_foreign_key_source()
+            reader.assert_not_called()
+            self.assertIn(cli.LEGACY_KEYCHAIN_SERVICE, source)
+
+    def test_keychain_presence_probe_omits_the_password_flag(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            with mock.patch.object(cli.subprocess, "run") as run, \
+                 mock.patch.object(cli, "secret_backend", return_value="keychain"):
+                run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+                cli.keychain_has("ambient.xyz")
+            argv = run.call_args[0][0]
+            self.assertIn("find-generic-password", argv)
+            self.assertNotIn("-w", argv, "presence probe must not request the secret")
+
     def test_read_foreign_key_returns_none_when_no_other_install(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
