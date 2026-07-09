@@ -27,7 +27,18 @@ All notable changes to `ambient-codex`.
   the other install's key.
 - `ambient link` installs `~/.local/bin/ambient-codex`, not `ambient`.
 - The git hook uninstaller no longer recognises the other install's `# ambient-code audit hook v1`
-  marker, so it can never delete a hook it did not install.
+  marker, so it can never delete a hook it did not install. The installed hook itself now runs
+  `ambient-codex` (or the bundled CLI), never a bare `ambient` off PATH, which would have audited using
+  the other install's key and usage ledger.
+- The opencode provider written to the shared `~/.config/opencode/opencode.json` is keyed
+  `ambient-codex` rather than `ambient`. Both installs used to share one entry, so whichever ran
+  `agent` first pinned the `baseURL` and the other then sent its own key to that endpoint.
+- Every copy-pasteable command in the CLI's output names `ambient-codex`. `ambient use`, `ambient mode`
+  and `ambient config set` mutate state and `ambient audit` spends credit, so following the old guidance
+  drove the other install.
+- `doctor` probes `ambient-codex` on PATH rather than `ambient`, reports where an importable key was
+  found instead of a bare "MISSING", and names a coexisting Ambient install as expected rather than
+  mistaking it for this one.
 - `ambient setup` offers a one-time, TTY-gated, opt-in import of another install's key so nothing
   has to be pasted twice. It copies once, never writes back, and validates the key like a pasted one.
 - Fleet budget and spend cap are now per-install rather than per-billing-key.
