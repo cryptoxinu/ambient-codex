@@ -2,6 +2,21 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.7.1 - 2026-07-09
+
+### `AMBIENT_CODEX_HOME` can no longer be aimed at another install
+
+`AMBIENT_CODEX_HOME=~/.config/ambient` made this install adopt the other Ambient
+install's config: it read that install's API key (`backend=file`) and rewrote its
+`AMBIENT_DELEGATE`. The override exists to relocate THIS install's state, not to hijack
+somebody else's.
+
+- The conventional root `~/.config/ambient` is refused outright.
+- Any override directory that already holds an `env` without our `.ambient-codex`
+  marker is refused: it belongs to someone else.
+- A state root we create is stamped with a `0600` `.ambient-codex` marker.
+- The DEFAULT root never requires a marker, so existing 1.6.x/1.7.0 installs keep working.
+
 ## 1.7.0 - 2026-07-09
 
 ### Each install holds its own API key

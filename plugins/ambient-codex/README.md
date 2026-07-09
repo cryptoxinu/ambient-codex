@@ -44,6 +44,10 @@ delegate/takeover mode, curation, settings, usage history, fleet reservations â€
 per-install too, so fleet budget and spend cap are per-install rather than
 per-billing-key.
 
+`AMBIENT_CODEX_HOME` relocates this install's state root. It refuses to point at
+another Ambient install's directory, or at any directory already holding an Ambient
+config this install did not create.
+
 Set `AMBIENT_CODEX_API_KEY` if you want to override the key from the environment.
 `AMBIENT_API_KEY` still works, but **every** Ambient install reads that name, so
 exporting it hands one key to all of them; `ambient-codex doctor` flags it.

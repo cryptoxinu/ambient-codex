@@ -123,6 +123,88 @@ class TestStateRootIsolation(unittest.TestCase):
                 os.environ.pop("AMBIENT_CODEX_HOME", None)
 
 
+class TestStateRootCannotBeAimedAtAnotherInstall(unittest.TestCase):
+    """`AMBIENT_CODEX_HOME` relocates this install's state; it must not hijack another's.
+
+    Without a guard, `AMBIENT_CODEX_HOME=~/.config/ambient` made this install read the
+    other install's key and rewrite its delegate mode.
+    """
+
+    def _load_with(self, home, override):
+        prior = {k: os.environ.get(k) for k in (*_HOME_VARS, "AMBIENT_CODEX_HOME")}
+        for var in _HOME_VARS:
+            os.environ[var] = home
+        os.environ["AMBIENT_CODEX_HOME"] = override
+        try:
+            spec = importlib.util.spec_from_loader(
+                "ambient_cli_guard",
+                importlib.machinery.SourceFileLoader("ambient_cli_guard", str(CLI)))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        finally:
+            for k, v in prior.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_pointing_at_the_other_installs_root_is_refused(self):
+        with tempfile.TemporaryDirectory() as home:
+            other = os.path.join(home, ".config", "ambient")
+            os.makedirs(other)
+            with self.assertRaises(SystemExit) as cm:
+                self._load_with(home, other)
+            self.assertIn("belongs to another Ambient install", str(cm.exception))
+
+    def test_pointing_at_a_foreign_config_is_refused(self):
+        with tempfile.TemporaryDirectory() as home:
+            foreign = os.path.join(home, "someone-elses")
+            os.makedirs(foreign)
+            with open(os.path.join(foreign, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_API_KEY=sk-not-ours\n")
+            with self.assertRaises(SystemExit) as cm:
+                self._load_with(home, foreign)
+            self.assertIn("did not create", str(cm.exception))
+
+    def test_a_fresh_override_dir_is_accepted_and_claimed(self):
+        with tempfile.TemporaryDirectory() as home:
+            mine = os.path.join(home, "mine")
+            proc = subprocess.run(
+                [sys.executable, str(CLI), "control", "mode", "on"],
+                env={**sandbox_env(home), "AMBIENT_CODEX_HOME": mine},
+                capture_output=True, text=True, timeout=120, check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            marker = os.path.join(mine, ".ambient-codex")
+            self.assertTrue(os.path.exists(marker), "state root was not claimed")
+            self.assertEqual(os.stat(marker).st_mode & 0o777, 0o600)
+
+    def test_a_root_we_already_claimed_is_reused(self):
+        with tempfile.TemporaryDirectory() as home:
+            mine = os.path.join(home, "mine")
+            env = {**sandbox_env(home), "AMBIENT_CODEX_HOME": mine}
+            for _ in range(2):
+                proc = subprocess.run(
+                    [sys.executable, str(CLI), "control", "mode", "on"],
+                    env=env, capture_output=True, text=True, timeout=120, check=False)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_the_default_root_never_requires_a_marker(self):
+        """An existing 1.6.x user's ~/.config/ambient-codex has no marker yet."""
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".config", "ambient-codex")
+            os.makedirs(root)
+            with open(os.path.join(root, "env"), "w", encoding="utf-8") as fh:
+                fh.write("AMBIENT_DELEGATE=on\n")
+            proc = subprocess.run(
+                [sys.executable, str(CLI), "control", "mode", "off"],
+                env=sandbox_env(home), capture_output=True, text=True,
+                timeout=120, check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("AMBIENT_DELEGATE=off",
+                          Path(root, "env").read_text(encoding="utf-8"))
+
+
 class TestNoWritesEscapeTheCodexRoot(unittest.TestCase):
     def test_mode_takeover_never_writes_the_shared_env(self):
         """The exact reported bug: takeover in Codex must not reach the other install."""
@@ -348,14 +430,27 @@ class TestNoCrossInstallKeyAccess(unittest.TestCase):
         self.assertNotIn('"-s", "ambient.xyz"', source)
         self.assertIn('"-s", KEYCHAIN_SERVICE', source)
 
-    def test_source_never_names_the_other_installs_config_dir(self):
-        source = CLI.read_text(encoding="utf-8")
-        for line in source.split("\n"):
+    ALLOWED_FOREIGN_DIR_LINE = 'FOREIGN_STATE_DIR = os.path.expanduser("~/.config/ambient")'
+
+    def test_the_other_installs_config_dir_is_only_ever_refused(self):
+        """The one place we may name it is the guard that refuses to use it."""
+        offenders = []
+        for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
             if line.lstrip().startswith("#"):
                 continue  # prose may explain the boundary
-            self.assertNotIn('".config/ambient/', line)
-            self.assertNotIn('"~/.config/ambient"', line)
-            self.assertNotIn("'~/.config/ambient'", line)
+            if line.strip() == self.ALLOWED_FOREIGN_DIR_LINE:
+                continue
+            if ('".config/ambient/' in line or '"~/.config/ambient"' in line
+                    or "'~/.config/ambient'" in line):
+                offenders.append(f"{lineno}: {line.strip()[:70]}")
+        self.assertEqual(offenders, [])
+
+    def test_the_foreign_dir_constant_is_only_used_to_refuse(self):
+        source = CLI.read_text(encoding="utf-8")
+        uses = [ln.strip() for ln in source.split("\n")
+                if "FOREIGN_STATE_DIR" in ln and not ln.lstrip().startswith("#")]
+        self.assertEqual(len(uses), 2, uses)          # the definition + the comparison
+        self.assertTrue(any("normcase" in u for u in uses), uses)
 
     def test_setup_never_offers_an_import(self):
         source = CLI.read_text(encoding="utf-8")

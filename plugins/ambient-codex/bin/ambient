@@ -94,20 +94,57 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.7.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.7.1"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
 # not even to offer a convenience. Two installs on one machine are fully independent and
 # each holds its own API key.
 AMBIENT_CODEX_HOME_ENV = "AMBIENT_CODEX_HOME"
+# Dropped into our state root the first time we write it. A root that already holds an
+# `env` but no marker belongs to somebody else, and we refuse to touch it.
+STATE_MARKER = ".ambient-codex"
+# The conventional root every OTHER Ambient install uses.
+FOREIGN_STATE_DIR = os.path.expanduser("~/.config/ambient")
 
 
 def _state_dir():
+    """This install's state root. AMBIENT_CODEX_HOME may relocate it, but never onto
+    another Ambient install: `AMBIENT_CODEX_HOME=~/.config/ambient` would otherwise make
+    this install read that install's key and rewrite its delegate mode."""
     override = os.environ.get(AMBIENT_CODEX_HOME_ENV)
-    if override:
-        return os.path.abspath(os.path.expanduser(override))
-    return os.path.expanduser("~/.config/ambient-codex")
+    if not override:
+        return os.path.expanduser("~/.config/ambient-codex")
+    root = os.path.abspath(os.path.expanduser(override))
+    if os.path.normcase(root) == os.path.normcase(FOREIGN_STATE_DIR):
+        sys.exit(
+            f"ambient: refusing to use {root} as a state root — that directory belongs "
+            f"to another Ambient install. Unset {AMBIENT_CODEX_HOME_ENV}, or point it "
+            "at a directory of your own."
+        )
+    if os.path.exists(os.path.join(root, "env")) \
+            and not os.path.exists(os.path.join(root, STATE_MARKER)):
+        sys.exit(
+            f"ambient: refusing to use {root} as a state root — it already holds an "
+            f"Ambient config this install did not create (no {STATE_MARKER} marker). "
+            "Point AMBIENT_CODEX_HOME at an empty directory."
+        )
+    return root
+
+
+def _claim_state_dir(conf_dir):
+    """Stamp our marker so the root is recognisably ours on a later run."""
+    if conf_dir != STATE_DIR:
+        return
+    marker = os.path.join(conf_dir, STATE_MARKER)
+    if os.path.exists(marker):
+        return
+    try:
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write(f"ambient-codex {__version__}\n")
+        os.chmod(marker, 0o600)
+    except OSError:
+        pass
 
 
 STATE_DIR = _state_dir()
@@ -830,6 +867,7 @@ def _config_lock(conf_dir):
     """Cross-platform exclusive lock for config writes (B1). POSIX uses flock;
     where fcntl is absent (Windows) it spins on an O_EXCL lock file and breaks a
     stale (>30s) lock so a crashed writer can't wedge the config forever."""
+    _claim_state_dir(conf_dir)
     lock_path = os.path.join(conf_dir, ".env.lock")
     if fcntl is not None:
         try:

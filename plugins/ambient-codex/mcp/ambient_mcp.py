@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.7.0"
+SERVER_VERSION = "1.7.1"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
