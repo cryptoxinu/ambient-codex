@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.5.3"
+SERVER_VERSION = "1.5.4"
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INSTRUCTIONS = (
     "Use the bundled Ambient CLI only through this MCP server or the plugin root. "

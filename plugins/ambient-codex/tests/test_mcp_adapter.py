@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -129,17 +130,45 @@ class TestMcpAdapter(unittest.TestCase):
     def test_plugin_mcp_config_is_fast_unbuffered_and_bounded(self):
         data = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
         ambient = data["mcpServers"]["ambient"]
-        self.assertEqual(ambient["command"], "python3")
-        self.assertEqual(ambient["args"], ["-u", "mcp/ambient_mcp.py"])
+        self.assertEqual(ambient["command"], "node")
+        self.assertEqual(ambient["args"], ["mcp/ambient_mcp_launcher.js"])
         self.assertGreaterEqual(ambient["startup_timeout_sec"], 60)
         self.assertEqual(ambient["tool_timeout_sec"], 120)
+
+    def test_node_launcher_starts_framed_mcp_server(self):
+        if not (ROOT / "mcp" / "ambient_mcp_launcher.js").exists():
+            self.fail("missing MCP launcher")
+        if shutil.which("node") is None:
+            self.skipTest("node is not available")
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0"},
+            },
+        }
+        proc = subprocess.run(
+            ["node", str(ROOT / "mcp" / "ambient_mcp_launcher.js")],
+            cwd=ROOT,
+            input=encode_frame(init),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
+        frames = decode_frames(proc.stdout)
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.4")
 
     def test_self_test_is_local_bounded_and_redacted(self):
         mcp = load_mcp()
         completed = subprocess.CompletedProcess(
             args=[],
             returncode=0,
-            stdout="ambient 1.5.3\n",
+            stdout="ambient 1.5.4\n",
             stderr="",
         )
         with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:

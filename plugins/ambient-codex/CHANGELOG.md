@@ -2,6 +2,13 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.5.4 - 2026-07-08
+
+### Fixed
+- MCP startup now uses a small Node launcher that resolves Python 3 across
+  macOS/Linux (`python3` or `python`) and native Windows (`py -3`, `python3`,
+  or `python`) instead of hard-coding the `python3` executable name.
+
 ## 1.5.3 - 2026-07-08
 
 ### Changed

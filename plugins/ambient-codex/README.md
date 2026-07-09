@@ -77,7 +77,9 @@ The plugin root is:
 
 ## Why Codex Starts Python
 
-Codex launches `python3 -u mcp/ambient_mcp.py` as a stdio MCP server. MCP is the
+Codex launches `node mcp/ambient_mcp_launcher.js` as a stdio MCP server. The
+launcher finds Python 3 as `python3`, `python`, or Windows `py -3`, then starts
+`mcp/ambient_mcp.py`. MCP is the
 tool bridge that lets Codex call bounded local actions such as status, model
 selection, mode changes, key lifecycle guidance, doctor, usage, short asks, and
 small audits. The MCP process does not make network calls during startup and it
