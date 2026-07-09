@@ -48,26 +48,50 @@ the way a settings screen would:
 
 1. Call MCP `ambient_control` and show, in plain words: whether a key is configured,
    the current mode (off / delegate / takeover), the current chat and code models,
-   all settings with current value + allowed syntax, and which models are serving
-   right now.
+   the mode choices with one-line meanings, all settings with current value +
+   allowed syntax, which models are serving right now, and the key workflows
+   (audit, build, ask, usage, diagnose).
 2. Text menus are the default. The Codex native elicitation picker can auto-cancel
    in some clients, so the normal user path must be visible and deterministic in
    chat:
-   - `pick a model` shows a numbered serving-model menu and sets both chat + code
-     with `ambient_set_model` after the user replies with a number or model id.
+   - `pick a model` shows a numbered serving-model menu first and sets both
+     chat + code with `ambient_set_model` after the user replies with a model
+     number or model id. Always include a final `Browse all models` option.
    - `change chat model` shows the same menu and sets only `lane=chat`.
    - `change code model` shows the same menu and sets only `lane=code`.
+   - `browse all models` calls MCP `ambient_control` with `all_models=true` or
+     MCP `ambient_models` with `all=true`, then shows serving models first and
+     on-demand models second. Say on-demand models are available but may take
+     longer to start; do not call them broken, down, failed, or unavailable.
    - `change mode` shows `1. off`, `2. on / delegate`, `3. takeover`, then calls
      `ambient_set_mode` after the user replies.
    - `change settings` shows the settings menu with current values and syntax,
      then calls `ambient_set_config` after the user chooses a setting/value.
-3. Always show a "You can say" section in the panel. Include at least:
-   `pick a model`, `change chat model`, `change code model`, `change mode`,
-   `change settings`, `audit this diff`, `audit this repo`, `build <task>`,
+3. Expose each user phrase exactly once across compact panel sections. The
+   controls section must include at least: `pick a model`, `browse all models`,
+   `change chat model`, `change code model`, `change mode`, and
+   `change settings`. The workflows section must include at least:
+   `audit this diff`, `audit this repo`, `build <task>`,
    `ask Ambient <question>`, `diagnose Ambient`, and `show Ambient usage`.
 4. Do not call `ambient_pick_model` or `ambient_pick_mode` for routine selection.
    Use them only when the user explicitly asks for a native picker. If they return
    no selection, show the text menu and use the direct setter tools.
+
+Render the panel as compact sections, not one long comma-separated sentence:
+
+- Modes: `off` = Codex works normally and Ambient runs only when asked;
+  `on / delegate` = Codex plans/reviews while Ambient handles audits, builds,
+  and large asks; `takeover` = Ambient-first for substantive work while Codex
+  still handles safety, review, and final integration. Audit is a workflow, not
+  a mode.
+- Models: show "Serving now - ready for immediate use" first, then a
+  `Browse all models` option. In the all-model view, label the rest "On demand -
+  may take longer to start".
+- Settings: show current value and allowed syntax; do not expose raw env var
+  names unless diagnosing an override.
+- Workflows: show audit, build, ask, usage, and diagnose as actions the user can
+  invoke without changing mode. Do not repeat those workflow phrases again in
+  the controls section.
 
 Settings are direct-set controls, not native pickers. If the user asks to change
 settings without naming a specific setting, show the current `ambient_control`
@@ -80,12 +104,12 @@ Use the native control surface for setup, mode, model, key, and setting changes:
 
 | User intent | Codex action |
 |---|---|
-| Ambient status or control panel | Prefer MCP `ambient_control`; otherwise run bundled `control --json` or bundled `control`. Show key state, delegate state, default lanes, all settings with syntax, serving models, and a "You can say" action list. |
+| Ambient status or control panel | Prefer MCP `ambient_control`; otherwise run bundled `control --json` or bundled `control`. Show key state, delegate state, the three mode choices, default lanes, all settings with syntax, serving models, workflows, and control phrases without repeating workflow phrases. |
 | User wants to change mode but didn't name one | Show a text menu: `1. off`, `2. on / delegate`, `3. takeover`; after the user replies, call MCP `ambient_set_mode`. Do not use the native picker unless the user explicitly asks for it. |
 | Turn delegation on | MCP `ambient_set_mode` with `state=on`, or bundled `control mode on`. Explain the delegate contract and follow it for the session. |
-| Turn takeover on | MCP `ambient_set_mode` with `state=takeover`, or bundled `control mode takeover`. Explain the takeover contract and route substantive work through Ambient until turned off. |
+| Turn takeover on | MCP `ambient_set_mode` with `state=takeover`, or bundled `control mode takeover`. Explain that takeover is Ambient-first for substantive work; Codex still coordinates safety, review, and final integration. |
 | Turn Ambient off | MCP `ambient_set_mode` with `state=off`, or bundled `control mode off`. This exits both delegate and takeover. |
-| User wants to switch/choose a model without naming one | Show a numbered text menu of serving models from `ambient_control`/`ambient_models`; after the user replies with a number or model id, call MCP `ambient_set_model`. Use `lane=both` for `pick a model`, `lane=chat` for `change chat model`, and `lane=code` for `change code model`. Do not use the native picker unless the user explicitly asks for it. |
+| User wants to switch/choose a model without naming one | Show a numbered text menu of serving models from `ambient_control`/`ambient_models`, plus a final `Browse all models` option. After the user replies with a model number or id, call MCP `ambient_set_model`. If they choose browse-all, call `ambient_control` with `all_models=true` or `ambient_models` with `all=true`, then show serving first and on-demand second. Use `lane=both` for `pick a model`, `lane=chat` for `change chat model`, and `lane=code` for `change code model`. Do not use the native picker unless the user explicitly asks for it. |
 | User names a specific model | MCP `ambient_set_model` with that id, or bundled `control model MODEL --chat|--code`. |
 | Inspect the catalog | MCP `ambient_models`, or bundled `models --json` for raw inspection. |
 | Manage settings | Prefer MCP `ambient_set_config` when the setting/value is named; otherwise show the allowed settings from `ambient_control` and ask for the setting/value. For CLI fallback, run bundled `control setting NAME VALUE` or bundled `control setting NAME --unset`. |

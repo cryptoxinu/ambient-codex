@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.8.4"
+SERVER_VERSION = "1.8.5"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -447,11 +447,16 @@ def _model_menu_text(serving: List[Dict[str, Any]], reason: str) -> str:
         f"  {i}. {_model_label(model)}"
         for i, model in enumerate(serving, 1)
     )
+    browse = len(serving) + 1
     return (
         f"{reason} Model unchanged.\n"
-        "Serving models:\n"
+        "Serving now - ready for immediate use:\n"
         f"{listing}\n"
-        "To change it, call `ambient_set_model` with the selected model id."
+        f"  {browse}. Browse all models - includes on-demand models that may "
+        "take longer to start.\n"
+        "To change it, call `ambient_set_model` with the selected model id. "
+        "To browse everything first, call `ambient_models` with `all=true`; "
+        "show ready models first and label the rest as on-demand."
     )
 
 
@@ -471,9 +476,10 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     serving = _serving_models()
     if not serving:
         return tool_text(
-            "No Ambient models are serving this minute — they spin up on demand. "
-            "Try `ambient_models` again shortly, or pass an explicit model to "
-            "`ambient_set_model`.")
+            "No Ambient models are serving this minute. That does not mean the "
+            "catalog is broken: Ambient models can spin up on demand. Call "
+            "`ambient_models` with `all=true` to browse all models, then call "
+            "`ambient_set_model` with the selected model id.")
 
     if not SESSION.supports_elicitation():
         return tool_text(_model_menu_text(
@@ -491,7 +497,7 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "model": {
                 "type": "string",
                 "title": "Ambient model",
-                "description": "Serving right now on the Ambient network",
+                "description": "Serving now on Ambient; browse all models separately for on-demand options",
                 "enum": [str(m["id"]) for m in serving],
                 "enumNames": [_model_label(m) for m in serving],
             },
@@ -733,8 +739,9 @@ TOOLS = [
         "name": "ambient_pick_model",
         "description": (
             "Let the user pick the Ambient model from a native Codex picker listing "
-            "only models serving right now. Use this whenever the user wants to "
-            "switch/choose a model without naming one. The picker asks exactly one "
+            "models serving right now. For the normal chat menu, show a browse-all "
+            "option that uses `ambient_models` with `all=true` for on-demand models. "
+            "The picker asks exactly one "
             "question. `lane` is NOT elicited: omit it to apply the pick to both the "
             "chat and code lanes, or pass chat/code when the user already said which. "
             "Falls back to a numbered menu on clients without a picker."
@@ -1031,8 +1038,9 @@ def session_instructions() -> str:
     if mode == "takeover":
         return SERVER_INSTRUCTIONS + (
             "\n\nAmbient TAKEOVER is ON. Route every substantive turn through Ambient "
-            "(ask/code/build/audit) so the user spends Ambient credit rather than Codex "
-            "tokens, and open each substantive reply with a one-line takeover banner. "
+            "(ask/code/build/audit) for the heavy model work. Codex still coordinates "
+            "safety, review, and final integration; open each substantive reply with "
+            "a one-line takeover banner. "
             "`ambient-codex control mode off` stops it."
         )
     if mode == "on":

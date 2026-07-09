@@ -69,6 +69,10 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertIn("change chat model", text)
         self.assertIn("change code model", text)
         self.assertIn("change settings", text)
+        self.assertIn("Browse all models", text)
+        self.assertIn("on-demand models are available but may take", text)
+        self.assertIn("Audit is a workflow, not", text)
+        self.assertIn("Do not repeat those workflow phrases", text)
 
     def test_codex_facing_docs_do_not_reintroduce_path_first_routing(self):
         docs = [
@@ -80,6 +84,20 @@ class TestCodexNativeIsolation(unittest.TestCase):
         pattern = re.compile(r"Prefer `ambient`|on PATH when available|CLAUDE_PLUGIN_ROOT")
         for path in docs:
             self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")), str(path))
+
+    def test_docs_do_not_make_native_picker_or_zero_codex_tokens_the_default(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        compact = re.sub(r"\s+", " ", readme)
+        forbidden = [
+            "Ask Codex to switch models and it calls the MCP tool `ambient_pick_model`",
+            "Ambient does everything on your tokens",
+            "instead of Codex",
+            "zero Codex tokens",
+        ]
+        for needle in forbidden:
+            self.assertNotIn(needle, readme)
+        self.assertIn("deterministic text menu first", compact)
+        self.assertIn("not the default path", compact)
 
     def test_architecture_contract_is_codex_native_hybrid(self):
         text = (ROOT / "docs" / "CODEX_NATIVE_ARCHITECTURE.md").read_text(encoding="utf-8")

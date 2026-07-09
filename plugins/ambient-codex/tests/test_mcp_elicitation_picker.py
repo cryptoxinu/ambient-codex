@@ -191,6 +191,8 @@ class TestPickModelTool(unittest.TestCase):
         text = out["content"][0]["text"]
         self.assertIn("Model unchanged", text)
         self.assertIn("1. z-ai/glm-5.2", text)
+        self.assertIn("Browse all models", text)
+        self.assertIn("on-demand models", text)
         self.assertIn("ambient_set_model", text)
 
     def test_timeout_or_error_changes_nothing(self):
@@ -202,6 +204,8 @@ class TestPickModelTool(unittest.TestCase):
         text = out["content"][0]["text"]
         self.assertIn("Model unchanged", text)
         self.assertIn("1. z-ai/glm-5.2", text)
+        self.assertIn("Browse all models", text)
+        self.assertIn("ambient_models", text)
         self.assertIn("ambient_set_model", text)
 
     def test_a_model_we_never_offered_is_refused(self):
@@ -223,6 +227,7 @@ class TestPickModelTool(unittest.TestCase):
         text = out["content"][0]["text"]
         self.assertIn("1. z-ai/glm-5.2", text)
         self.assertIn("2. deepseek/deepseek-v3", text)
+        self.assertIn("3. Browse all models", text)
         self.assertIn("ambient_set_model", text)
 
     def test_nothing_serving_is_explained_not_crashed(self):
@@ -230,7 +235,10 @@ class TestPickModelTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_model_tool({})
         run.assert_not_called()
-        self.assertIn("serving", out["content"][0]["text"])
+        text = out["content"][0]["text"]
+        self.assertIn("serving", text)
+        self.assertIn("spin up on demand", text)
+        self.assertIn("all=true", text)
 
     def test_only_serving_unhidden_models_are_offered(self):
         catalogue = json.dumps({"schema_version": 1, "models": [

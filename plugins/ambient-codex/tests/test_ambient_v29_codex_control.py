@@ -119,9 +119,26 @@ class ControlSnapshotTests(ControlCase):
         self.assertEqual(data["defaults"]["chat"], "z-ai/glm-5.2")
         self.assertEqual(data["models"]["serving_count"], 1)
         self.assertIn(
+            {"state": "takeover",
+             "label": "Takeover",
+             "description": "Ambient-first for substantive work; Codex still handles safety and final review.",
+             "current": False},
+            data["mode_options"],
+        )
+        self.assertIn(
             {"phrase": "change settings",
              "description": "edit streaming, fallback, fleet-budget, spend-cap, reference-price"},
             data["chat_actions"],
+        )
+        self.assertIn(
+            {"phrase": "browse all models",
+             "description": "show serving and on-demand models; on-demand may take longer to start"},
+            data["chat_actions"],
+        )
+        self.assertIn(
+            {"phrase": "audit this diff",
+             "description": "second-opinion review of the current git diff"},
+            data["workflows"],
         )
         self.assertIn("ambient-codex control mode on", data["actions"])
         self.assertIn("ambient-codex setup", data["actions"])
@@ -133,10 +150,18 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("Ambient Codex Control", out)
         self.assertIn("API key", out)
         self.assertIn("Mode", out)
+        self.assertIn("Modes:", out)
+        self.assertIn("Delegate", out)
+        self.assertIn("Ambient-first", out)
+        self.assertIn("Workflows:", out)
         self.assertIn("ambient-codex control model MODEL --chat", out)
         self.assertIn("In Codex chat, say:", out)
         for phrase, _description in amb.CONTROL_CHAT_ACTIONS:
             self.assertIn(phrase, out)
+        workflow_phrases = [phrase for phrase, _description in amb.CONTROL_WORKFLOWS]
+        for phrase in workflow_phrases:
+            self.assertEqual(out.count(phrase), 1, phrase)
+        self.assertIn("(workflow commands are listed above)", out)
 
 
 class ControlWriteTests(ControlCase):

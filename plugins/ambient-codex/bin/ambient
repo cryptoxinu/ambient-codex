@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.8.4"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.8.5"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -10905,8 +10905,9 @@ def cmd_mode(args):
         save_config_values({"AMBIENT_DELEGATE": args.state})
         if args.state == "takeover":
             print("Ambient Takeover: ON — Codex will route substantive work (chat, "
-                  "questions, building, reviews) through Ambient, so you spend "
-                  "Ambient tokens instead of Codex's.\n"
+                  "questions, building, reviews) through Ambient for the heavy "
+                  "model work. Codex still coordinates safety, review, and final "
+                  "integration.\n"
                   "Turn it off any time:  ambient-codex control mode off   "
                   "(or ask Codex to use Ambient off)")
         else:
@@ -11145,8 +11146,24 @@ CONTROL_ACTIONS = tuple(
     )
 )
 
+CONTROL_MODE_OPTIONS = (
+    ("off", "Off", "Codex works normally; Ambient runs only when you ask."),
+    ("on", "Delegate", "Codex plans and reviews; Ambient handles audits, builds, and large asks."),
+    ("takeover", "Takeover", "Ambient-first for substantive work; Codex still handles safety and final review."),
+)
+
+CONTROL_WORKFLOWS = (
+    ("audit this diff", "second-opinion review of the current git diff"),
+    ("audit this repo", "repository-level review"),
+    ("build <task>", "draft file changes for Codex to inspect before applying"),
+    ("ask Ambient <question>", "ask the chat model directly"),
+    ("show Ambient usage", "show local usage and savings estimates"),
+    ("diagnose Ambient", "run key, funds, model, network, and service checks"),
+)
+
 CONTROL_CHAT_ACTIONS = (
-    ("pick a model", "choose one model for both chat and code"),
+    ("pick a model", "choose from serving models, with a browse-all option"),
+    ("browse all models", "show serving and on-demand models; on-demand may take longer to start"),
     ("change chat model", "choose the chat/audit model lane only"),
     ("change code model", "choose the code/build/agent model lane only"),
     ("change mode", "choose off / delegate / takeover"),
@@ -11217,6 +11234,7 @@ def _control_snapshot(include_all=False, offline=False):
     ns = argparse.Namespace(model=None)
     chat_default = resolve_model(ns, conf, "chat")
     code_default = resolve_model(ns, conf, "code")
+    mode = (conf.get("AMBIENT_DELEGATE") or "off").lower()
     models = _control_catalog(conf, include_all=include_all, offline=offline)
     allow, hide, show, notes = curation(conf)
     hidden_ids = {m["id"] for m in models if is_hidden(m["id"], allow, hide, show)}
@@ -11228,7 +11246,16 @@ def _control_snapshot(include_all=False, offline=False):
         "surface": "codex-native",
         "version": __version__,
         "key": {"configured": bool(api_key), "backend": backend if api_key else None},
-        "mode": (conf.get("AMBIENT_DELEGATE") or "off").lower(),
+        "mode": mode,
+        "mode_options": [
+            {
+                "state": state,
+                "label": label,
+                "description": description,
+                "current": state == mode,
+            }
+            for state, label, description in CONTROL_MODE_OPTIONS
+        ],
         "defaults": {"chat": chat_default, "code": code_default},
         "settings": _control_settings(conf),
         "curation": {
@@ -11247,6 +11274,10 @@ def _control_snapshot(include_all=False, offline=False):
             {"phrase": phrase, "description": description}
             for phrase, description in CONTROL_CHAT_ACTIONS
         ],
+        "workflows": [
+            {"phrase": phrase, "description": description}
+            for phrase, description in CONTROL_WORKFLOWS
+        ],
         "actions": list(CONTROL_ACTIONS),
     }
 
@@ -11261,6 +11292,11 @@ def _control_print_status(payload):
     print(f"Mode: {payload['mode']}")
     print(f"Chat model: {payload['defaults']['chat']}")
     print(f"Code model: {payload['defaults']['code']}")
+    print("\nModes:")
+    for option in payload["mode_options"]:
+        suffix = " (current)" if option["current"] else ""
+        print(f"  {option['state']:<8} {option['label']:<9} "
+              f"{option['description']}{suffix}")
     print("\nSettings:")
     for setting in payload["settings"]:
         suffix = " (env override)" if setting["env_override"] else ""
@@ -11283,9 +11319,16 @@ def _control_print_status(payload):
             print(f"  ... {models['total_count'] - 8} more; run: ambient-codex models")
     else:
         print("\nServing models right now: unavailable in this status view")
+    print("\nWorkflows:")
+    for workflow in payload["workflows"]:
+        print(f"  {workflow['phrase']:<24} {workflow['description']}")
     print("\nIn Codex chat, say:")
+    workflow_phrases = {workflow["phrase"] for workflow in payload["workflows"]}
     for action in payload["chat_actions"]:
+        if action["phrase"] in workflow_phrases:
+            continue
         print(f"  {action['phrase']:<24} {action['description']}")
+    print("  (workflow commands are listed above)")
     print("\nActions:")
     for action in payload["actions"]:
         print(f"  {action}")
@@ -12642,7 +12685,7 @@ def _configure_mode(sub):
     p.add_argument("state", nargs="?", choices=["on", "off", "takeover"],
                    default=None,
                    help="off · on (Ambient writes code, Codex plans/reviews) · "
-                        "takeover (Ambient does everything on your tokens); "
+                        "takeover (Ambient-first for substantive work); "
                         "omit to print current status")
 
 

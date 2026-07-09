@@ -2,6 +2,21 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.5 - 2026-07-09
+
+### Model browsing and mode clarity
+
+- Clarified the Codex control panel mode model: off, delegate, and takeover now
+  have explicit descriptions, and audit/build/ask are presented as workflows
+  rather than hidden modes.
+- Added a browse-all model path to Codex-facing model menu guidance. Serving
+  models stay first, while on-demand models are described as available but likely
+  slower to start, not broken.
+- Exposed mode options and workflow metadata in the control JSON snapshot so MCP
+  and the text panel share the same control vocabulary.
+- Removed stale native-picker-default and zero-Codex-token wording from docs and
+  runtime messages.
+
 ## 1.8.4 - 2026-07-09
 
 ### Clearer control panel and reliable text menus

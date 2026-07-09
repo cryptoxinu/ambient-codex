@@ -141,21 +141,25 @@ codex -c 'mcp_servers.ambient.command="py"' -c 'mcp_servers.ambient.args=["-3","
 
 ## Picking A Model
 
-Ask Codex to switch models and it calls the MCP tool `ambient_pick_model`, which
-renders a native Codex picker listing only the models serving right now:
+Ask Codex to switch models and it shows a deterministic text menu first. Serving
+models are listed up front because they are ready for immediate use, and the menu
+also offers `browse all models` for on-demand models that may take longer to
+start:
 
 ```text
-Field 1/1  (1 required unanswered)
-Select the Ambient model for chat + code
-Ambient model
-Serving right now on the Ambient network
-› 1. ambient/large
-  2. moonshotai/kimi-k2.7-code
+Pick a model for both chat and code:
+
+Serving now - ready for immediate use:
+1. ambient/large - GLM 5.2
+2. moonshotai/kimi-k2.7-code - Kimi K2.7 Code
+3. z-ai/glm-5.2 - GLM 5.2
+4. Browse all models - includes on-demand models that may take longer to start
 ```
 
-The tool persists the choice itself. Pressing esc, declining, or running headless
-(`codex exec`, where there is no human to answer) changes nothing. Clients that do
-not advertise the MCP elicitation capability get a numbered text menu instead.
+After the user replies with a number or model id, Codex calls `ambient_set_model`
+for the selected lane. The native MCP picker tool `ambient_pick_model` still
+exists for clients/users that explicitly ask for a native picker, but it is not
+the default path because some Codex clients auto-cancel MCP elicitation.
 
 ## First Run
 
@@ -241,8 +245,8 @@ environment. Keep credentials out of the agent working tree.
 - `skills/ambient/agents/openai.yaml` provides skill UI metadata.
 - `.mcp.json` registers the local stdio MCP server.
 - `mcp/ambient_mcp.py` implements bounded MCP tools over the native control
-  surface and long-running CLI lanes, including `ambient_pick_model`, which renders
-  a native Codex picker via MCP `elicitation/create`.
+  surface and long-running CLI lanes, including direct model/mode/settings setters
+  and optional native picker tools via MCP `elicitation/create`.
 - `hooks/hooks.json` intentionally registers no default lifecycle hooks, so a
   clean install does not require hook trust review.
 - `hooks/session-start.sh` remains an opt-in script for local experiments; it is
