@@ -94,7 +94,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.8.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.8.1"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -575,7 +575,7 @@ def _is_local_host(host):
     decision. Deliberately NOT is_private / is_link_local / 0.0.0.0: an RFC-1918
     or link-local address can be a REMOTE box on a LAN/VPN, and this must never
     whitelist a non-local host (a single injected AMBIENT_API_URL would then
-    exfil the key). A non-loopback dev gateway must use `ambient trust-url`.
+    exfil the key). A non-loopback dev gateway must use `ambient-codex trust-url`.
     Residual: a rebound `localhost` needs host-file/DNS control — a deeper
     compromise than the injected-env-var threat this guard addresses."""
     import ipaddress
@@ -874,7 +874,7 @@ def _stderr_is_tty():
 
 def _use_color(stream):
     """Color only when it can't hurt: real TTY, TERM not dumb, NO_COLOR unset
-    (https://no-color.org). Per-stream so `ambient models | grep` gets clean
+    (https://no-color.org). Per-stream so `ambient-codex models | grep` gets clean
     bytes while stderr stays colored."""
     if os.environ.get("NO_COLOR") is not None \
             or os.environ.get("AMBIENT_NO_COLOR"):
@@ -1157,22 +1157,22 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
         print("  Try it now (30 seconds):\n"
               '    ambient-codex ask "Reply with exactly: AMBIENT-OK"\n')
     print("""  Everyday:
-    git diff | ambient audit              second-opinion review of your changes
-    ambient audit src/*.py --focus security   audit files (any size — auto-split)
+    git diff | ambient-codex audit              second-opinion review of your changes
+    ambient-codex audit src/*.py --focus security   audit files (any size — auto-split)
     ambient-codex ask "question"                one-shot Q&A (pipe docs: cat doc | ambient-codex ask "…" -)
     ambient-codex code "write a ..."            code generation
     ambient-codex build "make a ..." --dir out  plan + generate a set of files (never executes)
 
   Manage:
     ambient-codex models         what's serving (READY) right now
-    ambient use            pick your sticky default model
-    ambient usage          local spend estimate
-    ambient doctor         one-command diagnosis when anything fails
-    ambient link           put `ambient` on your PATH
+    ambient-codex use            pick your sticky default model
+    ambient-codex usage          local spend estimate
+    ambient-codex doctor         one-command diagnosis when anything fails
+    ambient-codex link           put `ambient` on your PATH
     ambient-codex setup --force  rotate/replace your key · --remove deletes it
 
   In Codex: use the $ambient skill or say "use Ambient" · ambient-codex mode on = delegate mode
-            · ambient mode takeover = Ambient handles substantive work (ambient mode off)
+            · ambient-codex mode takeover = Ambient handles substantive work (ambient-codex mode off)
 """)
     print(f"Default model: {chat_model} — change any time: ambient-codex use")
 
@@ -11065,7 +11065,7 @@ def _config_print_status():
 
 def cmd_config(args):
     """User settings in one place — no env vars, no hand-editing the config file.
-    Keyless (config-only, no network). `ambient config` shows everything; `set`/
+    Keyless (config-only, no network). `ambient-codex config` shows everything; `set`/
     `unset` change one whitelisted knob."""
     verb = getattr(args, "verb", None) or "status"
     if verb == "status":
@@ -12146,7 +12146,7 @@ OPENCODE_PROVIDER = LAUNCHER_NAME
 
 def ensure_opencode_config(api_url, model):
     """Fresh-install fix: create/repair the opencode provider config so
-    `ambient agent` works out of the box instead of failing on a missing file.
+    `ambient-codex agent` works out of the box instead of failing on a missing file.
     Never overwrites an existing provider entry the user may have tuned. The entry
     is keyed by LAUNCHER_NAME so a second Ambient install cannot share it."""
     cfg = {}
@@ -12488,6 +12488,8 @@ def _configure_uninstall(sub):
         help="remove THIS install's key, launcher, and (with --purge) all its state")
     p.add_argument("--purge", action="store_true",
                    help=f"also delete the whole state dir ({STATE_DIR})")
+    p.add_argument("--dir", default=None, metavar="DIR",
+                   help="launcher dir to un-link (default ~/.local/bin)")
     p.add_argument("--yes", action="store_true",
                    help="skip the confirmation prompt")
 
@@ -12500,6 +12502,11 @@ def cmd_uninstall(args):
     Removing the plugin itself is a Codex action, so we print the command rather than
     run it."""
     purge = getattr(args, "purge", False)
+    # Defence in depth: _state_dir() already refuses a foreign root at import, but
+    # never scrub or delete without re-confirming STATE_DIR is ours right here.
+    if foreign_root(STATE_DIR) is not None:
+        sys.exit(f"ambient: refusing to uninstall — state root {STATE_DIR} is inside "
+                 "another Ambient install's tree.")
     if not getattr(args, "yes", False) and sys.stdin.isatty():
         print("This removes Ambient Codex's API key and PATH launcher"
               + (f", and deletes {STATE_DIR}" if purge else "")
@@ -12523,11 +12530,17 @@ def cmd_uninstall(args):
               f"Remove it manually: Keychain Access → search '{KEYCHAIN_SERVICE}'.",
               file=sys.stderr)
 
-    # 2. PATH launcher: cmd_link already refuses anything not ours.
+    # 2. PATH launcher: cmd_link refuses anything not ours. `--dir` lets the user
+    # point at a launcher they created with `link --dir`; the default covers
+    # ~/.local/bin. Launchers linked into OTHER dirs must be removed with that dir.
+    link_dir = getattr(args, "dir", None)
     try:
-        cmd_link(argparse.Namespace(remove=True, dir=None))
+        cmd_link(argparse.Namespace(remove=True, dir=link_dir))
     except SystemExit as exc:
         print(f"• Launcher not removed: {exc}", file=sys.stderr)
+    if link_dir is None:
+        print("• If you ran `ambient-codex link --dir <other>`, remove that one "
+              "with `ambient-codex uninstall --dir <other>`.")
 
     # 3. State dir — ONLY with --purge, and ONLY if it is truly ours.
     if purge:
@@ -12537,8 +12550,14 @@ def cmd_uninstall(args):
                   file=sys.stderr)
         elif os.path.isdir(root):
             import shutil
-            shutil.rmtree(root, ignore_errors=True)
-            print(f"• Deleted all state: {root}")
+            errors = []
+            shutil.rmtree(root, onerror=lambda fn, path, exc: errors.append(path))
+            if not os.path.exists(root) and not errors:
+                print(f"• Deleted all state: {root}")
+            else:
+                print(f"• Could not fully delete {root} "
+                      f"({len(errors)} item(s) left) — remove it manually.",
+                      file=sys.stderr)
         else:
             print(f"• No state dir to delete ({root}).")
     else:
@@ -12712,11 +12731,11 @@ def _configure_audit(sub):
         "audit", help="second-opinion code audit",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""examples:
-  git diff | ambient audit
-  ambient audit src/pay.py --focus security --format report
-  ambient audit --staged --json
-  ambient audit src/*.py --dry-run       (plan + cost, nothing sent)
-  ambient audit --repo . --focus security   (whole repo — git-aware walker)
+  git diff | ambient-codex audit
+  ambient-codex audit src/pay.py --focus security --format report
+  ambient-codex audit --staged --json
+  ambient-codex audit src/*.py --dry-run       (plan + cost, nothing sent)
+  ambient-codex audit --repo . --focus security   (whole repo — git-aware walker)
   ambient-codex audit app.py --consensus moonshotai/kimi-k2.7-code,z-ai/glm-5.2""")
     p.add_argument("paths", nargs="*",
                    help="files to audit (or pipe a diff on stdin)")

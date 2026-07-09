@@ -356,16 +356,17 @@ class TestGuidanceNeverNamesTheSharedLauncher(unittest.TestCase):
         )
         pattern = re.compile(
             r"(?<![-\w./])ambient (?=(?:" + "|".join(subcommands) + r")\b)")
+        skip = ("audit hook v1", "Installed by:", "AMBIENT_CODE_MODEL",
+                "ambient use auto", "ambient use)")
         offenders = []
         for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
             stripped = line.lstrip()
             if stripped.startswith("#") or "LAUNCHER_NAME" in line:
                 continue
-            if '"' not in line and "'" not in line:
-                continue
-            if "audit hook v1" in line:  # ownership marker, not guidance
-                continue
-            if "Installed by:" in line:  # 1.5.x header we still recognise on uninstall
+            # Do NOT skip quote-less lines: a multi-line print triple-quoted block
+            # continuation carries no quote of its own, and that is exactly how the
+            # post-setup welcome panel's bare `ambient` commands slipped past before.
+            if any(tok in line for tok in skip):
                 continue
             if pattern.search(line):
                 offenders.append(f"{lineno}: {stripped[:70]}")
@@ -805,6 +806,46 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
             self.assertEqual(
                 __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
                 foreign_hash)
+
+    def test_purge_reports_failure_instead_of_lying(self):
+        """A partial rmtree must not print 'Deleted all state'."""
+        if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+            self.skipTest("POSIX non-root permission bits")
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".config", "ambient-codex")
+            locked = os.path.join(root, "locked")
+            os.makedirs(locked)
+            with open(os.path.join(locked, "f"), "w", encoding="utf-8") as fh:
+                fh.write("stuck")
+            os.chmod(locked, 0o000)
+            try:
+                proc = self._run(home, "--purge")
+            finally:
+                os.chmod(locked, 0o755)
+            self.assertNotIn("Deleted all state", proc.stdout)
+            self.assertIn("Could not fully delete", proc.stderr)
+
+    def test_dir_flag_unlinks_a_custom_launcher(self):
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(os.path.join(home, ".config", "ambient-codex"))
+            custom = os.path.join(home, "custom-bin")
+            os.makedirs(custom)
+            subprocess.run([sys.executable, str(CLI), "link", "--dir", custom],
+                           env=sandbox_env(home), capture_output=True, timeout=120)
+            suffix = ".cmd" if os.name == "nt" else ""
+            self.assertTrue(os.path.lexists(os.path.join(custom, "ambient-codex" + suffix)))
+            proc = self._run(home, "--dir", custom)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertFalse(os.path.lexists(os.path.join(custom, "ambient-codex" + suffix)))
+
+    def test_refuses_when_state_root_is_foreign_even_without_purge(self):
+        with tempfile.TemporaryDirectory() as home:
+            foreign_env, foreign_hash = self._seed_foreign(home)
+            proc = self._run(home, codex_home=os.path.dirname(foreign_env))
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertEqual(
+                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                foreign_hash, "foreign env was scrubbed before the guard fired")
 
     def test_it_prints_the_codex_plugin_remove_command(self):
         with tempfile.TemporaryDirectory() as home:

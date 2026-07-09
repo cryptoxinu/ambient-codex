@@ -2,6 +2,22 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.1 - 2026-07-09
+
+### Second-auditor fixes on the 1.8.0 additions
+
+An independent Codex audit of the 1.8.0 diff found four issues, all fixed:
+
+- The post-setup welcome panel still printed bare `ambient audit / use / doctor / mode`
+  commands (which drive a different install). All 15 are now `ambient-codex`. The gap
+  existed because the guard test skipped quote-less lines, so multi-line `print("""…""")`
+  continuations went unchecked — the test now scans them.
+- `ambient-codex uninstall --purge` swallowed `rmtree` errors and still reported
+  "Deleted all state". It now surfaces a partial failure instead of lying.
+- `uninstall` re-verifies its state root is not inside another Ambient install before
+  scrubbing anything (defence in depth over the import-time guard), and accepts `--dir`
+  to un-link a launcher created with `link --dir`.
+
 ## 1.8.0 - 2026-07-09
 
 ### Native mode picker + control-panel onboarding
