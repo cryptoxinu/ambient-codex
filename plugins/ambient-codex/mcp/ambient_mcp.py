@@ -119,6 +119,15 @@ def ambient_bin() -> Path:
     return plugin_root() / "bin" / "ambient"
 
 
+def missing_cli_message(root: Path, binary: Path) -> str:
+    return (
+        "ambient-codex MCP server points at a missing bundled CLI. "
+        f"plugin_root={root}; expected={binary}. "
+        "This usually means Codex still has a pre-update MCP server running after "
+        "the plugin cache moved. Restart Codex or restart the Ambient MCP server."
+    )
+
+
 def trace_file() -> Optional[Path]:
     configured = os.environ.get("AMBIENT_CODEX_MCP_TRACE_FILE")
     if not configured:
@@ -284,7 +293,11 @@ def run_ambient(
     cwd: Optional[Path] = None,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> Dict[str, Any]:
-    command = [sys.executable, str(ambient_bin())] + args
+    root = plugin_root()
+    binary = ambient_bin()
+    if not binary.is_file():
+        raise AmbientCommandError(missing_cli_message(root, binary))
+    command = [sys.executable, str(binary)] + args
     try:
         completed = subprocess.run(
             command,
@@ -292,7 +305,7 @@ def run_ambient(
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=str(cwd or plugin_root()),
+            cwd=str(cwd or root),
             timeout=timeout_seconds,
             check=False,
         )
@@ -580,7 +593,7 @@ def self_test_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     if not root.is_dir():
         return tool_text(f"ambient-codex self-test failed: plugin root missing: {root}", is_error=True)
     if not binary.is_file():
-        return tool_text(f"ambient-codex self-test failed: bundled CLI missing: {binary}", is_error=True)
+        return tool_text(f"ambient-codex self-test failed: {missing_cli_message(root, binary)}", is_error=True)
 
     env = {name: value for name, value in os.environ.items() if name != "AMBIENT_API_KEY"}
     try:

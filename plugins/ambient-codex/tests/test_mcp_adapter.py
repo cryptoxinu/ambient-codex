@@ -321,6 +321,29 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertIn("ambient-codex self-test ok", text)
         self.assertNotIn("AMBIENT_API_KEY", text)
 
+    def test_missing_cli_reports_stale_mcp_server(self):
+        mcp = load_mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "missing-root"
+            with mock.patch.object(mcp, "plugin_root", return_value=root):
+                with self.assertRaises(mcp.AmbientCommandError) as caught:
+                    mcp.run_ambient(["config"])
+        message = str(caught.exception)
+        self.assertIn("pre-update MCP server", message)
+        self.assertIn("Restart Codex", message)
+
+    def test_self_test_missing_cli_reports_restart_guidance(self):
+        mcp = load_mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "plugin"
+            root.mkdir()
+            with mock.patch.object(mcp, "plugin_root", return_value=root):
+                result = mcp.call_tool("ambient_self_test", {})
+        self.assertTrue(result["isError"])
+        text = result["content"][0]["text"]
+        self.assertIn("missing bundled CLI", text)
+        self.assertIn("Restart Codex", text)
+
     def test_status_tool_runs_config_with_redaction(self):
         mcp = load_mcp()
         completed = subprocess.CompletedProcess(
