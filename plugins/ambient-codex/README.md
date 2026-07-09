@@ -2,10 +2,15 @@
 
 Codex-native plugin for the Ambient decentralized inference network.
 
-This is a standalone fork of the Ambient CLI/plugin work redesigned for Codex:
-Codex gets a skill, MCP server, and stdlib CLI for token-saving
-delegation, second-opinion audits, build briefs, repository maps, model routing,
-API key lifecycle, mode/settings control, and usage controls.
+This is a standalone Ambient build redesigned for Codex: Codex gets a skill,
+MCP control tools, and a stdlib CLI for token-saving delegation, second-opinion
+audits, build briefs, repository maps, model routing, API key lifecycle,
+mode/settings control, and usage controls.
+
+The architecture is deliberately hybrid. The skill is the routing and safety
+contract, MCP is the fast control plane, the bundled CLI is the heavy execution
+plane, and hooks are opt-in only. See
+[docs/CODEX_NATIVE_ARCHITECTURE.md](docs/CODEX_NATIVE_ARCHITECTURE.md).
 
 Community integration, not affiliated with or endorsed by Ambient.
 
@@ -32,9 +37,9 @@ root or the bundled MCP server. Do not make Codex rely on a bare `ambient` from
 PATH; that name may point at another local install.
 
 Ambient Codex is independent from any other Ambient integration on this machine.
-It does not register auto-running lifecycle hooks by default. Its MCP server
-resolves this plugin's bundled binary directly, and optional launcher repair is
-only available through explicit terminal commands such as bundled `link`.
+It does not register lifecycle hooks by default. Its MCP server resolves this
+plugin's bundled binary directly, and optional launcher repair is only available
+through explicit terminal commands such as bundled `link`.
 
 ## Install In Codex
 

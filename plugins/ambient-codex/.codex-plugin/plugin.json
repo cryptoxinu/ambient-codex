@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Ambient Codex",
     "shortDescription": "Route token-heavy Codex work through Ambient models.",
-    "longDescription": "Ambient Codex adds a Codex-native skill, MCP control tools, lifecycle hooks, and a stdlib CLI for Ambient setup, model selection, mode control, audits, code generation briefs, repository maps, usage controls, and delegated frontier-model work.",
+    "longDescription": "Ambient Codex adds a Codex-native skill, MCP control tools, and a stdlib CLI for Ambient setup, model selection, mode control, audits, code generation briefs, repository maps, usage controls, and delegated frontier-model work. Hooks are not registered by default.",
     "developerName": "xinu",
     "category": "Productivity",
     "capabilities": [

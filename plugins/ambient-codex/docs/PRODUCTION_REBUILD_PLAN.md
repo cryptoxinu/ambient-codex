@@ -25,6 +25,9 @@ plugin hardening pass. Keep it current whenever a phase lands.
   release notes.
 - [x] Phase 5: Run hermetic tests, reinstall the plugin, smoke-test installed
   MCP, commit, push, and write shared-memory handoff.
+- [x] Phase 6: Codify the final Codex-native hybrid architecture in
+  `docs/CODEX_NATIVE_ARCHITECTURE.md`, README, skill guidance, manifest wording,
+  and regression tests.
 
 ## Release Gates
 
@@ -36,3 +39,4 @@ plugin hardening pass. Keep it current whenever a phase lands.
 - `codex plugin add ambient-codex@ambient-codex`
 - `codex mcp get ambient`
 - Installed MCP stdio initialize/list-tools smoke test from the Codex cache.
+- Architecture regression checks in `tests/test_codex_native_isolation.py`.

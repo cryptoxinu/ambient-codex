@@ -10,6 +10,15 @@ inference API. Codex stays the trusted planner, reviewer, and integrator. Ambien
 does token-heavy model work: audits, summaries, code drafts, build manifests,
 map-reduce passes, and second opinions.
 
+This plugin is standalone Codex infrastructure. Do not inspect, invoke, import,
+or route through any Claude Ambient skill or Claude plugin path. A user with only
+Codex, this plugin, and an Ambient API key must have the full supported workflow.
+
+Architecture is hybrid by design: this skill owns routing and safety policy, MCP
+owns fast bounded controls, the bundled CLI owns heavyweight execution, and hooks
+are opt-in only. Do not try to force long audits, builds, repository maps,
+streaming jobs, shell pipes, or generated file sets through MCP.
+
 The bundled CLI is `bin/ambient` under the active plugin root. Codex must never
 run a bare `ambient` from PATH because that can cross into another local install.
 For shell work, resolve this skill's active plugin root and run that bundled

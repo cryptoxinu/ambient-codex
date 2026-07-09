@@ -18,6 +18,11 @@ This repo is intentionally separate from any Claude Ambient install. Ambient
 Codex should not inspect, invoke, or route through Claude plugin files during
 normal development or runtime use.
 
+The production architecture is intentionally hybrid: the Codex skill owns
+routing and safety policy, MCP owns fast bounded controls, the bundled CLI owns
+heavy execution, and hooks are opt-in only. See
+[plugins/ambient-codex/docs/CODEX_NATIVE_ARCHITECTURE.md](plugins/ambient-codex/docs/CODEX_NATIVE_ARCHITECTURE.md).
+
 ## Validate
 
 ```bash
