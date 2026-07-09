@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.5.4"
+SERVER_VERSION = "1.5.6"
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_INSTRUCTIONS = (
     "Use the bundled Ambient CLI only through this MCP server or the plugin root. "
@@ -438,18 +438,16 @@ TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
 
 
 def empty_schema() -> Dict[str, Any]:
-    return {"type": "object", "properties": {}, "additionalProperties": False}
+    return tool_schema({})
 
 
 def tool_schema(properties: Dict[str, Any], required: Optional[List[str]] = None) -> Dict[str, Any]:
-    schema: Dict[str, Any] = {
+    return {
         "type": "object",
         "properties": properties,
+        "required": required or [],
         "additionalProperties": False,
     }
-    if required:
-        schema = {**schema, "required": required}
-    return schema
 
 
 TOOLS = [
@@ -608,7 +606,7 @@ def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if method == "initialize":
             return response_result(request_id, {
                 "protocolVersion": requested_protocol_version(request),
-                "capabilities": {"tools": {"listChanged": False}},
+                "capabilities": {"tools": {}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                 "instructions": SERVER_INSTRUCTIONS,
             })
@@ -636,41 +634,62 @@ def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return response_error(request_id, -32000, f"ambient MCP internal error: {exc}")
 
 
-def read_headers(stream) -> Optional[Dict[str, str]]:
-    headers: Dict[str, str] = {}
+def read_headers(stream, first_line: bytes) -> Dict[str, str]:
+    headers = parse_header_line(first_line, {})
     while True:
         line = stream.readline()
         if line == b"":
-            return None if not headers else headers
+            return headers
         stripped = line.strip()
         if not stripped:
             return headers
-        key, sep, value = stripped.decode("ascii").partition(":")
-        if sep:
-            headers = {**headers, key.lower(): value.strip()}
+        headers = parse_header_line(line, headers)
+
+
+def parse_header_line(line: bytes, headers: Dict[str, str]) -> Dict[str, str]:
+    key, sep, value = line.strip().decode("ascii").partition(":")
+    if not sep:
+        raise ValueError(f"invalid MCP header line: {key}")
+    return {**headers, key.lower(): value.strip()}
 
 
 JsonRpcPayload = Union[Dict[str, Any], List[Any]]
+FramedPayload = Dict[str, Any]
 
 
-def read_message(stream) -> Optional[JsonRpcPayload]:
-    headers = read_headers(stream)
-    if headers is None:
-        return None
-    raw_length = headers.get("content-length")
-    if raw_length is None:
-        raise ValueError("missing Content-Length header")
-    body = stream.read(int(raw_length))
-    if not body:
-        return None
+def parse_payload_bytes(body: bytes) -> JsonRpcPayload:
     payload = json.loads(body.decode("utf-8"))
     if not isinstance(payload, (dict, list)):
         raise ValueError("JSON-RPC message must be an object or batch array")
     return payload
 
 
-def write_message(stream, payload: JsonRpcPayload) -> None:
+def read_message(stream) -> Optional[FramedPayload]:
+    while True:
+        first_line = stream.readline()
+        if first_line == b"":
+            return None
+        stripped = first_line.strip()
+        if stripped:
+            break
+    if stripped.startswith((b"{", b"[")):
+        return {"payload": parse_payload_bytes(stripped), "framing": "jsonl"}
+    headers = read_headers(stream, first_line)
+    raw_length = headers.get("content-length")
+    if raw_length is None:
+        raise ValueError("missing Content-Length header")
+    body = stream.read(int(raw_length))
+    if not body:
+        return None
+    return {"payload": parse_payload_bytes(body), "framing": "content-length"}
+
+
+def write_message(stream, payload: JsonRpcPayload, *, framing: str) -> None:
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    if framing == "jsonl":
+        stream.write(body + b"\n")
+        stream.flush()
+        return
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
     stream.write(header + body)
     stream.flush()
@@ -685,14 +704,15 @@ def handle_payload(payload: JsonRpcPayload) -> Optional[JsonRpcPayload]:
 
 def serve() -> int:
     while True:
-        payload = read_message(sys.stdin.buffer)
-        if payload is None:
+        framed = read_message(sys.stdin.buffer)
+        if framed is None:
             return 0
+        payload = framed["payload"]
         trace_event("request", payload)
         response = handle_payload(payload)
         if response is not None:
             trace_event("response", response)
-            write_message(sys.stdout.buffer, response)
+            write_message(sys.stdout.buffer, response, framing=str(framed["framing"]))
 
 
 if __name__ == "__main__":

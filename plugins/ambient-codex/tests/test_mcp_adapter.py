@@ -27,6 +27,10 @@ def encode_frame(payload):
     return b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
 
 
+def encode_jsonl(payload):
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
+
+
 def decode_frames(raw):
     frames = []
     rest = raw
@@ -44,6 +48,10 @@ def decode_frames(raw):
         frames.append(json.loads(body.decode("utf-8")))
         rest = tail[length:]
     return frames
+
+
+def decode_jsonl(raw):
+    return [json.loads(line.decode("utf-8")) for line in raw.splitlines() if line.strip()]
 
 
 class TestMcpAdapter(unittest.TestCase):
@@ -75,7 +83,7 @@ class TestMcpAdapter(unittest.TestCase):
         frames = decode_frames(proc.stdout)
         self.assertEqual(frames[0]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(frames[0]["result"]["serverInfo"]["name"], "ambient-codex")
-        self.assertEqual(frames[0]["result"]["capabilities"]["tools"]["listChanged"], False)
+        self.assertEqual(frames[0]["result"]["capabilities"]["tools"], {})
         self.assertIn("instructions", frames[0]["result"])
         self.assertIn("bundled Ambient CLI", frames[0]["result"]["instructions"])
         names = {tool["name"] for tool in frames[1]["result"]["tools"]}
@@ -87,6 +95,35 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertIn("ambient_set_config", names)
         self.assertIn("ambient_key", names)
         self.assertIn("ambient_self_test", names)
+
+    def test_stdio_jsonl_initialize_and_list_tools(self):
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "codex-jsonl", "version": "0"},
+            },
+        }
+        tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        proc = subprocess.run(
+            [sys.executable, str(MCP)],
+            input=encode_jsonl(init) + encode_jsonl({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }) + encode_jsonl(tools),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
+        frames = decode_jsonl(proc.stdout)
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
 
     def test_notifications_and_ping_are_codex_safe(self):
         mcp = load_mcp()
@@ -150,10 +187,15 @@ class TestMcpAdapter(unittest.TestCase):
                 "clientInfo": {"name": "test", "version": "0"},
             },
         }
+        tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
         proc = subprocess.run(
             ["node", str(ROOT / "mcp" / "ambient_mcp_launcher.js")],
             cwd=ROOT,
-            input=encode_frame(init),
+            input=encode_frame(init) + encode_frame({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }) + encode_frame(tools),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=10,
@@ -161,14 +203,55 @@ class TestMcpAdapter(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
         frames = decode_frames(proc.stdout)
-        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.4")
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+
+    def test_node_launcher_starts_jsonl_mcp_server(self):
+        if shutil.which("node") is None:
+            self.skipTest("node is not available")
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "codex-jsonl", "version": "0"},
+            },
+        }
+        tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        proc = subprocess.run(
+            ["node", str(ROOT / "mcp" / "ambient_mcp_launcher.js")],
+            cwd=ROOT,
+            input=encode_jsonl(init) + encode_jsonl(tools),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8"))
+        frames = decode_jsonl(proc.stdout)
+        self.assertEqual(frames[0]["result"]["serverInfo"]["version"], "1.5.6")
+        self.assertEqual(len(frames[1]["result"]["tools"]), 12)
+
+    def test_all_mcp_tool_schemas_are_codex_strict_objects(self):
+        mcp = load_mcp()
+        for tool in mcp.TOOLS:
+            with self.subTest(tool=tool["name"]):
+                schema = tool["inputSchema"]
+                self.assertEqual(schema["type"], "object")
+                self.assertIsInstance(schema["properties"], dict)
+                self.assertIsInstance(schema["required"], list)
+                self.assertIs(schema["additionalProperties"], False)
+                for required_name in schema["required"]:
+                    self.assertIn(required_name, schema["properties"])
 
     def test_self_test_is_local_bounded_and_redacted(self):
         mcp = load_mcp()
         completed = subprocess.CompletedProcess(
             args=[],
             returncode=0,
-            stdout="ambient 1.5.4\n",
+            stdout="ambient 1.5.6\n",
             stderr="",
         )
         with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:

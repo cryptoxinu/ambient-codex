@@ -2,6 +2,30 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.5.6 - 2026-07-08
+
+### Fixed
+- MCP stdio now supports Codex's newline-delimited JSON-RPC startup path in
+  addition to standard `Content-Length` framing. The server responds using the
+  same framing it receives, preventing plugin MCP startup from hanging while
+  waiting for headers that Codex did not send.
+
+### Tests
+- Added direct and Node-launcher JSONL MCP startup regressions covering
+  `initialize`, `notifications/initialized`, and `tools/list`.
+
+## 1.5.5 - 2026-07-08
+
+### Fixed
+- MCP tool schemas now always include an explicit `required` array, including
+  empty-input and optional-only tools, so stricter Codex tool conversion can
+  register Ambient tools instead of leaving the server started but unusable.
+
+### Tests
+- Expanded the Node launcher smoke test to run the full Codex startup path:
+  `initialize`, `notifications/initialized`, then `tools/list`.
+- Added a schema regression test for Codex-strict MCP object schemas.
+
 ## 1.5.4 - 2026-07-08
 
 ### Fixed
