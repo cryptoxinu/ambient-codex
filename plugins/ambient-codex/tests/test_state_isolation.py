@@ -177,7 +177,8 @@ class TestStateRootCannotBeAimedAtAnotherInstall(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             marker = os.path.join(mine, ".ambient-codex")
             self.assertTrue(os.path.exists(marker), "state root was not claimed")
-            self.assertEqual(os.stat(marker).st_mode & 0o777, 0o600)
+            if os.name != "nt":  # Windows chmod cannot express 0o600
+                self.assertEqual(os.stat(marker).st_mode & 0o777, 0o600)
 
     def test_a_root_we_already_claimed_is_reused(self):
         with tempfile.TemporaryDirectory() as home:
