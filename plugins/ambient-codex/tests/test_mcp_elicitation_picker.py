@@ -188,7 +188,7 @@ class TestPickModelTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_model_tool({})
         run.assert_not_called()
-        self.assertIn("unchanged", out["content"][0]["text"])
+        self.assertIn("Kept your current model", out["content"][0]["text"])
 
     def test_timeout_or_error_changes_nothing(self):
         with mock.patch.object(self.mcp, "_serving_models", return_value=SERVING), \
@@ -196,7 +196,7 @@ class TestPickModelTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_model_tool({})
         run.assert_not_called()
-        self.assertIn("unchanged", out["content"][0]["text"])
+        self.assertIn("Kept your current model", out["content"][0]["text"])
 
     def test_a_model_we_never_offered_is_refused(self):
         """Never persist an id echoed back that was not in our own option list."""
@@ -391,7 +391,7 @@ class TestPickModeTool(unittest.TestCase):
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
-        self.assertIn("unchanged", out["content"][0]["text"])
+        self.assertIn("Kept your current mode", out["content"][0]["text"])
 
     def test_no_picker_returns_a_numbered_menu(self):
         self.mcp.SESSION.client_capabilities = {}

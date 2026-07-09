@@ -49,17 +49,17 @@ the way a settings screen would:
 1. Call MCP `ambient_control` and show, in plain words: whether a key is configured,
    the current mode (off / delegate / takeover), the current chat and code models,
    and which models are serving right now.
-2. Then offer the two native pickers directly — do not make them type anything:
-   - **Pick a model** → call MCP `ambient_pick_model` (a tap-to-choose picker of the
-     serving models; it persists the choice itself).
-   - **Set the mode** → call MCP `ambient_pick_mode` (a tap-to-choose off / delegate /
-     takeover picker; it persists the choice).
-3. Close with one line of what to do next: "or just say `use Ambient to audit this
-   diff` / `use Ambient to build X` and I'll route it."
+2. Tell the user their current model and mode, then offer picker actions as opt-in:
+   "You're set - chat is on <chat-model>, code is on <code-model>, mode is <mode>.
+   Want to change either? Say `pick a model` or `change mode` and I'll show you a
+   picker. Or just say `use Ambient to audit this diff` / `use Ambient to build X`."
+3. Only call MCP `ambient_pick_model` when the user asks to switch or choose a
+   model. Only call MCP `ambient_pick_mode` when the user asks to change the mode.
+   Never call both unprompted.
 
-If the client cannot render a picker (older client, or headless `codex exec`), both
-picker tools return a numbered menu instead — read it to the user and act on their
-answer with `ambient_set_model` / `ambient_set_mode`.
+If the user asks for a picker and the client cannot render one (older client, or
+headless `codex exec`), the picker tool returns a numbered menu instead — read it
+to the user and act on their answer with `ambient_set_model` / `ambient_set_mode`.
 
 ### Intent table
 
@@ -247,8 +247,9 @@ Notes for you (the agent), not the user:
   at app.ambient.xyz and run `ambient-codex setup` locally.
 - After they confirm setup, smoke-test with bundled `ask "Reply with exactly: AMBIENT-OK"`,
   then IMMEDIATELY show the control panel (see **The control panel** above): call
-  `ambient_control`, then offer `ambient_pick_model` and `ambient_pick_mode`. Setup is
-  not "done" until the user has seen the panel and can pick a model and a mode.
+  `ambient_control`, show the current status, and tell the user they can pick a
+  model or mode by asking. Do not call `ambient_pick_model` or `ambient_pick_mode`
+  unless the user asks to change that setting.
 
 Settings live behind commands, not manual env editing:
 

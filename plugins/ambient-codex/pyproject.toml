@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ambient-codex"
-version = "1.8.1"                       # keep in sync with .codex-plugin/plugin.json + bin/ambient __version__
+version = "1.8.2"                       # keep in sync with .codex-plugin/plugin.json + bin/ambient __version__
 description = "A Codex-native Ambient plugin for delegation, audits, builds, and decentralized inference"
 readme = "README.md"
 requires-python = ">=3.8"

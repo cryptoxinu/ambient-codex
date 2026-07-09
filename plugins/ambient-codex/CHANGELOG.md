@@ -2,6 +2,15 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.8.2 - 2026-07-09
+
+### Setup control panel polish
+
+- The post-setup panel now shows key, mode, model, and serving-model status, then
+  offers the model and mode pickers only when the user asks instead of auto-firing both.
+- Dismissed model and mode pickers now read as "kept your current setting" so canceling
+  a picker does not look like a failure.
+
 ## 1.8.1 - 2026-07-09
 
 ### Second-auditor fixes on the 1.8.0 additions

@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.8.1"
+SERVER_VERSION = "1.8.2"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -371,8 +371,7 @@ def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     result = elicit("Choose how much work Codex routes to Ambient", schema)
     chosen = elicitation_choice(result, "state")
     if not chosen:
-        action = (result or {}).get("action", "no answer")
-        return tool_text(f"Mode unchanged ({action}); still '{current}'.")
+        return tool_text(f"Kept your current mode ({current}). (Ask again any time to change it.)")
     if chosen not in {state for state, _ in _MODE_OPTIONS}:
         return tool_text(f"Mode unchanged — {chosen!r} is not a valid mode.",
                          is_error=True)
@@ -476,8 +475,7 @@ def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     result = elicit(f"Select the Ambient model for {lane_label}", schema)
     chosen = elicitation_choice(result, "model")
     if not chosen:
-        action = (result or {}).get("action", "no answer")
-        return tool_text(f"Model unchanged ({action}).")
+        return tool_text("Kept your current model. (Ask again any time to switch.)")
     # Never trust an echoed value: persist only an id we actually offered.
     offered = {str(m["id"]) for m in serving}
     if chosen not in offered:

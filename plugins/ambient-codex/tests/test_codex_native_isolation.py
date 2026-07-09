@@ -110,7 +110,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertEqual(set(re.findall(r"- `(ambient_[^`]+)`", tool_section)), expected_tools)
 
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.8.1")
+        self.assertEqual(manifest["version"], "1.8.2")
         long_description = manifest["interface"]["longDescription"]
         self.assertIn("Hooks are not registered by default.", long_description)
         hook_capabilities = [
