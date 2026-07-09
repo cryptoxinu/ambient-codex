@@ -21,12 +21,42 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "bin" / "ambient"
 
+# `posixpath.expanduser` reads HOME; `ntpath.expanduser` ignores it and reads
+# USERPROFILE. Sandboxing only HOME sent these tests at the developer's real
+# profile on Windows.
+_HOME_VARS = ("HOME", "USERPROFILE")
+
+
+def sandbox_env(home, **extra):
+    """A child-process env whose `~` resolves to `home` on every platform."""
+    env = {**os.environ, "AMBIENT_NO_ONBOARD": "1", **extra}
+    for var in _HOME_VARS:
+        env[var] = home
+    env.pop("AMBIENT_CODEX_HOME", None)
+    # HOMEDRIVE/HOMEPATH are ntpath's fallback when USERPROFILE is unset.
+    env.pop("HOMEDRIVE", None)
+    env.pop("HOMEPATH", None)
+    return env
+
+
+def same_path(a, b):
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def under(path, root):
+    root = os.path.normcase(os.path.normpath(root))
+    path = os.path.normcase(os.path.normpath(path))
+    return path.startswith(root + os.sep)
+
 
 def load_cli(home):
-    """Import bin/ambient with HOME/AMBIENT_CODEX_HOME pointed at a sandbox."""
-    prior = {k: os.environ.get(k) for k in ("HOME", "AMBIENT_CODEX_HOME")}
-    os.environ["HOME"] = home
-    os.environ.pop("AMBIENT_CODEX_HOME", None)
+    """Import bin/ambient with `~` and AMBIENT_CODEX_HOME pointed at a sandbox."""
+    prior = {k: os.environ.get(k)
+             for k in (*_HOME_VARS, "AMBIENT_CODEX_HOME", "HOMEDRIVE", "HOMEPATH")}
+    for var in _HOME_VARS:
+        os.environ[var] = home
+    for var in ("AMBIENT_CODEX_HOME", "HOMEDRIVE", "HOMEPATH"):
+        os.environ.pop(var, None)
     try:
         spec = importlib.util.spec_from_loader(
             "ambient_cli_isolation",
@@ -48,15 +78,14 @@ class TestStateRootIsolation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
             root = os.path.join(home, ".config", "ambient-codex")
-            self.assertEqual(cli.STATE_DIR, root)
+            self.assertTrue(same_path(cli.STATE_DIR, root),
+                            f"{cli.STATE_DIR} != {root}")
             for name in ("CONFIG_PATH", "USAGE_PATH", "CAPABILITY_PATH", "CACHE_DIR"):
                 path = getattr(cli, name)
-                self.assertTrue(
-                    path.startswith(root + os.sep),
-                    f"{name}={path} escapes the Codex state root",
-                )
+                self.assertTrue(under(path, root),
+                                f"{name}={path} escapes the Codex state root")
             # reservations derive from dirname(USAGE_PATH); prove they followed.
-            self.assertTrue(cli._reservations_path().startswith(root + os.sep))
+            self.assertTrue(under(cli._reservations_path(), root))
 
     def test_no_state_path_touches_the_shared_ambient_dir(self):
         with tempfile.TemporaryDirectory() as home:
@@ -65,7 +94,7 @@ class TestStateRootIsolation(unittest.TestCase):
             for name in ("CONFIG_PATH", "USAGE_PATH", "CAPABILITY_PATH", "CACHE_DIR"):
                 path = getattr(cli, name)
                 self.assertFalse(
-                    path == shared or path.startswith(shared + os.sep),
+                    same_path(path, shared) or under(path, shared),
                     f"{name}={path} lands inside the other install's dir {shared}",
                 )
 
@@ -87,8 +116,9 @@ class TestStateRootIsolation(unittest.TestCase):
                 )
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                self.assertEqual(module.STATE_DIR, override)
-                self.assertEqual(module.CONFIG_PATH, os.path.join(override, "env"))
+                self.assertTrue(same_path(module.STATE_DIR, override))
+                self.assertTrue(same_path(module.CONFIG_PATH,
+                                          os.path.join(override, "env")))
             finally:
                 os.environ.pop("AMBIENT_CODEX_HOME", None)
 
@@ -104,11 +134,10 @@ class TestNoWritesEscapeTheCodexRoot(unittest.TestCase):
                 fh.write("AMBIENT_DELEGATE=off\nAMBIENT_MODEL=frontier/expensive\n")
             before = Path(shared_env).read_text(encoding="utf-8")
 
-            env = {**os.environ, "HOME": home, "AMBIENT_NO_ONBOARD": "1"}
-            env.pop("AMBIENT_CODEX_HOME", None)
             proc = subprocess.run(
                 [sys.executable, str(CLI), "control", "mode", "takeover"],
-                env=env, capture_output=True, text=True, timeout=60, check=False)
+                env=sandbox_env(home), capture_output=True, text=True,
+                timeout=120, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
 
             self.assertEqual(
@@ -120,11 +149,10 @@ class TestNoWritesEscapeTheCodexRoot(unittest.TestCase):
 
     def test_shared_dir_is_never_created_when_absent(self):
         with tempfile.TemporaryDirectory() as home:
-            env = {**os.environ, "HOME": home, "AMBIENT_NO_ONBOARD": "1"}
-            env.pop("AMBIENT_CODEX_HOME", None)
             proc = subprocess.run(
                 [sys.executable, str(CLI), "control", "mode", "on"],
-                env=env, capture_output=True, text=True, timeout=60, check=False)
+                env=sandbox_env(home), capture_output=True, text=True,
+                timeout=120, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertFalse(
                 os.path.exists(os.path.join(home, ".config", "ambient")),
@@ -158,14 +186,15 @@ class TestPathLauncherName(unittest.TestCase):
     def test_link_writes_the_codex_launcher(self):
         with tempfile.TemporaryDirectory() as home:
             dest = os.path.join(home, "bin")
-            env = {**os.environ, "HOME": home, "AMBIENT_NO_ONBOARD": "1"}
-            env.pop("AMBIENT_CODEX_HOME", None)
             proc = subprocess.run(
                 [sys.executable, str(CLI), "link", "--dir", dest],
-                env=env, capture_output=True, text=True, timeout=60, check=False)
+                env=sandbox_env(home), capture_output=True, text=True,
+                timeout=120, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex")))
-            self.assertFalse(os.path.lexists(os.path.join(dest, "ambient")),
+            # Windows cannot symlink without privileges, so `link` writes a .cmd shim.
+            suffix = ".cmd" if os.name == "nt" else ""
+            self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex" + suffix)))
+            self.assertFalse(os.path.lexists(os.path.join(dest, "ambient" + suffix)),
                              "Codex claimed the shared `ambient` name on PATH")
 
 
@@ -356,6 +385,7 @@ class TestHookScriptReadsIsolatedEnv(unittest.TestCase):
         self.assertIn('${AMBIENT_CODEX_HOME:-$HOME/.config/ambient-codex}/env', script)
         self.assertNotIn('conf="$HOME/.config/ambient/env"', script)
 
+    @unittest.skipIf(os.name == "nt", "SessionStart hook is POSIX sh")
     def test_session_start_ignores_the_other_installs_takeover_flag(self):
         with tempfile.TemporaryDirectory() as home:
             shared_dir = os.path.join(home, ".config", "ambient")
@@ -363,8 +393,8 @@ class TestHookScriptReadsIsolatedEnv(unittest.TestCase):
             with open(os.path.join(shared_dir, "env"), "w", encoding="utf-8") as fh:
                 fh.write("AMBIENT_DELEGATE=takeover\n")
             proc = subprocess.run(
-                ["/bin/sh", str(ROOT / "hooks" / "session-start.sh")],
-                env={**os.environ, "HOME": home, "PLUGIN_ROOT": str(ROOT)},
+                ["sh", str(ROOT / "hooks" / "session-start.sh")],
+                env=sandbox_env(home, PLUGIN_ROOT=str(ROOT)),
                 capture_output=True, text=True, timeout=30, check=False)
             self.assertNotIn("TAKEOVER", proc.stdout)
 
