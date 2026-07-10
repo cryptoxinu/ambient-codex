@@ -59,7 +59,10 @@ bugs, verification, commits, or the next action changes.
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
-| 2D | Usage, cache, spend, and fleet state | Pending | — | — |
+| 2D1 | Cache state | Scoped | — | Boundary pending commit |
+| 2D2 | Usage ledger and summary | Pending | — | — |
+| 2D3 | Pricing and spend gates | Pending | — | — |
+| 2D4 | Fleet reservations and concurrency | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
@@ -1177,9 +1180,57 @@ executed its configured helper and suppressed the real patch, proving the issue.
   control with 14 tools on a Python-only PATH with no Node. The source manifest
   is restored to stable `1.9.0`.
 
+## Phase 2D program — cache, usage, spend, and fleet state
+
+Phase 2D is split so persistence mechanics, reporting, pricing decisions, and
+cross-process reservations never move in one high-risk checkpoint:
+
+1. 2D1 extracts content-addressed cache key/read/atomic-write/prune state.
+2. 2D2 extracts bounded usage-ledger append/spool/trim/read and summary records.
+3. 2D3 extracts pure pricing, reference comparison, estimation, and spend gates.
+4. 2D4 extracts fleet reservation parsing, locking, atomic rewrite, reserve, and
+   release behavior after 2D3 supplies an explicit decision boundary.
+
+Each subphase keeps facade names/signatures patchable, changes at most five
+production/test files, writes RED ownership and behavior contracts first, and
+must independently pass the full release ladder. Transport, live catalog/model
+routing, map/reduce, audit/generation workflows, command dispatch, integrations,
+MCP, and takeover behavior do not move in Phase 2D.
+
+### Phase 2D1 frozen boundary — cache state
+
+Production/test files (three; below the five-file ceiling):
+
+1. New `ambient_codex/cache_store.py` owns `cache_key`, bounded defensive cache
+   reads, private atomic writes, and deterministic oldest-entry pruning.
+2. `bin/ambient` retains `CACHE_DIR`, limits/defaults, and the patchable
+   `_cache_key`, `_cache_get`, `_cache_put` facade signatures as thin adapters.
+3. New `tests/test_refactor_phase2_cache_store.py` owns module location/import,
+   exact key compatibility, malformed/untrusted entry, path, TTL, permission,
+   cleanup, pruning-race, concurrent same-key, and facade patchability contracts.
+
+Stable behavior: valid SHA-256 addresses, response-format/salt sensitivity,
+missing/expired/corrupt misses, 0600 atomic entries, private cache directory,
+oldest approximate-cap pruning, best-effort write failures, concurrent same-key
+read/write integrity, source/cache/package imports, and all caller-visible cache
+hit/miss behavior. Security hardening may fail closed on nonregular entries,
+unsafe key path components, non-string cached payloads, and malformed JSON
+objects; cache data is disposable, so these states become misses rather than
+runtime crashes or reads outside the cache root.
+
+Research decision: GitHub repository/code search and current `diskcache` and
+`cachetools` registry options were reviewed as untrusted reference data. No
+dependency is adopted: SQLite-backed `diskcache` is robust but would change the
+on-disk format and install surface, while in-memory `cachetools` does not solve
+cross-process persistence. The current stdlib `mkstemp` plus same-directory
+`os.replace` design remains the compatible Python 3.8+/no-Node approach.
+
+Do not move `cmd_cache`, usage/telemetry state, pricing, spend/fleet gates,
+transport retries, models, workflows, integrations, MCP, or parser/dispatch in
+2D1.
+
 ## Exact resume point
 
-1. Freeze the Phase 2D production/test boundary for usage, cache, spend, and
-   fleet state without moving transport/model/workflow orchestration.
-2. Write Phase 2D ownership and stable-behavior contracts first, observe scoped
-   RED, then implement and run the complete release ladder before Phase 3.
+1. Commit/push this 2D1 scope boundary.
+2. Write the new cache ownership/security/stability contracts and observe scoped
+   RED before implementing the cache module and thin facade adapters.
