@@ -177,6 +177,7 @@ from ambient_codex.records import (  # noqa: E402
 )
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
+from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 
@@ -4300,49 +4301,18 @@ def read_files(paths):
     """Returns [(path, content)] pairs. Oversized inputs are map-reduced later,
     not refused. Skips unreadable/non-regular/binary/empty files with a warning
     rather than aborting the batch or hanging on a device/FIFO."""
-    chunks = []
-    total = 0
-    for path in paths:
-        try:
-            st = os.lstat(path)
-        except OSError as err:
-            print(f"ambient: skipping {path} ({err})", file=sys.stderr)
-            continue
-        if not stat.S_ISREG(st.st_mode):
-            # A directory, FIFO, or device (/dev/zero would read forever).
-            print(f"ambient: skipping {path} (not a regular file)", file=sys.stderr)
-            continue
-        try:
-            with open(path, "rb") as fh:
-                # Bounded read sized in BYTES to cover the remaining CHAR budget:
-                # UTF-8 is <=4 bytes/char, so (remaining_chars)*4 + 1 bytes
-                # captures every char up to the cap AND one extra so a genuinely
-                # over-cap file still trips the guard below. Sizing the read by
-                # the char count directly (read(ABS_MAX_CHARS - total + 1))
-                # truncated multibyte files mid-content — N bytes decode to
-                # fewer than N chars, so `total` stayed under the cap and the
-                # tail was silently dropped. A file that grows during read still
-                # can't blow the cap because the guard runs on decoded `total`.
-                raw = fh.read((ABS_MAX_CHARS - total) * 4 + 1)
-        except OSError as err:
-            print(f"ambient: skipping {path} ({err})", file=sys.stderr)
-            continue
-        if b"\x00" in raw:   # L11: a NUL ANYWHERE marks binary (was only [:8192],
-            print(f"ambient: skipping {path} (looks binary)", file=sys.stderr)
-            continue         # so a text-headed binary slipped through as garbage)
-        text = raw.decode("utf-8", errors="replace")
-        total += len(text)
-        if total > ABS_MAX_CHARS:
-            _fail_exit(
-                None, _argv_command(), "input",
-                f"input exceeds {ABS_MAX_CHARS:,} chars at {path} "
-                "(too large for one request) — split the job into smaller pieces."
-            )
-        if not text.strip():
-            print(f"ambient: skipping {path} (empty)", file=sys.stderr)
-            continue
-        chunks.append((path, text))
-    return chunks
+    chunks, warnings, overflow_path = _intake_core.read_files(
+        tuple(paths), ABS_MAX_CHARS
+    )
+    for warning in warnings:
+        print(f"ambient: {warning}", file=sys.stderr)
+    if overflow_path is not None:
+        _fail_exit(
+            None, _argv_command(), "input",
+            f"input exceeds {ABS_MAX_CHARS:,} chars at {overflow_path} "
+            "(too large for one request) — split the job into smaller pieces."
+        )
+    return list(chunks)
 
 
 def files_block(chunks):
@@ -6250,32 +6220,7 @@ def _read_map_item(path):
     """(text, error) for ONE file item. Mirrors read_files' safety checks
     (regular file, binary, size) but reports PER-ITEM instead of skipping or
     aborting — map's unit of failure is the item, never the batch."""
-    if os.path.isdir(path):
-        return None, ("is a directory — map takes one FILE per item; glob "
-                      f"its files instead (e.g. {path}/*.py)")
-    try:
-        st = os.lstat(path)
-    except OSError as err:
-        return None, f"unreadable ({err})"
-    if not stat.S_ISREG(st.st_mode):
-        return None, "not a regular file"
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read(ABS_MAX_CHARS + 1)
-    except OSError as err:
-        return None, f"unreadable ({err})"
-    if b"\x00" in raw[:8192]:
-        return None, "looks binary — map sends text items only"
-    if len(raw) > ABS_MAX_CHARS:
-        # NEVER ship a silently truncated item — even if a model's window
-        # somehow exceeded the ceiling, a half-read answered authoritatively
-        # is worse than a per-item refusal.
-        return None, (f"file exceeds the {ABS_MAX_CHARS:,}-char ceiling — "
-                      "too large for map; run ambient-codex audit on it instead")
-    text = raw.decode("utf-8", errors="replace")
-    if not text.strip():
-        return None, "empty file"
-    return text, None
+    return _intake_core.read_map_item(path, ABS_MAX_CHARS)
 
 
 def _map_gather_items(args):

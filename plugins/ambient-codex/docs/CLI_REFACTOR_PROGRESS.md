@@ -697,6 +697,29 @@ Any descriptor-race hardening that cannot preserve cross-platform regular-file
 behavior in this three-file checkpoint must be recorded for 2C3, not hidden in
 an expanding patch.
 
+Phase 2C2A RED observed: all 11 direct ownership/behavior tests errored because
+`ambient_codex.intake` did not exist, its import-purity subprocess failed, and
+both facade wrapper tests failed because `_intake_core` was absent. The failures
+are confined to the planned ownership seam.
+
+Phase 2C2A local verification:
+
+- Review-driven RED exposed that the first extraction still repeated the old
+  `lstat`/path-open race. File descriptors now open non-following and nonblocking
+  where supported and are revalidated with `fstat`, so a path swapped to a
+  symlink, FIFO, device, or directory cannot become a blocking text read.
+- Pre/post comparison against `b27fcab` proves exact chunks, diagnostics, and
+  map-item results for normal/invalid-UTF-8 text, empty, binary, directory,
+  symlink, and missing-file scenarios. The only intended behavior changes are
+  the RED-locked map multibyte character-ceiling fix and full-payload NUL guard.
+- All 1,214 guarded tests pass on the canonical Python 3.12 run; the earlier
+  1,211-test checkpoint also passed independently on Python 3.11, 3.12, and
+  3.14 before three additional error-branch contracts were added. The new
+  `intake.py` module has 100% line coverage and total runtime coverage is 82%.
+- Full ruff/compile, isolated-venv installation, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
+  GitHub matrix, and installed-cache gates remain pending.
+
 ## Phase 2C2B plan — liveness-safe stdin intake
 
 Expected production/test file boundary (three files, frozen only after 2C2A is
