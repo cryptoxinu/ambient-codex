@@ -18,8 +18,9 @@ From `plugins/ambient-codex`:
 
 ```bash
 python3 -m py_compile bin/ambient mcp/ambient_mcp.py
-python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
-python3 /Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/ambient
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .
+python3 "$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py" skills/ambient
 python3 -m unittest discover -s tests -q
 bash -n hooks/session-start.sh
 ```
@@ -60,10 +61,10 @@ codex plugin marketplace add cryptoxinu/ambient-codex
 codex plugin add ambient-codex@ambient-codex
 ```
 
-Local checkout install:
+Local checkout install, run from the repository root:
 
 ```bash
-codex plugin marketplace add /Users/z/ambient-codex
+codex plugin marketplace add "$PWD"
 codex plugin add ambient-codex@ambient-codex
 ```
 
@@ -86,5 +87,5 @@ Plugin uninstall removes plugin files only. User data is separate:
 ./bin/ambient control key remove
 ./bin/ambient cache clear
 ./bin/ambient link --remove
-rm -rf ~/.config/ambient
+rm -rf ~/.config/ambient-codex
 ```

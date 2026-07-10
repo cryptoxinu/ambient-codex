@@ -29,6 +29,20 @@ Every catalog model is choosable: bundled `control model <id>` (sticky default),
 explicit `-m` always
 works, even for a model the menus curate out.
 
+An explicit `--max-tokens` request is first accepted through a CLI-wide safety
+ceiling, then clamped to the selected model's live `max_output_length` and the
+remaining context after the actual input is measured. A model such as Kimi
+with a 262,144-token advertised output limit is therefore not rejected by a
+stale client-side 200,000-token ceiling. The one-million-token parser guard is
+only an abuse bound; every actual request still receives the selected model's
+smaller catalog-derived output and context-safe cap.
+
+The default single-shot input cap remains a cost/stability control, not a
+provider limitation. For a long-context model, `AMBIENT_SINGLE_SHOT_MAX_CHARS`
+can raise it; the live context-fit math still lowers the effective value when
+reasoning plus the answer would not fit. Inputs beyond the effective value use
+the bounded map/reduce path instead of being silently truncated.
+
 ## Defaults
 
 The default model for every lane is `moonshotai/kimi-k2.7-code`. Any other model

@@ -2,6 +2,26 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.9.0 - 2026-07-10
+
+### Public-release hardening and large-context reliability
+
+- Raised the CLI/MCP request guard to one million output tokens while retaining
+  catalog-derived per-model output and context clamps, so current frontier models
+  can use their advertised capacity without unsafe over-allocation.
+- Extended repository intake to the bounded 20M-character execution ceiling and
+  made oversized or aggregate-overflow exclusions force explicit partial coverage;
+  unread source can no longer produce a misleading clean verdict.
+- Hardened MCP framing, argument boundaries, NUL handling, audit-file bounds,
+  startup error redaction, and truncated-frame rejection.
+- Repaired malformed Ambient Codex entries in opencode's shared config without
+  modifying foreign providers, preserving restrictive file permissions and the
+  install-scoped credential boundary.
+- Corrected public launcher, key-isolation, uninstall, privacy, and portable-path
+  documentation; added a published privacy-policy link to the plugin manifest.
+- Revalidated the live agent lane, large map/reduce, resumable build, takeover
+  state, all serving models, clean non-serving-model failures, and key-leak guards.
+
 ## 1.8.6 - 2026-07-09
 
 ### Control-panel settings cleanup

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -147,7 +148,7 @@ class TestSetupFlow(unittest.TestCase):
                         "sk-a-plausible-key-000000\n")):
                     with contextlib.redirect_stdout(io.StringIO()):
                         amb.cmd_setup(setup_ns(key_stdin=True, force=True))
-            body = open(cfg, encoding="utf-8").read()
+            body = Path(cfg).read_text(encoding="utf-8")
             self.assertNotIn("AMBIENT_API_KEY", body)
             self.assertIn("AMBIENT_KEY_BACKEND=keychain", body)
 
@@ -162,7 +163,7 @@ class TestSetupFlow(unittest.TestCase):
                         amb.cmd_setup(setup_ns(key_stdin=True))
             self.assertIn("nothing saved", str(cm.exception))
             self.assertNotIn("AMBIENT_API_KEY",
-                             open(cfg, encoding="utf-8").read() if os.path.exists(cfg) else "")
+                             Path(cfg).read_text(encoding="utf-8") if os.path.exists(cfg) else "")
 
     def test_out_of_funds_key_is_saved_with_topup_path(self):
         with temp_config() as cfg:
@@ -178,7 +179,7 @@ class TestSetupFlow(unittest.TestCase):
                     with contextlib.redirect_stdout(out):
                         amb.cmd_setup(setup_ns(key_stdin=True))
             self.assertIn("AMBIENT_API_KEY=sk-a-plausible-key-000000",
-                          open(cfg, encoding="utf-8").read())
+                          Path(cfg).read_text(encoding="utf-8"))
             self.assertIn("OUT OF FUNDS", out.getvalue())
 
     def test_remove_fails_loudly_when_keychain_refuses(self):
@@ -382,7 +383,7 @@ class TestBuildMode(unittest.TestCase):
         env = self._run(build_ns(root, apply=True, yes=True), fake)
         dest = os.path.join(root, "pkg", "mod.py")
         self.assertTrue(os.path.exists(dest))
-        self.assertEqual(open(dest, encoding="utf-8").read(), "V = 7\n")
+        self.assertEqual(Path(dest).read_text(encoding="utf-8"), "V = 7\n")
         self.assertTrue(env["written"])
 
     def test_apply_refuses_overwrite_without_force(self):
@@ -393,7 +394,7 @@ class TestBuildMode(unittest.TestCase):
         fake, _ = fake_build_complete(plan, [
             {"files": [{"path": "keep.py", "content": "clobber\n"}]}])
         env = self._run(build_ns(root, apply=True, yes=True), fake)
-        self.assertEqual(open(os.path.join(root, "keep.py")).read(),
+        self.assertEqual(Path(root, "keep.py").read_text(encoding="utf-8"),
                          "original\n")
         self.assertEqual(env["files"][0]["action"], "skip-exists")
         self.assertEqual(env["status"], "partial")
@@ -449,7 +450,7 @@ class TestBuildMode(unittest.TestCase):
                         build_ns(root, apply=True, force=True, yes=True),
                         "k", "https://x", {})
         env = json.loads(buf.getvalue())
-        self.assertEqual(open(keep, encoding="utf-8").read(), "ORIGINAL\n")  # preserved
+        self.assertEqual(Path(keep).read_text(encoding="utf-8"), "ORIGINAL\n")  # preserved
         self.assertEqual(env["files"][0]["action"], "write-failed")
         self.assertTrue(any("backup failed" in f["reason"]
                             for f in env["failed"]))
@@ -623,7 +624,7 @@ class TestDocsDrift(unittest.TestCase):
             # Windows' default cp1252 raises UnicodeDecodeError on bytes like 0x8f
             # (e.g. the ⚠️ variation selector) — a hermetic test must not depend on
             # the platform locale.
-            text = open(os.path.join(ROOT, rel), encoding="utf-8").read()
+            text = Path(ROOT, rel).read_text(encoding="utf-8")
             for cmd in re.findall(r"`ambient ([a-z][a-z-]+)\b", text):
                 self.assertIn(cmd, ok_words, f"{rel} references 'ambient {cmd}'")
 
@@ -635,7 +636,7 @@ class TestDocsDrift(unittest.TestCase):
             pj = json.load(fh)
         with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as fh:
             py = re.search(r'version\s*=\s*"([^"]+)"', fh.read())
-        self.assertEqual(amb.__version__, pj["version"])
+        self.assertEqual(amb.__version__, pj["version"].split("+", 1)[0])
         self.assertEqual(amb.__version__, py.group(1))
         with open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8") as fh:
             head = fh.read().split("\n##")[1]

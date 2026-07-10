@@ -7,10 +7,11 @@
   truncating.
 - 5b: `audit --repo [DIR]` — git-aware walker (git ls-files honors .gitignore;
   the fallback walk prunes .git/node_modules/dist/build/vendor/__pycache__ and
-  dotdirs, never follows symlinks), skips binaries/lockfiles/oversized files,
-  reports files/chars/est-cost UPFRONT, refuses over ABS_MAX_CHARS unless
-  --allow-cost/--allow-partial, and routes through the existing map-reduce so
-  --parallel/--reduce-model/cost-gate/--json all apply unchanged.
+  dotdirs, never follows symlinks), skips binaries/lockfiles and files above
+  the bounded input ceiling, reports files/chars/est-cost UPFRONT, refuses
+  over ABS_MAX_CHARS unless --allow-cost/--allow-partial, and routes through
+  the existing map-reduce so --parallel/--reduce-model/cost-gate/--json all
+  apply unchanged.
 - 5c: bounded cross-file confirmation — AT MOST one extra gated single-shot
   pass over pass-1 suspects, default-on for --repo only, --no-deep opts out.
 

@@ -5,8 +5,9 @@ you explicitly route to the configured Ambient-compatible inference endpoint.
 
 ## What Leaves Your Machine
 
-- Prompt and file content passed to `ambient ask`, `ambient audit`,
-  `ambient map`, `ambient code`, `ambient build`, or `ambient agent`.
+- Prompt and file content passed to `ambient-codex ask`, `ambient-codex audit`,
+  `ambient-codex map`, `ambient-codex code`, `ambient-codex build`, or
+  `ambient-codex agent`.
 - Requests go to `https://api.ambient.xyz` by default, or to the endpoint the
   user explicitly configured and trusted.
 
@@ -34,21 +35,20 @@ user data, health data, or unrelated proprietary material.
 
 ## Agent Boundary
 
-`ambient agent` launches opencode as a separate tool and passes the Ambient key
+`ambient-codex agent` launches opencode as a separate tool and passes the Ambient key
 to that subprocess through the environment. This privacy statement covers the
 Ambient Codex plugin and CLI; opencode has its own behavior.
 
 ## Purge Commands
 
 ```bash
-ambient setup --remove
-ambient cache clear
+ambient-codex setup --remove
+ambient-codex cache clear
 rm -rf ~/.config/ambient-codex
 ```
 
-Only remove `~/.config/ambient-codex`. A different Ambient install (for example the
-Claude plugin) owns `~/.config/ambient`, and deleting that would take its key and
-usage history with it.
+Only remove `~/.config/ambient-codex`. Another Ambient install may own
+`~/.config/ambient`; deleting that could remove its key and usage history.
 
 Delete `.ambient-build.json` files from build directories when you no longer
 need resume state.

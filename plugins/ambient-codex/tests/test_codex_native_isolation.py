@@ -138,7 +138,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
 
         mcp = load_mcp()
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], mcp.SERVER_VERSION)
+        self.assertEqual(manifest["version"].split("+", 1)[0], mcp.SERVER_VERSION)
         long_description = manifest["interface"]["longDescription"]
         self.assertIn("Hooks are not registered by default.", long_description)
         hook_capabilities = [
@@ -184,6 +184,76 @@ class TestCodexNativeIsolation(unittest.TestCase):
         module = load_mcp()
         self.assertEqual(module.ambient_bin().name, "ambient")
         self.assertIn("ambient-codex", module.ambient_bin().as_posix())
+
+    def test_public_docs_are_portable_and_never_delete_foreign_state(self):
+        docs = [
+            ROOT / "README.md",
+            ROOT / "CONTRIBUTING.md",
+            ROOT / "SECURITY.md",
+            ROOT / "PRIVACY.md",
+            ROOT / "docs" / "RELEASING.md",
+            ROOT / "docs" / "STRESS_TEST_PLAN.md",
+            ROOT / "docs" / "PRODUCTION_REBUILD_PLAN.md",
+        ]
+        for path in docs:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertNotIn("/Users/z", text)
+                self.assertNotIn("rm -rf ~/.config/ambient\n", text)
+
+    def test_public_security_privacy_commands_use_native_launcher(self):
+        docs = [ROOT / "SECURITY.md", ROOT / "PRIVACY.md",
+                ROOT / "docs" / "RELEASING.md"]
+        bare_command = re.compile(
+            r"(?m)^\s*ambient (?:setup|cache|ask|audit|map|code|build|agent|"
+            r"control|mode|use|doctor|usage|version)\b"
+        )
+        for path in docs:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertIsNone(bare_command.search(text))
+                self.assertNotIn("`ambient agent`", text)
+                self.assertNotIn("`ambient --version`", text)
+
+    def test_public_docs_match_the_current_key_isolation_contract(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        architecture = (ROOT / "docs" / "CODEX_NATIVE_ARCHITECTURE.md").read_text(
+            encoding="utf-8")
+        self.assertNotIn("AMBIENT_API_KEY` still works", readme)
+        self.assertNotIn("when the key came from the shared variable", security)
+        self.assertNotIn("explicitly opt-in, read-only key import", architecture)
+        self.assertIn("AMBIENT_API_KEY", readme)
+        self.assertIn("ignored", readme.lower())
+
+    def test_published_manifest_links_the_privacy_policy(self):
+        manifest = json.loads(
+            (ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        url = manifest["interface"].get("privacyPolicyURL")
+        self.assertEqual(
+            url,
+            "https://github.com/cryptoxinu/ambient-codex/blob/main/"
+            "plugins/ambient-codex/PRIVACY.md",
+        )
+
+    def test_skill_has_a_massive_repository_coverage_protocol(self):
+        text = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("## Massive Repository Protocol", text)
+        self.assertIn("coverage manifest", text)
+        self.assertIn("shard", text.lower())
+        self.assertIn("exactly once", text)
+        self.assertIn("must not claim whole-repository coverage", text)
+
+    def test_takeover_docs_explain_new_thread_reactivation(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for text in (skill, readme):
+            self.assertIn("new Codex thread", text)
+            self.assertIn("`$ambient`", text)
+        self.assertNotIn(
+            "Delegate mode persists across sessions until", skill)
 
 
 if __name__ == "__main__":

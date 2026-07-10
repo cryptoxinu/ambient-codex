@@ -127,6 +127,11 @@ class TestAgentSpendDisclosure(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].startswith("ambient: "))
 
+    def test_agent_uses_opencode_pure_mode_by_default(self):
+        record, _ = self._run_agent()
+        self.assertIn("--pure", record["argv"])
+        self.assertEqual(record["argv"].count("--pure"), 1)
+
 
 @unittest.skipIf(os.name == "nt",
                  "SessionStart self-heal is POSIX-sh + symlinks; Windows "

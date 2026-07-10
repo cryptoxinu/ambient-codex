@@ -40,11 +40,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff==0.15.2
+      - run: pip install ruff==0.15.2 coverage==7.15.0
       # `bin/ambient` is extensionless, so a bare `ruff check .` used to skip the whole
       # CLI. pyproject's `extend-include` fixes that; name the paths anyway.
       - name: Lint
         run: ruff check bin/ambient mcp tests
+      - name: Runtime line coverage (80% minimum)
+        run: |
+          coverage run -m unittest discover -s tests -q
+          coverage report --include='bin/ambient,mcp/ambient_mcp.py' --fail-under=80
 
   no-node:
     # The 1.5.x plugin booted its MCP server through a Node launcher that existed only
@@ -118,4 +122,3 @@ jobs:
           python3 -c "import json; json.load(open('.codex-plugin/plugin.json')); json.load(open('.mcp.json')); json.load(open('hooks/hooks.json'))"
       - name: Hook script parses
         run: bash -n hooks/session-start.sh
-

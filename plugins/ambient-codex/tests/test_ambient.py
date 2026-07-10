@@ -13,6 +13,7 @@ import os
 import random
 import tempfile
 import unittest
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -34,7 +35,7 @@ CPT = 3.2
 def catalog():
     p = os.path.join(HERE, "catalog.json")
     if os.path.exists(p):
-        return json.load(open(p))["data"]
+        return json.loads(Path(p).read_text(encoding="utf-8"))["data"]
     # minimal synthetic catalog if the snapshot isn't shipped
     return [
         {"id": "z-ai/glm-5.2", "context_length": 202752, "max_output_length": 202752,
@@ -468,7 +469,7 @@ class TestVersionSync(unittest.TestCase):
     def test_version_matches_plugin_json(self):
         with open(os.path.join(ROOT, ".codex-plugin", "plugin.json")) as fh:
             pj = json.load(fh)
-        self.assertEqual(amb.__version__, pj["version"])
+        self.assertEqual(amb.__version__, pj["version"].split("+", 1)[0])
 
 
 if __name__ == "__main__":

@@ -32,8 +32,9 @@ plugin hardening pass. Keep it current whenever a phase lands.
 ## Release Gates
 
 - `python3 -m py_compile bin/ambient mcp/ambient_mcp.py`
-- `python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .`
-- `python3 /Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/ambient`
+- `CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"`
+- `python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .`
+- `python3 "$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py" skills/ambient`
 - `python3 -m unittest discover -s tests -q`
 - `bash -n hooks/session-start.sh`
 - `codex plugin add ambient-codex@ambient-codex`

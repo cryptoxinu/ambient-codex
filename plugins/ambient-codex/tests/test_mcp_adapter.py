@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -24,7 +25,7 @@ def load_mcp():
 
 def plugin_version():
     manifest = ROOT / ".codex-plugin" / "plugin.json"
-    return json.loads(manifest.read_text(encoding="utf-8"))["version"]
+    return json.loads(manifest.read_text(encoding="utf-8"))["version"].split("+", 1)[0]
 
 
 def encode_frame(payload):
@@ -63,7 +64,7 @@ class TestMcpAdapter(unittest.TestCase):
     def test_mcp_version_matches_plugin_manifest(self):
         mcp = load_mcp()
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(mcp.SERVER_VERSION, manifest["version"])
+        self.assertEqual(mcp.SERVER_VERSION, manifest["version"].split("+", 1)[0])
 
     def test_plugin_root_ignores_stale_plugin_root_env(self):
         mcp = load_mcp()
@@ -162,6 +163,26 @@ class TestMcpAdapter(unittest.TestCase):
         frames = decode_jsonl(proc.stdout)
         self.assertEqual(frames[0]["result"]["serverInfo"]["version"], plugin_version())
         self.assertEqual(len(frames[1]["result"]["tools"]), len(load_mcp().TOOLS))
+
+    def test_content_length_rejects_invalid_or_oversized_frames(self):
+        mcp = load_mcp()
+        cases = [
+            ("0", b""),
+            ("-1", b""),
+            ("not-a-number", b""),
+            (str(mcp.MAX_FRAME_BYTES + 1), b""),
+        ]
+        for length, body in cases:
+            with self.subTest(length=length):
+                frame = (f"Content-Length: {length}\r\n\r\n".encode("ascii") + body)
+                with self.assertRaises(ValueError):
+                    mcp.read_message(io.BytesIO(frame))
+
+    def test_content_length_rejects_truncated_body(self):
+        mcp = load_mcp()
+        frame = b"Content-Length: 3\r\n\r\n{}"
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            mcp.read_message(io.BytesIO(frame))
 
     def test_notifications_and_ping_are_codex_safe(self):
         mcp = load_mcp()
@@ -405,9 +426,72 @@ class TestMcpAdapter(unittest.TestCase):
             mcp.call_tool("ambient_set_config", {"name": "fallback", "unset": True})
         calls = [call.args[0] for call in run.call_args_list]
         self.assertEqual(calls[0][-3:], ["control", "mode", "takeover"])
-        self.assertEqual(calls[1][-4:], ["control", "model", "z-ai/glm-5.2", "--code"])
-        self.assertEqual(calls[2][-4:], ["control", "setting", "fallback", "on"])
+        self.assertEqual(calls[1][-5:], ["control", "model", "--code", "--", "z-ai/glm-5.2"])
+        self.assertEqual(calls[2][-5:], ["control", "setting", "fallback", "--", "on"])
         self.assertEqual(calls[3][-4:], ["control", "setting", "fallback", "--unset"])
+
+    def test_ask_and_audit_cli_arguments_cannot_be_reinterpreted_as_flags(self):
+        mcp = load_mcp()
+        completed = {"content": [], "isError": False}
+        with mock.patch.object(mcp, "run_ambient", return_value=completed) as run:
+            mcp.call_tool("ambient_ask", {
+                "prompt": "--model",
+                "system": "--ignore-this-as-a-flag",
+                "model": "--not-a-model-flag",
+                "json": False,
+            })
+            ask_argv = run.call_args_list[-1].args[0]
+            mcp.call_tool("ambient_audit_small", {
+                "paths": ["--focus", "safe.py"],
+                "diff": "--cached",
+                "focus": "--system",
+                "json": False,
+            })
+            audit_argv = run.call_args_list[-1].args[0]
+        self.assertEqual(ask_argv, [
+            "ask", "--yes", "--system=--ignore-this-as-a-flag",
+            "--model=--not-a-model-flag", "--", "--model",
+        ])
+        self.assertEqual(audit_argv, [
+            "audit", "--diff=--cached", "--focus=--system", "--yes",
+            "--", "--focus", "safe.py",
+        ])
+
+    def test_mcp_string_inputs_reject_nul_bytes_before_subprocess(self):
+        mcp = load_mcp()
+        with mock.patch.object(mcp, "run_ambient") as run:
+            cases = [
+                ("ambient_ask", {"prompt": "safe\x00--model evil"}),
+                ("ambient_set_model", {"model": "safe\x00model", "lane": "both"}),
+                ("ambient_set_config", {"name": "fallback", "value": "on\x00"}),
+                ("ambient_audit_small", {"paths": ["safe\x00.py"]}),
+            ]
+            for name, arguments in cases:
+                with self.subTest(name=name):
+                    with self.assertRaises(mcp.ToolInputError):
+                        mcp.call_tool(name, arguments)
+        run.assert_not_called()
+
+    def test_internal_mcp_errors_are_redacted(self):
+        mcp = load_mcp()
+        original = mcp.TOOL_HANDLERS["ambient_status"]
+
+        def explode(_args):
+            raise RuntimeError("AMBIENT_API_KEY=amb_abcdefghijklmnopqrstuvwxyz")
+
+        mcp.TOOL_HANDLERS["ambient_status"] = explode
+        try:
+            response = mcp.handle_request({
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {"name": "ambient_status", "arguments": {}},
+            })
+        finally:
+            mcp.TOOL_HANDLERS["ambient_status"] = original
+        message = response["error"]["message"]
+        self.assertNotIn("amb_abcdefghijklmnopqrstuvwxyz", message)
+        self.assertIn("<redacted>", message)
 
     def test_set_config_schema_excludes_advanced_spend_cap(self):
         mcp = load_mcp()
@@ -446,6 +530,27 @@ class TestMcpAdapter(unittest.TestCase):
             with self.assertRaises(mcp.ToolInputError):
                 mcp.call_tool("ambient_ask", {"prompt": "x" * 60001})
         run.assert_not_called()
+
+    def test_audit_small_rejects_oversized_path_before_subprocess(self):
+        mcp = load_mcp()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "large.py"
+            path.write_bytes(b"x\n" * ((mcp.MAX_AUDIT_PATH_BYTES // 2) + 1))
+            with mock.patch.object(mcp, "run_ambient") as run:
+                with self.assertRaises(mcp.ToolInputError):
+                    mcp.call_tool("ambient_audit_small", {
+                        "paths": [str(path)],
+                        "cwd": tmp,
+                    })
+            run.assert_not_called()
+
+    def test_ask_schema_matches_frontier_budget_ceiling(self):
+        mcp = load_mcp()
+        tool = next(tool for tool in mcp.TOOLS if tool["name"] == "ambient_ask")
+        self.assertEqual(
+            tool["inputSchema"]["properties"]["max_tokens"]["maximum"],
+            1_000_000,
+        )
 
     def test_unknown_tool_is_mcp_error(self):
         mcp = load_mcp()

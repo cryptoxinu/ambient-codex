@@ -301,7 +301,8 @@ class TestH2SynthesisSizedToReduceModel(unittest.TestCase):
             return (json.dumps({"findings": [], "verdict": "SHIP"}),
                     None, {"finish_reason": "stop"})
 
-        reducer = lambda texts: json.dumps({"findings": [], "verdict": "SHIP"})
+        def reducer(texts):
+            return json.dumps({"findings": [], "verdict": "SHIP"})
         args = mr_args(max_tokens=4000, parallel=1, no_cache=True)
         with patched(amb, complete=fake), \
                 contextlib.redirect_stderr(io.StringIO()):

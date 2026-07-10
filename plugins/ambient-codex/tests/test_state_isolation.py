@@ -6,7 +6,10 @@ on its next session, and a cheap model chosen here silently became Claude's defa
 `test_codex_native_isolation.py` only asserted code-path isolation, so it stayed
 green the whole time. These tests assert the *state* boundary instead.
 """
+import contextlib
+import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -27,6 +30,10 @@ MODEL_MATRIX = ROOT / "tools" / "model_matrix.sh"
 # USERPROFILE. Sandboxing only HOME sent these tests at the developer's real
 # profile on Windows.
 _HOME_VARS = ("HOME", "USERPROFILE")
+
+
+def sha1_file(path):
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()
 
 
 def sandbox_env(home, **extra):
@@ -341,6 +348,78 @@ class TestOpencodeProviderIsNamespaced(unittest.TestCase):
             self.assertIn("{env:AMBIENT_CODEX_API_KEY}", body)
             self.assertNotIn("{env:AMBIENT_API_KEY}", body)
             self.assertNotIn("sk-", body)
+
+    def test_non_object_provider_collection_is_left_untouched(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cfg_dir = os.path.join(home, ".config", "opencode")
+            os.makedirs(cfg_dir)
+            cfg_path = os.path.join(cfg_dir, "opencode.json")
+            original = '{"provider": ["user-owned"]}\n'
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                fh.write(original)
+            cli.OPENCODE_CONFIG_PATH = cfg_path
+
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                cli.ensure_opencode_config("https://api.ambient.xyz", "m/1")
+
+            self.assertEqual(Path(cfg_path).read_text(encoding="utf-8"), original)
+            self.assertIn("provider", err.getvalue())
+            self.assertIn("leaving it alone", err.getvalue())
+
+    def test_malformed_native_provider_is_repaired_without_touching_foreign(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cfg_dir = os.path.join(home, ".config", "opencode")
+            os.makedirs(cfg_dir)
+            cfg_path = os.path.join(cfg_dir, "opencode.json")
+            foreign = {"options": {"apiKey": "user-secret-placeholder"}}
+            before = {
+                "provider": {
+                    "openai": foreign,
+                    "ambient-codex": "malformed-old-entry",
+                }
+            }
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                json.dump(before, fh)
+            cli.OPENCODE_CONFIG_PATH = cfg_path
+
+            cli.ensure_opencode_config("https://api.ambient.xyz", "m/1")
+
+            after = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
+            self.assertEqual(after["provider"]["openai"], foreign)
+            ours = after["provider"]["ambient-codex"]
+            self.assertIsInstance(ours, dict)
+            self.assertEqual(ours["models"], {"m/1": {"name": "m/1"}})
+
+    def test_malformed_native_models_map_is_repaired(self):
+        with tempfile.TemporaryDirectory() as home:
+            cli = load_cli(home)
+            cfg_dir = os.path.join(home, ".config", "opencode")
+            os.makedirs(cfg_dir)
+            cfg_path = os.path.join(cfg_dir, "opencode.json")
+            before = {
+                "provider": {
+                    "ambient-codex": {
+                        "options": {"baseURL": "https://old.invalid/v1"},
+                        "models": ["malformed"],
+                    }
+                }
+            }
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                json.dump(before, fh)
+            cli.OPENCODE_CONFIG_PATH = cfg_path
+
+            cli.ensure_opencode_config("https://api.ambient.xyz", "m/1")
+
+            after = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
+            ours = after["provider"]["ambient-codex"]
+            self.assertEqual(ours["models"], {"m/1": {"name": "m/1"}})
+            self.assertEqual(
+                ours["options"]["apiKey"],
+                "{env:AMBIENT_CODEX_API_KEY}",
+            )
 
 
 class TestGuidanceNeverNamesTheSharedLauncher(unittest.TestCase):
@@ -769,8 +848,7 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
         env = os.path.join(foreign, "env")
         with open(env, "w", encoding="utf-8") as fh:
             fh.write("AMBIENT_API_KEY=sk-not-ours\nAMBIENT_DELEGATE=takeover\n")
-        return env, __import__("hashlib").sha1(
-            open(env, "rb").read()).hexdigest()
+        return env, sha1_file(env)
 
     def test_default_scrubs_key_keeps_state_removes_launcher(self):
         with tempfile.TemporaryDirectory() as home:
@@ -786,12 +864,12 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
 
             proc = self._run(home)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            body = open(os.path.join(root, "env"), encoding="utf-8").read()
+            body = Path(root, "env").read_text(encoding="utf-8")
             self.assertNotIn("AMBIENT_API_KEY", body)      # key scrubbed
             self.assertIn("AMBIENT_MODEL", body)           # settings kept
             self.assertFalse(os.path.lexists(os.path.join(binp, "ambient-codex")))
             self.assertEqual(
-                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                sha1_file(foreign_env),
                 foreign_hash, "uninstall touched the other install's env")
 
     def test_purge_deletes_only_the_codex_state_dir(self):
@@ -808,7 +886,7 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.dirname(foreign_env)),
                             "the other install's dir was deleted")
             self.assertEqual(
-                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                sha1_file(foreign_env),
                 foreign_hash)
 
     def test_purge_refuses_when_state_root_is_the_other_install(self):
@@ -820,7 +898,7 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
             self.assertIn("another Ambient install", proc.stderr + proc.stdout)
             self.assertTrue(os.path.isdir(foreign_dir))
             self.assertEqual(
-                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                sha1_file(foreign_env),
                 foreign_hash)
 
     def test_purge_reports_failure_instead_of_lying(self):
@@ -860,7 +938,7 @@ class TestUninstallTouchesOnlyThisInstall(unittest.TestCase):
             proc = self._run(home, codex_home=os.path.dirname(foreign_env))
             self.assertNotEqual(proc.returncode, 0)
             self.assertEqual(
-                __import__("hashlib").sha1(open(foreign_env, "rb").read()).hexdigest(),
+                sha1_file(foreign_env),
                 foreign_hash, "foreign env was scrubbed before the guard fired")
 
     def test_it_prints_the_codex_plugin_remove_command(self):

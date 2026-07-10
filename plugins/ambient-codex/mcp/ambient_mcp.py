@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 
 SERVER_NAME = "ambient-codex"
-SERVER_VERSION = "1.8.6"
+SERVER_VERSION = "1.9.0"
 PROTOCOL_VERSION = "2024-11-05"
 # Server-initiated `elicitation/create` entered the spec in 2025-06-18. Codex advertises
 # `capabilities: {"elicitation": {}}` at initialize and enables it by default
@@ -42,6 +42,10 @@ SELF_TEST_TIMEOUT_SECONDS = 5
 MAX_PROMPT_CHARS = 60_000
 MAX_SYSTEM_CHARS = 10_000
 MAX_PATHS = 25
+# MCP is the bounded control plane.  Larger file work belongs to the bundled
+# CLI, which can stream a plan and run the full 20M-character chunking lane.
+MAX_AUDIT_PATH_BYTES = 4 * 1024 * 1024
+MAX_FRAME_BYTES = 8 * 1024 * 1024
 
 
 class Session:
@@ -262,6 +266,8 @@ def optional_string(
         return None
     if not isinstance(value, str):
         raise ToolInputError(f"{name} must be a string")
+    if "\x00" in value:
+        raise ToolInputError(f"{name} cannot contain NUL bytes")
     if not allow_empty and not value.strip():
         raise ToolInputError(f"{name} cannot be empty")
     if len(value) > max_chars:
@@ -300,6 +306,8 @@ def optional_string_list(
     for item in value:
         if not isinstance(item, str) or not item.strip():
             raise ToolInputError(f"{name} must contain only non-empty strings")
+        if "\x00" in item:
+            raise ToolInputError(f"{name} cannot contain NUL bytes")
         if len(item) > max_chars:
             raise ToolInputError(f"{name} contains an item that is too large")
         output.append(item)
@@ -310,6 +318,24 @@ def reject_unknown(args: Dict[str, Any], allowed: Iterable[str]) -> None:
     extra = sorted(set(args) - set(allowed))
     if extra:
         raise ToolInputError(f"unknown argument(s): {', '.join(extra)}")
+
+
+def reject_oversized_audit_paths(workdir: Path, paths: List[str]) -> None:
+    """Keep the MCP audit lane bounded without changing CLI file semantics."""
+    for raw_path in paths:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = workdir / candidate
+        try:
+            size = candidate.stat().st_size
+        except OSError:
+            continue  # let the CLI provide the normal missing-file diagnosis
+        if size > MAX_AUDIT_PATH_BYTES:
+            raise ToolInputError(
+                "ambient_audit_small accepts files up to "
+                f"{MAX_AUDIT_PATH_BYTES:,} bytes; use the bundled CLI for "
+                "larger or repository-sized audits"
+            )
 
 
 def tool_text(text: str, *, is_error: bool = False) -> Dict[str, Any]:
@@ -342,8 +368,8 @@ def run_ambient(
             timeout=timeout_seconds,
             check=False,
         )
-    except OSError as exc:
-        raise AmbientCommandError(f"unable to launch ambient CLI: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        raise AmbientCommandError(redact(f"unable to launch ambient CLI: {exc}")) from exc
     except subprocess.TimeoutExpired as exc:
         output = "\n".join(part for part in (exc.stdout or "", exc.stderr or "") if part)
         return tool_text(f"ambient command timed out after {timeout_seconds}s\n{output}", is_error=True)
@@ -443,11 +469,12 @@ def set_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     reject_unknown(args, {"model", "lane"})
     model = require_string(args, "model", max_chars=256)
     lane = require_choice(args, "lane", ("both", "chat", "code"))
-    argv = ["control", "model", model]
+    argv = ["control", "model"]
     if lane == "chat":
         argv.append("--chat")
     elif lane == "code":
         argv.append("--code")
+    argv.extend(["--", model])
     return run_ambient(argv)
 
 
@@ -586,7 +613,7 @@ def set_config_tool(args: Dict[str, Any]) -> Dict[str, Any]:
         return run_ambient(["control", "setting", name, "--unset"])
     if value is None:
         raise ToolInputError("value is required unless unset=true")
-    return run_ambient(["control", "setting", name, value])
+    return run_ambient(["control", "setting", name, "--", value])
 
 
 def key_tool(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -671,18 +698,19 @@ def ask_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     model = optional_string(args, "model", max_chars=256)
     max_tokens = args.get("max_tokens")
     if max_tokens is not None:
-        optional_int(args, "max_tokens", 0, minimum=1, maximum=200_000)
+        optional_int(args, "max_tokens", 0, minimum=1, maximum=1_000_000)
     timeout_seconds = optional_int(args, "timeout", DEFAULT_TIMEOUT_SECONDS, minimum=1, maximum=3600)
 
-    argv = ["ask", prompt, "--yes"]
+    argv = ["ask", "--yes"]
     if system is not None:
-        argv.extend(["--system", system])
+        argv.append(f"--system={system}")
     if model is not None:
-        argv.extend(["--model", model])
+        argv.append(f"--model={model}")
     if max_tokens is not None:
         argv.extend(["--max-tokens", str(max_tokens)])
     if optional_bool(args, "json", True):
         argv.append("--json")
+    argv.extend(["--", prompt])
     return run_ambient(argv, timeout_seconds=timeout_seconds)
 
 
@@ -700,18 +728,20 @@ def audit_small_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     workdir = Path(cwd_value).expanduser().resolve() if cwd_value else Path.cwd()
     if not workdir.is_dir():
         raise ToolInputError("cwd must be an existing directory")
+    reject_oversized_audit_paths(workdir, paths)
 
     argv = ["audit"]
     if staged:
         argv.append("--staged")
     if diff is not None:
-        argv.extend(["--diff", diff])
-    argv.extend(paths)
+        argv.append(f"--diff={diff}")
     if focus is not None:
-        argv.extend(["--focus", focus])
+        argv.append(f"--focus={focus}")
     if optional_bool(args, "json", True):
         argv.append("--json")
     argv.append("--yes")
+    if paths:
+        argv.extend(["--", *paths])
     return run_ambient(argv, cwd=workdir, timeout_seconds=timeout_seconds)
 
 
@@ -863,7 +893,7 @@ TOOLS = [
             "prompt": {"type": "string", "maxLength": MAX_PROMPT_CHARS},
             "system": {"type": "string", "maxLength": MAX_SYSTEM_CHARS},
             "model": {"type": "string", "maxLength": 256},
-            "max_tokens": {"type": "integer", "minimum": 1, "maximum": 200000},
+            "max_tokens": {"type": "integer", "minimum": 1, "maximum": 1000000},
             "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
             "json": {"type": "boolean"},
         }, required=["prompt"]),
@@ -958,7 +988,8 @@ def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except AmbientCommandError as exc:
         return response_error(request_id, -32000, str(exc))
     except Exception as exc:  # pragma: no cover - defensive JSON-RPC boundary.
-        return response_error(request_id, -32000, f"ambient MCP internal error: {exc}")
+        return response_error(request_id, -32000,
+                              redact(f"ambient MCP internal error: {exc}"))
 
 
 def read_headers(stream, first_line: bytes) -> Dict[str, str]:
@@ -1005,9 +1036,16 @@ def read_message(stream) -> Optional[FramedPayload]:
     raw_length = headers.get("content-length")
     if raw_length is None:
         raise ValueError("missing Content-Length header")
-    body = stream.read(int(raw_length))
-    if not body:
-        return None
+    if not raw_length.isdigit():
+        raise ValueError("Content-Length must be a decimal integer")
+    length = int(raw_length)
+    if length <= 0:
+        raise ValueError("Content-Length must be greater than zero")
+    if length > MAX_FRAME_BYTES:
+        raise ValueError(f"Content-Length exceeds {MAX_FRAME_BYTES} bytes")
+    body = stream.read(length)
+    if len(body) != length:
+        raise ValueError("incomplete MCP message body")
     return {"payload": parse_payload_bytes(body), "framing": "content-length"}
 
 

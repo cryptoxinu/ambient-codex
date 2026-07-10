@@ -7,7 +7,7 @@ security problem.
 
 - Preferred: open a GitHub security advisory on
   `github.com/cryptoxinu/ambient-codex`.
-- Include repro steps, platform, Python version, and `ambient --version`.
+- Include repro steps, platform, Python version, and `ambient-codex --version`.
 
 ## Threat Model
 
@@ -22,9 +22,9 @@ The main security boundaries are:
   disturb — or learn — another Ambient install's key, settings, usage ledger, or git
   hooks. There is no key import: each install holds its own credential. The test suite
   proves it by running every command with the other install's directories at mode 000.
-- `AMBIENT_API_KEY` is read by every Ambient install. Prefer `AMBIENT_CODEX_API_KEY`
-  when overriding the key from the environment; `doctor` warns when the shared name is
-  the source.
+- `AMBIENT_API_KEY` is deliberately ignored because another Ambient install may use
+  that shared name. Use `AMBIENT_CODEX_API_KEY` when overriding the key from the
+  environment; `ambient-codex doctor` warns when the shared name is present and ignored.
 - External input boundary: all web/API/MCP/model output is untrusted data.
 - External output boundary: selected prompts, diffs, and files are sent to the
   configured inference endpoint.
@@ -34,7 +34,7 @@ The main security boundaries are:
 - Lifecycle hooks: the public plugin registers no default command hooks. If a
   user opts into git audit hooks, ownership is checked by exact native
   `ambient-codex` markers before replacement or removal.
-- Agent lane: `ambient agent` runs opencode and exposes the Ambient key to that
+- Agent lane: `ambient-codex agent` runs opencode and exposes the Ambient key to that
   subprocess environment.
 
 Out of scope: the security of Ambient's hosted network and the opencode project.
@@ -44,6 +44,6 @@ Out of scope: the security of Ambient's hosted network and the opencode project.
 - Do not send secrets, credentials, PHI, private user data, or production dumps.
 - Review all Ambient-generated code before applying or executing anything.
 - Run tests/builds locally before accepting generated changes.
-- Keep direct provider status honest: `ambient codex` is diagnostic until it
+- Keep direct provider status honest: `ambient-codex codex` is diagnostic until it
   reports the Codex provider bridge working.
 - Run the validation gates in `README.md` before release.

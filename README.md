@@ -28,8 +28,9 @@ heavy execution, and hooks are opt-in only. See
 ```bash
 cd plugins/ambient-codex
 python3 -m py_compile bin/ambient mcp/ambient_mcp.py
-python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
-python3 /Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/ambient
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .
+python3 "$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py" skills/ambient
 python3 -m unittest discover -s tests -q
 ```
 
@@ -42,17 +43,17 @@ codex plugin marketplace add cryptoxinu/ambient-codex
 codex plugin add ambient-codex@ambient-codex
 ```
 
-For local development from this checkout:
+For local development, run this from the repository root:
 
 ```bash
-codex plugin marketplace add /Users/z/ambient-codex
+codex plugin marketplace add "$PWD"
 codex plugin add ambient-codex@ambient-codex
 ```
 
 The local marketplace file is:
 
 ```text
-/Users/z/ambient-codex/.agents/plugins/marketplace.json
+.agents/plugins/marketplace.json
 ```
 
 Start a new Codex thread after install or reinstall. Then invoke the skill with

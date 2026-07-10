@@ -65,6 +65,23 @@ The plugin package owns these surfaces:
 Codex-facing runtime paths must resolve through the active plugin root. Do not
 run a bare `ambient` from `PATH`; that name may point at another local install.
 
+### Context and coverage contract
+
+The CLI never assumes that a model's advertised context window is a usable
+single request. It derives a per-model input budget from the live catalog,
+leaves room for reasoning and the final answer, and then chooses either one
+request or a bounded map/reduce fan-out. The fan-out is capped at three active
+network calls, uses content-addressed chunk caching, and carries exact chunk
+coverage markers into the merge. Build briefs use the same distillation path
+when their context is too large.
+
+There is also a hard 20M-character process guard. A repository audit reads
+text source files up to that bounded per-file limit, then chunks them normally;
+files above it or files that do not fit the aggregate repository budget are
+named in a `REPO COVERAGE NOTE`, force a partial result, and cannot produce a
+clean `SHIP` verdict. Binary files, lockfiles, vendored directories, and
+ignored paths remain intentional exclusions rather than coverage failures.
+
 ## Standalone Rule
 
 Ambient Codex must never inspect, source, import, invoke, or route through a
@@ -98,6 +115,10 @@ is exactly:
 - `ambient_usage`
 - `ambient_ask`
 - `ambient_audit_small`
+
+`ambient_audit_small` caps each named path at 4 MiB and directs larger or
+repository-sized work to the bundled CLI, where the longer timeout, progress,
+chunk cache, and explicit coverage contract apply.
 
 MCP startup must be fast, offline, and deterministic. The server must not make
 network calls while starting. It must support both Content-Length framed JSON-RPC
@@ -141,8 +162,7 @@ without an explicit command, or become required for MCP/CLI startup.
   in `~/.config/ambient-codex/env` with `0600` permissions.
 - All mutable state is rooted at `~/.config/ambient-codex/` (override
   `AMBIENT_CODEX_HOME`). Ambient Codex must never read or write another Ambient
-  install's state, keychain item, PATH launcher, or git hooks. The single exception
-  is the explicitly opt-in, read-only key import in `ambient setup`.
+  install's state, keychain item, PATH launcher, or git hooks.
 - API keys must never appear in chat, MCP arguments, argv, logs, commits, or docs.
 - Ambient inputs may leave the machine for external inference. Codex must avoid
   sending secrets, `.env` files, private user data, health data, or unrelated

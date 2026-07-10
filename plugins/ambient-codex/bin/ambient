@@ -36,8 +36,10 @@ Commands:
   version              Print version
   codex     [args…]    Blocked upstream for now — explains why; use `agent`
 
-No input is refused for size: anything past the model's single-shot budget is
-auto map-reduced (parallel chunk calls + merge). Spend is gated: set
+Inputs beyond a model's single-shot budget are auto map-reduced (parallel
+chunk calls + merge) up to the bounded 20M-character input guard. Repository
+audits include source files up to that guard and report any larger source or
+aggregate-overflow exclusion as PARTIAL coverage. Spend is gated: set
 AMBIENT_MAX_SPEND to cap it, large jobs confirm on a TTY (--yes skips;
 --allow-cost overrides the ceiling).
 
@@ -95,7 +97,7 @@ try:
 except ImportError:
     fcntl = None
 
-__version__ = "1.8.6"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
+__version__ = "1.9.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
 # Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
 # own root. It never reads or writes another Ambient install's state, not even once and
@@ -234,6 +236,11 @@ DEFAULT_MODEL = "moonshotai/kimi-k2.7-code"
 DEFAULT_CODE_MODEL = "moonshotai/kimi-k2.7-code"
 DEFAULT_TIMEOUT_S = 300
 DEFAULT_MAX_TOKENS = 16384
+# The API catalog owns the real per-model output limit.  This is only the
+# user-input safety ceiling before model_profile() applies that live limit;
+# keep it above today's 262,144-token frontier models without pretending a
+# future model's catalog value is already known.
+MAX_REQUESTED_TOKENS = 1_000_000
 # A reasoning model (Kimi/GLM/etc.) spends tokens THINKING before it answers, so
 # an output budget below this floor can't produce a usable result — the CLI
 # raises it rather than let a self-defeating value run silently.
@@ -254,6 +261,25 @@ def _env_pos_int(name, default, floor=1):
         return max(floor, int(raw))
     except (TypeError, ValueError):
         return default
+
+
+def normalize_requested_max_tokens(value):
+    """Apply only the CLI-wide safety ceiling.
+
+    The selected model's live profile performs the meaningful context/output
+    clamp later.  Keeping this boundary above the catalog's current frontier
+    range lets an explicit request reach that per-model resolver instead of
+    being discarded at 200,000 for every model.
+    """
+    if value is None:
+        return None
+    if value > MAX_REQUESTED_TOKENS:
+        print(
+            f"ambient: --max-tokens capped at {MAX_REQUESTED_TOKENS}",
+            file=sys.stderr,
+        )
+        return MAX_REQUESTED_TOKENS
+    return value
 
 
 # Completions STREAM: liveness is judged by data flow, not total duration. A
@@ -355,7 +381,7 @@ FALLBACK_CONTEXT = 200_000             # offline/unknown-model context assumptio
 # assuming this when the catalog is unreachable keeps an auto budget from ever
 # exceeding a strict model's real cap (escalation grows it if the model has more).
 FALLBACK_MAX_OUTPUT = 16_384
-ABS_MAX_CHARS = 20_000_000    # ~20M-char sanity ceiling — a size guard, not a hard limit
+ABS_MAX_CHARS = 20_000_000    # hard ~20M-char process/input safety ceiling
 MAX_PARALLEL_CHUNKS = 3       # concurrent chunk calls (bounded to not overload the network)
 # --- Repo intelligence ---------------------------------------------
 CODE_MAP_BUDGET_DEFAULT = 4_000   # repo-map chars when the model window is unknown
@@ -364,7 +390,11 @@ CODE_MAP_SIGS_PER_FILE = 40       # signature cap per file in the repo map
 SIG_SCAN_LINE_MAX = 4_096         # never regex-scan a longer line (
 #   a minified/pathological line has no useful column-0 signature, and long
 #   single-class runs are exactly where regex backtracking blows up)
-REPO_FILE_MAX_BYTES = 1_000_000   # audit --repo skips any single file above this
+# Keep one source file in the repo audit up to the same bounded input ceiling
+# used by read_files().  model_profile()/pack_chunks() then split it safely.
+# This used to be 1 MB, which silently excluded generated-but-auditable source
+# files before the chunker ever saw them.
+REPO_FILE_MAX_BYTES = ABS_MAX_CHARS
 REPO_SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", "node_modules", "dist", "build", "out", "vendor",
     "__pycache__", "target", "venv", ".venv", ".tox", ".mypy_cache",
@@ -7958,18 +7988,23 @@ def _repo_candidate_paths(root):
     return rels, False
 
 
-def repo_walk(root, per_file_cap=REPO_FILE_MAX_BYTES):
+def repo_walk(root, per_file_cap=None):
     """Enumerate a repo's auditable TEXT source files (5b). Returns
     (files [(rel, abs, size)], skipped counters, used_git). Bounded and safe
     by construction: candidate paths that are absolute or contain '..' are
     rejected VERBATIM (git output is data, not trust); symlinks are skipped
     entirely (lstat + S_ISREG), so nothing can escape `root`; vendored dirs,
-    lockfiles, empty/oversized files, and NUL-sniffed binaries are skipped
-    with counts so the plan can say exactly what was left out."""
+    lockfiles, empty files, files above the bounded input ceiling, and
+    NUL-sniffed binaries are skipped with counts. Oversized source paths are
+    retained in `skipped["oversize_paths"]` so the caller can force an
+    explicit coverage gap instead of allowing a clean verdict over unread
+    source."""
+    if per_file_cap is None:
+        per_file_cap = REPO_FILE_MAX_BYTES
     rels, used_git = _repo_candidate_paths(root)
     files = []
     skipped = {"binary": 0, "lockfile": 0, "oversize": 0,
-               "nonregular": 0, "vendored": 0}
+               "oversize_paths": [], "nonregular": 0, "vendored": 0}
     real_root = os.path.realpath(root)
     for rel in sorted(set(rels)):
         parts = rel.replace(os.sep, "/").split("/")
@@ -8006,6 +8041,8 @@ def repo_walk(root, per_file_cap=REPO_FILE_MAX_BYTES):
             continue
         if st.st_size > per_file_cap:
             skipped["oversize"] += 1
+            if len(skipped["oversize_paths"]) < 40:
+                skipped["oversize_paths"].append(rel.replace("\\", "/"))
             continue
         try:
             with open(full, "rb") as fh:
@@ -8046,7 +8083,8 @@ def repo_audit_inputs(args, api_key):
     ABS_MAX_CHARS ceiling to the POST-GUTTER size (refuse unless
     --allow-cost/--allow-partial; then trim to the files that fit and
     surface the rest as an EXPLICIT coverage gap), read + gutter, relabel
-    repo-relative. Returns (labeled, meta)."""
+    repo-relative. Source files above the bounded per-file ceiling are also
+    surfaced as a coverage gap. Returns (labeled, meta)."""
     root = os.path.realpath(args.repo if args.repo else ".")
     if not os.path.isdir(root):
         _fail_exit(args, "audit", "usage",
@@ -8054,10 +8092,16 @@ def repo_audit_inputs(args, api_key):
                    exit_code=EXIT_USAGE, api_key=api_key)
     files, skipped, used_git = repo_walk(root)
     if not files:
+        oversize_hint = ""
+        if skipped.get("oversize"):
+            oversize_hint = (
+                f" {skipped['oversize']} source file(s) exceed the "
+                f"{REPO_FILE_MAX_BYTES:,}-byte per-file ceiling."
+            )
         _fail_exit(args, "audit", "usage",
                    f"--repo: no auditable text source files found under "
                    f"{root} (binaries, lockfiles, vendored and ignored "
-                   "paths are skipped).",
+                   f"paths are skipped).{oversize_hint}",
                    exit_code=EXIT_USAGE, api_key=api_key)
     # The ceiling binds the size actually SENT — raw bytes PLUS the line
     # gutters with_line_gutters adds below (15-20%+ on line-dense
@@ -8099,17 +8143,31 @@ def repo_audit_inputs(args, api_key):
     rel_of = {full: rel for rel, full, _size in files}
     pairs = read_files([full for _rel, full, _size in files])
     labeled = with_line_gutters([(rel_of.get(p, p), t) for p, t in pairs])
+    oversize_paths = skipped.get("oversize_paths", [])
+    coverage_notes = []
     if omitted:
-        labeled.append((
-            "REPO COVERAGE NOTE",
+        coverage_notes.append(
             f"{len(omitted)} repo file(s) were EXCLUDED from this audit "
             "(input ceiling): " + ", ".join(omitted[:40])
-            + ("…" if len(omitted) > 40 else "")
+            + ("…" if len(omitted) > 40 else ""))
+    if skipped.get("oversize"):
+        shown = ", ".join(oversize_paths[:40])
+        suffix = "…" if len(oversize_paths) < skipped["oversize"] else ""
+        coverage_notes.append(
+            f"{skipped['oversize']} source file(s) were EXCLUDED from this "
+            f"audit (over {REPO_FILE_MAX_BYTES:,}-byte per-file ceiling)"
+            + (f": {shown}{suffix}" if shown else ""))
+    if coverage_notes:
+        labeled.append((
+            "REPO COVERAGE NOTE",
+            "; ".join(coverage_notes)
             + ". Coverage is PARTIAL — state this gap and do not issue a "
-              "clean verdict."))
+            "clean verdict."))
     meta = {"root": root, "files": len(files), "chars": total,
             "git": used_git, "skipped": skipped,
-            "omitted_over_cap": len(omitted)}
+            "omitted_over_cap": len(omitted),
+            "omitted_oversize": skipped.get("oversize", 0),
+            "coverage_gap": bool(coverage_notes)}
     return labeled, meta
 
 
@@ -8847,6 +8905,8 @@ def _print_repo_plan(meta, catalog, model, reduce_model, labeled, total,
                 "chars": meta["chars"], "git": meta["git"],
                 "skipped": meta["skipped"],
                 "omitted_over_cap": meta["omitted_over_cap"],
+                "omitted_oversize": meta.get("omitted_oversize", 0),
+                "coverage_gap": meta.get("coverage_gap", False),
                 "model": ("consensus:" + ",".join(consensus_models))
                 if consensus_models else model,
                 "n_chunks": n_chunks,
@@ -8884,6 +8944,10 @@ def _print_repo_plan(meta, catalog, model, reduce_model, labeled, total,
     if meta["omitted_over_cap"]:
         print(f"ambient: NOTE — {meta['omitted_over_cap']} file(s) over the "
               "input ceiling were EXCLUDED (explicit coverage gap)",
+              file=sys.stderr)
+    if meta.get("omitted_oversize"):
+        print(f"ambient: NOTE — {meta['omitted_oversize']} source file(s) over "
+              "the per-file ceiling were EXCLUDED (explicit coverage gap)",
               file=sys.stderr)
 
 
@@ -9562,10 +9626,17 @@ def cmd_audit(args, api_key, api_url, conf):
     # the partial flag deterministically (render_findings then flips SHIP→NEEDS
     # WORK and coverage_complete→false; exit stays 2 unless --allow-partial).
     omitted = repo_meta.get("omitted_over_cap", 0) if repo_meta else 0
-    if omitted:
+    omitted_oversize = repo_meta.get("omitted_oversize", 0) \
+        if repo_meta else 0
+    if omitted or omitted_oversize:
         partial = True
         reason = ((reason + "; ") if reason else "") + \
-            f"{omitted} repo file(s) excluded by the input ceiling"
+            "; ".join(filter(None, (
+                f"{omitted} repo file(s) excluded by the input ceiling"
+                if omitted else "",
+                f"{omitted_oversize} source file(s) excluded by the per-file "
+                "ceiling" if omitted_oversize else "",
+            )))
     if structured:
         eff = render_findings(final, args.format, api_key, partial, reason,
                               model=model)
@@ -12331,8 +12402,9 @@ OPENCODE_PROVIDER = LAUNCHER_NAME
 def ensure_opencode_config(api_url, model):
     """Fresh-install fix: create/repair the opencode provider config so
     `ambient-codex agent` works out of the box instead of failing on a missing file.
-    Never overwrites an existing provider entry the user may have tuned. The entry
-    is keyed by LAUNCHER_NAME so a second Ambient install cannot share it."""
+    Only this install's namespaced provider entry is repaired; every other provider
+    is preserved byte-for-byte at the decoded-data level. The entry is keyed by
+    LAUNCHER_NAME so a second Ambient install cannot share it."""
     cfg = {}
     try:
         with open(OPENCODE_CONFIG_PATH, encoding="utf-8") as fh:
@@ -12355,39 +12427,52 @@ def ensure_opencode_config(api_url, model):
             file=sys.stderr,
         )
         return
-    providers = cfg.setdefault("provider", {})
+    providers = cfg.get("provider", {})
+    if not isinstance(providers, dict):
+        print(
+            f"ambient: {OPENCODE_CONFIG_PATH} provider section is not a JSON "
+            "object — leaving it alone; `ambient-codex agent` may misbehave "
+            "(see: ambient-codex doctor)",
+            file=sys.stderr,
+        )
+        return
     # Keyed by LAUNCHER_NAME, not "ambient": opencode has ONE global config, and the
     # other Ambient install writes a provider under the bare name. Sharing that entry
     # means whichever install ran `agent` first pins the baseURL, and the other one
     # then sends ITS key to that endpoint.
     desired_options = {"baseURL": f"{api_url}/v1",
                        "apiKey": "{env:AMBIENT_CODEX_API_KEY}"}
-    if OPENCODE_PROVIDER in providers:
+    existing = providers.get(OPENCODE_PROVIDER)
+    if isinstance(existing, dict):
         # This entry is OURS (keyed by LAUNCHER_NAME). Keep the current model in the
         # map, and re-pin baseURL + apiKey: an entry left by an older version could
         # still carry the shared `{env:AMBIENT_API_KEY}` placeholder or a stale
         # endpoint, which would send the wrong key on the next `agent` run.
-        amb = providers[OPENCODE_PROVIDER]
-        if not isinstance(amb, dict):
-            return
-        models_map = amb.setdefault("models", {})
-        changed = False
-        if isinstance(models_map, dict) and model not in models_map:
-            models_map[model] = {"name": model}
-            changed = True
-        if amb.get("options") != desired_options:
-            amb["options"] = desired_options
-            changed = True
-        if not changed:
-            return  # already correct — don't rewrite the file
+        existing_models = existing.get("models")
+        models_map = existing_models if isinstance(existing_models, dict) else {}
+        native_provider = {
+            **existing,
+            "options": desired_options,
+            "models": {**models_map, model: {"name": model}},
+        }
     else:
-        cfg.setdefault("$schema", "https://opencode.ai/config.json")
-        providers[OPENCODE_PROVIDER] = {
+        # A malformed value under OUR namespaced key is safe to replace. Never
+        # infer ownership of, or repair, any differently named provider.
+        native_provider = {
             "npm": "@ai-sdk/openai-compatible",
             "name": "Ambient Codex (ambient.xyz)",
             "options": desired_options,
             "models": {model: {"name": model}},
         }
+    updated_cfg = {
+        **cfg,
+        "provider": {**providers, OPENCODE_PROVIDER: native_provider},
+    }
+    if existing is None and "$schema" not in updated_cfg:
+        updated_cfg = {"$schema": "https://opencode.ai/config.json", **updated_cfg}
+    if updated_cfg == cfg:
+        return  # already correct — don't rewrite the file
+    cfg = updated_cfg
     tmp = None
     try:
         # Atomic write so a mid-write failure can't destroy the user's existing
@@ -12462,10 +12547,18 @@ def cmd_agent(args, api_key, api_url, conf):
     # The child resolves `{env:AMBIENT_CODEX_API_KEY}` from OUR provider entry.
     env = dict(os.environ, AMBIENT_CODEX_API_KEY=api_key)
     extra = list(args.agent_args)
+    # Keep this Codex-native lane independent of unrelated opencode extensions
+    # installed in the user's global config. The provider config still loads;
+    # only external plugins are disabled. Respect an explicit --pure/--no-pure
+    # so terminal power users can make a deliberate choice, and never duplicate
+    # the flag when the caller already supplied it.
+    pure = [] if any(x in ("--pure", "--no-pure") for x in extra) else ["--pure"]
     if extra and extra[0] == "run":
-        argv = ["opencode", "run", "--model", f"{OPENCODE_PROVIDER}/{model}"] + extra[1:]
+        argv = ["opencode", "run", "--model", f"{OPENCODE_PROVIDER}/{model}"] \
+            + pure + extra[1:]
     else:
-        argv = ["opencode", "--model", f"{OPENCODE_PROVIDER}/{model}"] + extra
+        argv = ["opencode", "--model", f"{OPENCODE_PROVIDER}/{model}"] \
+            + pure + extra
     if os.name == "nt":
         # Windows: os.exec* SPAWNS a new process then the parent exits, so the
         # shell prompt and opencode's full-screen TUI fight over the console; and
@@ -13307,9 +13400,8 @@ def main():
                 file=sys.stderr,
             )
             args.max_tokens = MIN_OUTPUT_TOKENS
-        elif args.max_tokens > 200_000:
-            print("ambient: --max-tokens capped at 200000", file=sys.stderr)
-            args.max_tokens = 200_000
+        else:
+            args.max_tokens = normalize_requested_max_tokens(args.max_tokens)
     if getattr(args, "temperature", None) is not None:
         t = args.temperature
         if t != t or not (0.0 <= t <= 2.0):  # NaN or out of range

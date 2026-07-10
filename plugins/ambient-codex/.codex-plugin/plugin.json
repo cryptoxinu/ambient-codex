@@ -1,6 +1,6 @@
 {
   "name": "ambient-codex",
-  "version": "1.8.6",
+  "version": "1.9.0",
   "description": "Codex-native Ambient delegation, audits, builds, and model routing.",
   "author": {
     "name": "xinu",
@@ -30,6 +30,7 @@
       "local-cli"
     ],
     "websiteURL": "https://github.com/cryptoxinu/ambient-codex",
+    "privacyPolicyURL": "https://github.com/cryptoxinu/ambient-codex/blob/main/plugins/ambient-codex/PRIVACY.md",
     "brandColor": "#1F6FEB",
     "defaultPrompt": "Use Ambient Codex when token-heavy planning, audits, builds, repository maps, or second-opinion model checks would help."
   },
