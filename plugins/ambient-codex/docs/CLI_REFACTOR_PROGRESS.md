@@ -58,7 +58,7 @@ bugs, verification, commits, or the next action changes.
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
-| 2C3C | Repository diff/status intake | Local green | — | Full gates pending |
+| 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -1166,10 +1166,20 @@ executed its configured helper and suppressed the real patch, proving the issue.
 - A synthetic 100,000-path byte/NUL listing parses in 0.010 seconds, and a real
   staged 2 MB diff is terminated/refused at a 1 MB byte ceiling in 0.025 seconds.
   Exact pre/post stable staged-diff behavior remains green.
+- Checkpoint commit `4ba1015` is pushed to `origin/main`. Its clean Git archive
+  passes recursive compile, all 1,290 guarded tests, and a real isolated-venv
+  package install. GitHub run `29120423507` passes all 18 jobs on the exact SHA,
+  including Linux/macOS/Windows, Python 3.8/3.10/3.12/3.13, lint/coverage,
+  package, plugin, and no-Node gates.
+- Cache-busted install `1.9.0+codex.20260710201127` byte-matches source runtime
+  and focused tests and passes all 52 diff/discovery/gutter contracts, both
+  validators, offline stress (26/26), and MCP initialize/list/self-test/offline-
+  control with 14 tools on a Python-only PATH with no Node. The source manifest
+  is restored to stable `1.9.0`.
 
 ## Exact resume point
 
-1. Commit/push the locally green checkpoint, then require clean-archive and all
-   18 GitHub jobs
-   before cache-busting/installing the exact commit.
-2. Complete installed-cache gates and closeout before Phase 2D.
+1. Freeze the Phase 2D production/test boundary for usage, cache, spend, and
+   fleet state without moving transport/model/workflow orchestration.
+2. Write Phase 2D ownership and stable-behavior contracts first, observe scoped
+   RED, then implement and run the complete release ladder before Phase 3.
