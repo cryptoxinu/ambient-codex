@@ -2,6 +2,10 @@
 
 Status: post-1.9 engineering plan; not a public-release blocker.
 
+Execution state, decisions, bugs, verification, and the exact resume point live
+in [CLI_REFACTOR_PROGRESS.md](CLI_REFACTOR_PROGRESS.md). Update that ledger at
+every phase boundary and whenever scope, risk, or next action changes.
+
 ## Why Scope It
 
 `bin/ambient` is intentionally easy to ship—one extensionless, stdlib-only

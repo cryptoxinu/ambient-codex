@@ -15,11 +15,12 @@ dependencies = []                       # stdlib only — no third-party runtime
 [project.urls]
 Homepage = "https://github.com/cryptoxinu/ambient-codex"
 
-# Single-file CLI: install bin/ambient onto PATH as `ambient` with NO second copy
-# of the source (avoids the two-divergent-copies problem). `pipx install .` works.
+# Keep the extensionless public CLI while installing the internal refactor
+# package exactly once. Source/plugin execution imports the bundled root package;
+# pip/pipx execution imports the same package from site-packages.
 [tool.setuptools]
 script-files = ["bin/ambient"]
-packages = []                           # no importable packages — disable auto-discovery
+packages = ["ambient_codex"]            # explicit: never auto-discover tests/docs
 py-modules = []
 
 [tool.pytest.ini_options]

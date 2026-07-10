@@ -92,6 +92,31 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+
+def _prepend_bundled_package_root():
+    """Prefer the package shipped beside this script in source/plugin installs.
+
+    A normal Python package install finds ``ambient_codex`` in site-packages.
+    Codex plugin and source-checkout execution instead place it one directory
+    above this extensionless script, so add that root without mutating the
+    existing sys.path list in place.
+    """
+    script_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    package_init = os.path.join(script_root, "ambient_codex", "__init__.py")
+    if not os.path.isfile(package_init):
+        return
+    normalized_root = os.path.normcase(os.path.realpath(script_root))
+    remaining = [
+        item for item in sys.path
+        if os.path.normcase(os.path.realpath(item or os.curdir)) != normalized_root
+    ]
+    sys.path = [script_root, *remaining]
+
+
+_prepend_bundled_package_root()
+from ambient_codex import LAYOUT_VERSION as INTERNAL_PACKAGE_LAYOUT  # noqa: E402, F401
+from ambient_codex import PACKAGE_NAME as INTERNAL_PACKAGE_NAME  # noqa: E402, F401
+
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
 except ImportError:

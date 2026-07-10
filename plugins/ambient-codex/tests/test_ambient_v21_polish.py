@@ -153,6 +153,8 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         self.root = os.path.join(base, "plugin-cache", "ambient-codex", "2.0.0")
         os.makedirs(os.path.join(self.home, ".local", "bin"))
         os.makedirs(os.path.join(self.root, "bin"))
+        shutil.copytree(os.path.join(ROOT, "ambient_codex"),
+                        os.path.join(self.root, "ambient_codex"))
         self.active = os.path.join(self.root, "bin", "ambient")
         shutil.copyfile(BIN, self.active)
         os.chmod(self.active, os.stat(self.active).st_mode
