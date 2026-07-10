@@ -57,7 +57,8 @@ bugs, verification, commits, or the next action changes.
 | 2C1 | Secret detection | Complete | `b4bc6f7` | All gates green |
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
-| 2C3B-C | Repository discovery and diff | Pending | — | — |
+| 2C3B | Repository discovery and classification | Planned | — | Boundary frozen below |
+| 2C3C | Repository diff/status intake | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -932,12 +933,70 @@ Phase 2C3A local verification:
   14 tools on a Python-only PATH with no Node. Codex lists that cache version as
   installed and enabled; the source manifest is restored to stable `1.9.0`.
 
+## Phase 2C3B plan — repository discovery and classification
+
+Purpose: move candidate enumeration and text-source classification behind an
+immutable, independently testable lower-layer API while preserving the public
+`_repo_candidate_paths()` and `repo_walk()` list/dict contracts.
+
+Production/test file boundary (four files):
+
+1. `tests/test_refactor_phase2_repository_discovery.py` — RED-first Git command/
+   NUL framing, undecodable-byte, fallback walk, traversal, vendor/dotdir,
+   lockfile, empty/binary/oversize, descriptor identity, containment, immutable
+   metadata, input-validation, import-purity, and facade contracts.
+2. `ambient_codex/repository.py` — add immutable `RepositorySkips`,
+   `candidate_paths(...)`, and `classify_repository_files(...)`; standard-library
+   filesystem calls occur only when invoked and Git execution is injected.
+3. `bin/ambient` — retain thin `_repo_candidate_paths()` and `repo_walk()`
+   wrappers, passing patchable `subprocess`, constants, and historical defaults;
+   convert lower-layer tuples/records back to lists/dicts for compatibility.
+4. `tests/test_refactor_phase2_repository_gutters.py` — extend only the exact
+   module-export ownership tuple; all 2C3A contracts remain unchanged.
+
+Tracking updates remain allowed in this ledger and do not consume the four-file
+production/test boundary.
+
+Required lower-layer contracts:
+
+- Git discovery invokes `git -C ROOT ls-files -z --cached --others
+  --exclude-standard` without a shell, with the existing 30-second timeout.
+  Capture bytes, split only on NUL, and decode paths with the filesystem codec so
+  valid non-UTF-8 POSIX names cannot crash discovery. Nonzero exit, timeout,
+  launch/value failure, or malformed output falls back to the plain walker.
+- Plain discovery preserves deterministic sorting, prunes known generated/
+  vendored and dot directories before descent, and never follows directory
+  symlinks.
+- Classification treats every candidate as untrusted data: reject absolute and
+  parent-traversing names, skip vendored paths on both lanes and dotdirs on the
+  plain lane, skip lockfiles, and require resolved containment under the repo.
+- Binary sniffing must use a non-following/nonblocking descriptor where the OS
+  supports it, revalidate regular-file type and descriptor identity with
+  `fstat`, and read at most 8,192 bytes. A path swap must be omitted, never read.
+- Return immutable file tuples and `RepositorySkips`; retain the 40-path
+  oversize evidence cap. Validate the per-file ceiling as a positive integer.
+  The facade preserves the historical file list and skipped dict/list shape.
+- Explicit safety fixes in this checkpoint are limited to binary Git-path
+  decoding, fail-fast invalid ceilings, descriptor identity, and current
+  descriptor size. Each requires a deterministic RED contract and must not
+  change normal stable-repository results.
+
+Research decision: GitHub code/repository metadata and current GitPython,
+`pygit2`, and `pathspec` registry options were reviewed. No dependency is
+adopted: the existing NUL-framed Git command plus stdlib filesystem APIs retain
+Python 3.8, source/plugin/pipx portability, and no-install/no-Node behavior.
+
+Do not move gutter code again, git diff/status capture, changed-path parsing,
+coverage-note policy, input-ceiling selection, `repo_audit_inputs`, prompts,
+models, transport, spend, map/reduce, generation, integrations, MCP, or command
+handlers in 2C3B.
+
 ## Exact resume point
 
-1. Commit and push this Phase 2C3A closeout ledger.
-2. Freeze Phase 2C3B at file/export/behavior level before writing tests.
-3. Write only the bounded 2C3B RED contracts; do not move git diff/status capture
-   or `repo_audit_inputs`, which remain reserved for 2C3C and Phase 4.
+1. Commit and push the exact Phase 2C3B boundary above.
+2. Write only the four-file 2C3B RED contract surface and record the failures.
+3. Implement the minimum extraction/hardening needed for GREEN, compare stable
+   pre/post behavior, then run local/archive/CI/installed gates before 2C3C.
 
 Do not begin 2C3B until 2C3A is green, committed, pushed, installed, and
 recorded; that gate is now satisfied.
