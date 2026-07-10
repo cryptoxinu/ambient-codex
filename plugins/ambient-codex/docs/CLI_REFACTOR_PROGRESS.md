@@ -52,7 +52,7 @@ bugs, verification, commits, or the next action changes.
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
 | 1B | Pure record and error types | Complete | `8ec853d` | All gates green after `d7bad68` |
-| 2A | State-path validation core | Ready to commit | — | Local gates green |
+| 2A | State-path validation core | Committed | `2d623f5` | Local/archive green; GitHub/install pending |
 | 2B | Config, keychain, and atomic state | Pending | — | — |
 | 2C | Secret, input, and repository safety | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
@@ -370,11 +370,13 @@ queries supplied by the standard `os` module.
   pass.
 - Facade wrappers still read patchable `FOREIGN_STATE_DIRS`; the internal module
   imports without creating state or reading the environment.
+- A clean archive of `2d623f5` passes all guarded tests and isolated-venv
+  installation with `state.py` present.
 
 ## Exact resume point
 
-1. Commit the green four-file Phase 2A implementation checkpoint.
-2. Run clean-archive, GitHub, and cache-busted installed-plugin gates.
+1. Push 2A and require the full GitHub matrix to pass.
+2. Reinstall and verify the cache-busted installed plugin.
 3. Mark 2A complete and write the 2B persistence-adapter file boundary before
    moving config or keychain behavior.
 
