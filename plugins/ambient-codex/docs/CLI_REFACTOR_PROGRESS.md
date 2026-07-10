@@ -57,7 +57,7 @@ bugs, verification, commits, or the next action changes.
 | 2C1 | Secret detection | Complete | `b4bc6f7` | All gates green |
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
-| 2C3B | Repository discovery and classification | Planned | — | Boundary frozen below |
+| 2C3B | Repository discovery and classification | Local green | — | Commit/CI/install pending |
 | 2C3C | Repository diff/status intake | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -991,12 +991,50 @@ coverage-note policy, input-ceiling selection, `repo_audit_inputs`, prompts,
 models, transport, spend, map/reduce, generation, integrations, MCP, or command
 handlers in 2C3B.
 
+Phase 2C3B RED observed: the 27 focused discovery-plus-gutter contracts fail
+with 16 missing-API errors and two export-ownership failures because
+`RepositorySkips`, `candidate_paths`, `classify_repository_files`, and their
+facade delegation do not exist yet. Import purity and all unchanged 2C3A
+behavior stay green, confining RED to the planned ownership seam. The RED
+surface also locks OSError/timeout/value/nonzero/malformed Git fallback without
+leaving test directories behind.
+
+Phase 2C3B implementation checkpoint:
+
+- The expanded 330-line repository module owns exactly five public exports and
+  keeps discovery/classification results immutable. The facade alone converts
+  them to the historical list/dict shape.
+- Git candidate capture is byte/NUL-framed and filesystem-decoded; a real Git
+  integration proves tracked plus untracked-not-ignored paths are included and
+  `.gitignore` exclusions hold. The fallback scanner is deterministic, prunes
+  before descent, and does not descend through directory symlinks. Diff review
+  caught an initial breadth-first ordering drift; a nested-tree RED contract now
+  preserves the historical sorted depth-first order through an immutable
+  persistent stack with no recursive depth risk.
+- Classification validates its ceiling, rejects untrusted traversal/absolute/
+  NUL paths, preserves Git-lane dotfiles, filters vendors/locks, bounds oversize
+  evidence to 40 paths, and returns complete omission counts.
+- Binary sniffing opens non-following/nonblocking descriptors where supported,
+  revalidates type plus file identity, uses the opened descriptor's current
+  size, reads at most 8,192 bytes, and closes across success, mismatch, read,
+  and `fstat` failures. Initial GREEN exposed and fixed one descriptor leak and
+  one premature `*.lock` normalization bug without weakening tests.
+- All 32 focused discovery/gutter contracts and all 1,270 guarded tests pass on
+  Python 3.11, 3.12, and 3.14. Pinned runtime coverage is 83% total and 96% for
+  `repository.py`. Stable Git-lane behavior over 96 files and fallback behavior
+  over 94 files match boundary commit `a632ecd` exactly for files, sizes, skip
+  metadata, and lane selection.
+- Full ruff/compile, plugin/skill validators, offline stress (26/26), and no-Node
+  MCP initialize/list/self-test/offline-control with 14 tools pass. A synthetic
+  100,000-path byte/NUL Git listing parses in 0.009 seconds locally. Clean-
+  archive, GitHub matrix, and installed-cache gates remain pending.
+
 ## Exact resume point
 
-1. Commit and push the exact Phase 2C3B boundary above.
-2. Write only the four-file 2C3B RED contract surface and record the failures.
-3. Implement the minimum extraction/hardening needed for GREEN, compare stable
-   pre/post behavior, then run local/archive/CI/installed gates before 2C3C.
+1. Commit and push the bounded Phase 2C3B checkpoint.
+2. Require clean-archive and all 18 GitHub jobs before cache-busting/installing
+   the exact commit.
+3. Complete installed-cache gates and closeout before freezing 2C3C.
 
 Do not begin 2C3B until 2C3A is green, committed, pushed, installed, and
 recorded; that gate is now satisfied.

@@ -81,7 +81,6 @@ import select
 import shlex
 import shutil
 import queue
-import stat
 import subprocess
 import sys
 import tempfile
@@ -7274,25 +7273,15 @@ def with_line_gutters(labeled):
 def _repo_candidate_paths(root):
     """(relative paths, used_git). Inside a git repo `git ls-files` (tracked +
     untracked-not-ignored) enumerates candidates so .gitignore is respected;
-    anywhere else a plain os.walk that PRUNES vendored/dot directories and
-    NEVER follows symlinked directories (followlinks=False)."""
-    try:
-        proc = subprocess.run(
-            ["git", "-C", root, "ls-files", "-z", "--cached", "--others",
-             "--exclude-standard"],
-            capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        proc = None
-    if proc is not None and proc.returncode == 0:
-        return [p for p in proc.stdout.split("\0") if p], True
-    rels = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(
-            d for d in dirnames
-            if d not in REPO_SKIP_DIRS and not d.startswith("."))
-        for fn in sorted(filenames):
-            rels.append(os.path.relpath(os.path.join(dirpath, fn), root))
-    return rels, False
+    anywhere else a plain scanner PRUNES vendored/dot directories and never
+    descends through symlinked directories."""
+    paths, used_git = _repository_core.candidate_paths(
+        root,
+        subprocess.run,
+        subprocess.TimeoutExpired,
+        REPO_SKIP_DIRS,
+    )
+    return list(paths), used_git
 
 
 def repo_walk(root, per_file_cap=None):
@@ -7309,61 +7298,23 @@ def repo_walk(root, per_file_cap=None):
     if per_file_cap is None:
         per_file_cap = REPO_FILE_MAX_BYTES
     rels, used_git = _repo_candidate_paths(root)
-    files = []
-    skipped = {"binary": 0, "lockfile": 0, "oversize": 0,
-               "oversize_paths": [], "nonregular": 0, "vendored": 0}
-    real_root = os.path.realpath(root)
-    for rel in sorted(set(rels)):
-        parts = rel.replace(os.sep, "/").split("/")
-        if os.path.isabs(rel) or ".." in parts:
-            continue  # a listing must never name anything outside root
-        # Vendored dirs are skipped on BOTH lanes (a tracked node_modules is
-        # still not worth auditing); dotdirs only on the walk lane — git-
-        # tracked .github/ CI config is real, auditable source.
-        if any(p in REPO_SKIP_DIRS
-               or (not used_git and p != "." and p.startswith("."))
-               for p in parts[:-1]):
-            skipped["vendored"] += 1
-            continue
-        if parts[-1] in REPO_LOCKFILES or parts[-1].endswith(".lock"):
-            skipped["lockfile"] += 1
-            continue
-        full = os.path.join(root, rel)
-        try:
-            st = os.lstat(full)
-        except OSError:
-            continue
-        if not stat.S_ISREG(st.st_mode):
-            skipped["nonregular"] += 1  # symlink/dir/device — never followed
-            continue
-        # lstat only checks the LEAF: an INTERMEDIATE symlinked directory
-        # (linkdir/file.py where linkdir points OUT of root) would still be
-        # opened. Resolve the whole path and require it to stay under the
-        # resolved root — nothing outside --repo may ever be read.
-        real = os.path.realpath(full)
-        if not _within_root(real, real_root):   # M9: correct at root '/'
-            skipped["nonregular"] += 1
-            continue
-        if st.st_size == 0:
-            continue
-        if st.st_size > per_file_cap:
-            skipped["oversize"] += 1
-            if len(skipped["oversize_paths"]) < 40:
-                skipped["oversize_paths"].append(rel.replace("\\", "/"))
-            continue
-        try:
-            with open(full, "rb") as fh:
-                head = fh.read(8192)
-        except OSError:
-            continue
-        if b"\x00" in head:
-            skipped["binary"] += 1
-            continue
-        # Normalize the LABEL to forward slashes so audit findings cite portable
-        # repo-relative paths (src/a.py) on every OS — os.path.relpath yields
-        # backslashes on Windows, which would make findings non-portable.
-        files.append((rel.replace("\\", "/"), full, st.st_size))
-    return files, skipped, used_git
+    files, skipped = _repository_core.classify_repository_files(
+        root,
+        tuple(rels),
+        used_git,
+        per_file_cap,
+        REPO_SKIP_DIRS,
+        REPO_LOCKFILES,
+    )
+    public_skipped = {
+        "binary": skipped.binary,
+        "lockfile": skipped.lockfile,
+        "oversize": skipped.oversize,
+        "oversize_paths": list(skipped.oversize_paths),
+        "nonregular": skipped.nonregular,
+        "vendored": skipped.vendored,
+    }
+    return list(files), public_skipped, used_git
 
 
 def _guttered_size(full, size):

@@ -16,7 +16,13 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
-MOVED_NAMES = ("with_line_gutters", "guttered_file_size")
+MOVED_NAMES = (
+    "RepositorySkips",
+    "candidate_paths",
+    "classify_repository_files",
+    "with_line_gutters",
+    "guttered_file_size",
+)
 
 
 def load_facade(home):
