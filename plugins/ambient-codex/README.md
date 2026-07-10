@@ -325,6 +325,13 @@ a smaller expected-answer reserve. A job rejected by the ceiling can still be ru
 deliberately with `--allow-cost`; explicit `--max-tokens` remains subject to the
 model's actual output and context limits.
 
+## Maintenance Roadmap
+
+The post-1.9 decomposition of the extensionless CLI is deliberately scoped as an
+incremental compatibility-preserving project, not a release-blocking rewrite. See
+[CLI_REFACTOR_SCOPE.md](docs/CLI_REFACTOR_SCOPE.md) for module boundaries, phased
+gates, risks, and the definition of done.
+
 ## Current Codex Provider Status
 
 Bundled `agent` is the supported terminal-agent lane today.

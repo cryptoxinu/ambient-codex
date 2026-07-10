@@ -69,3 +69,8 @@ cd plugins/ambient-codex
 
 See [plugins/ambient-codex/README.md](plugins/ambient-codex/README.md) for the
 plugin details.
+
+## Security And Maintenance
+
+- [Public-use threat model](ambient-codex-threat-model.md)
+- [Post-1.9 CLI refactor scope](plugins/ambient-codex/docs/CLI_REFACTOR_SCOPE.md)
