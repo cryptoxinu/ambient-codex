@@ -4320,6 +4320,7 @@ _C_KEYWORDS = frozenset({
     "if", "for", "while", "switch", "return", "else", "do", "sizeof",
     "catch", "new", "throw", "case", "using", "typedef", "define",
 })
+_C_TYPE_SIGNATURE_MARKERS = ("class", "struct", "interface", "enum")
 # Backtracking-safety contract for EVERY pattern below: no
 # character class may mix word chars with \s (each whitespace run must have
 # exactly ONE possible consumer), and every repeated group of "type tokens"
@@ -4408,6 +4409,15 @@ def _sigs_regex(text, lang):
             # A minified/pathological line carries no useful column-0
             # signature — and it is exactly where regex backtracking blows
             # up. Brace depth is still tracked (linear count).
+            if braces:
+                depth = max(0, depth + line.count("{") - line.count("}"))
+            continue
+        if (lang == "c" and "(" not in line
+                and not any(marker in line
+                            for marker in _C_TYPE_SIGNATURE_MARKERS)):
+            # Both C-family patterns require either a parameter list or one of
+            # the declaration words above. Avoid running regexes over long runs
+            # of whitespace that cannot possibly become a signature.
             if braces:
                 depth = max(0, depth + line.count("{") - line.count("}"))
             continue

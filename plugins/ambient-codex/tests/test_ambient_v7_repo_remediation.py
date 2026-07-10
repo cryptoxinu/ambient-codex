@@ -172,6 +172,19 @@ class TestC1SignatureRegexSafety(unittest.TestCase):
                     lambda: amb._sigs_regex(text, "c"),
                     budget=0.3)
 
+    def test_c_lines_without_signature_markers_skip_regexes(self):
+        class RegexMustNotRun:
+            def match(self, _line):
+                raise AssertionError("marker-free C line reached a signature regex")
+
+        patterns = {**amb._SIG_PATTERNS, "c": ((1, RegexMustNotRun(), "{0}"),)}
+        text = ("int" + " " * 4000 + "y\n"
+                + " " * 4000 + "\n"
+                + "foo bar" + " " * 3900 + "baz qux\n")
+
+        with patched(amb, _SIG_PATTERNS=patterns):
+            self.assertEqual(amb._sigs_regex(text, "c"), [])
+
     def test_sig_scan_line_max_exists_and_caps_scanning(self):
         cap = amb.SIG_SCAN_LINE_MAX
         self.assertGreaterEqual(cap, 1024)

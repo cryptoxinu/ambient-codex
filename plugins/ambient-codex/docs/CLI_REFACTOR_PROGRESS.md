@@ -823,6 +823,13 @@ Phase 2C2B local verification:
 - Full ruff/compile, isolated-venv installation, plugin/skill validators,
   offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
   GitHub matrix, and installed-cache gates remain pending.
+- A prior docs-only run (`29113071849`) exposed a second timing-sensitive
+  baseline: one macOS runner needed 0.328 seconds for the 0.300-second 300-line
+  C-signature adversary. Deterministic RED proves marker-free C-family lines
+  must not enter regex matching at all. A semantic `(`/type-declaration marker
+  precheck preserves signature/depth behavior and reduces the complete local
+  signature safety class to about 0.006 seconds without relaxing any threshold.
+  All 1,238 guarded tests and offline stress remain green after the follow-up.
 
 ## Exact resume point
 
