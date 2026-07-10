@@ -17,11 +17,13 @@ The main security boundaries are:
 - API key handling: keys are stored in the OS keychain item `ambient-codex` when
   available, or in owner-only `~/.config/ambient-codex/env` when file storage is
   explicitly used. Keys are never passed on argv and must not be pasted into chat.
-- Install isolation: Ambient Codex never reads or writes anything outside
-  `~/.config/ambient-codex` and its own `ambient-codex` keychain item, so it cannot
-  disturb — or learn — another Ambient install's key, settings, usage ledger, or git
-  hooks. There is no key import: each install holds its own credential. The test suite
-  proves it by running every command with the other install's directories at mode 000.
+- Install isolation: Ambient Codex owns only `~/.config/ambient-codex` and its
+  `ambient-codex` keychain item for credentials, settings, cache, and usage. It
+  does not import another Ambient install's key or state. The test suite proves
+  this by running every command with the other install's directories at mode 000.
+  User-invoked build, launcher, hook, and agent workflows can write to the
+  explicitly selected build directory, native launcher/hook path, or opencode
+  provider config as described below.
 - `AMBIENT_API_KEY` is deliberately ignored because another Ambient install may use
   that shared name. Use `AMBIENT_CODEX_API_KEY` when overriding the key from the
   environment; `ambient-codex doctor` warns when the shared name is present and ignored.
@@ -34,8 +36,11 @@ The main security boundaries are:
 - Lifecycle hooks: the public plugin registers no default command hooks. If a
   user opts into git audit hooks, ownership is checked by exact native
   `ambient-codex` markers before replacement or removal.
-- Agent lane: `ambient-codex agent` runs opencode and exposes the Ambient key to that
-  subprocess environment.
+- Agent lane: `ambient-codex agent` adds or repairs only the namespaced
+  `ambient-codex` provider in `~/.config/opencode/opencode.json`, preserves
+  unrelated providers and restrictive file permissions, and never stores the
+  literal key there. It exposes the key to the opencode subprocess environment
+  and runs opencode with `--pure` by default so unrelated extensions are disabled.
 
 Out of scope: the security of Ambient's hosted network and the opencode project.
 

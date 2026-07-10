@@ -25,6 +25,12 @@ No analytics, crash reporting, or background telemetry is sent by this plugin.
   Codex never reads or writes another install's config directory or keychain item.
 - Build resume state: `<build-dir>/.ambient-build.json`.
 - Codex plugin files: under the local plugin install/cache.
+- Agent provider metadata: `ambient-codex agent` adds or repairs the namespaced
+  `ambient-codex` provider in `~/.config/opencode/opencode.json`. It stores an
+  environment-variable reference, never the literal Ambient key, and preserves
+  other providers. Agent sessions use opencode's `--pure` mode by default.
+- Optional launcher and git-hook commands write only to the path or repository
+  the user explicitly selects and refuse to replace foreign-owned entries.
 
 ## User Responsibility
 
@@ -36,8 +42,10 @@ user data, health data, or unrelated proprietary material.
 ## Agent Boundary
 
 `ambient-codex agent` launches opencode as a separate tool and passes the Ambient key
-to that subprocess through the environment. This privacy statement covers the
-Ambient Codex plugin and CLI; opencode has its own behavior.
+to that subprocess through the environment. `--pure` disables unrelated opencode
+extensions by default, but opencode still reads the provider configuration above
+and has its own behavior. This privacy statement covers the Ambient Codex plugin
+and CLI, not opencode itself.
 
 ## Purge Commands
 
@@ -52,3 +60,8 @@ Only remove `~/.config/ambient-codex`. Another Ambient install may own
 
 Delete `.ambient-build.json` files from build directories when you no longer
 need resume state.
+
+The opencode provider entry contains no literal key and is not removed by the
+commands above. Remove the `ambient-codex` provider from
+`~/.config/opencode/opencode.json` manually if you also want to purge that
+non-secret integration metadata.

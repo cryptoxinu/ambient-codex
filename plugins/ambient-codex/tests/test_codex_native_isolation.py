@@ -85,6 +85,20 @@ class TestCodexNativeIsolation(unittest.TestCase):
         for path in docs:
             self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")), str(path))
 
+    def test_security_docs_disclose_optional_local_write_boundaries(self):
+        security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "never reads or writes anything outside",
+            security,
+        )
+        for text in (security, privacy):
+            self.assertIn("~/.config/opencode/opencode.json", text)
+            self.assertIn("`--pure`", text)
+        compact_security = re.sub(r"\s+", " ", security)
+        self.assertIn("preserves unrelated providers", compact_security)
+
     def test_docs_do_not_make_native_picker_or_zero_codex_tokens_the_default(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         compact = re.sub(r"\s+", " ", readme)
