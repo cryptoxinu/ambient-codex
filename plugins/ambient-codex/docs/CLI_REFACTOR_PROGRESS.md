@@ -60,7 +60,8 @@ bugs, verification, commits, or the next action changes.
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
-| 2D2 | Usage ledger and summary | Pending | — | — |
+| 2D2A | Usage ledger persistence | Scoped | — | Boundary pending commit |
+| 2D2B | Usage summary records/report | Pending | — | — |
 | 2D3 | Pricing and spend gates | Pending | — | — |
 | 2D4 | Fleet reservations and concurrency | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -1268,9 +1269,48 @@ Phase 2D1 implementation checkpoint:
   on a Python-only PATH with no Node. The source manifest is restored to stable
   `1.9.0`.
 
+### Phase 2D2A frozen boundary — usage ledger persistence
+
+Persistence and reporting are separate checkpoints: ledger writes coordinate
+threads/processes and recover spools, while `cmd_usage` applies catalog pricing,
+reference-price, and display policy. Moving both would couple state extraction
+to the later spend boundary.
+
+Production/test files (three; below the five-file ceiling):
+
+1. New `ambient_codex/usage_store.py` owns in-process serialization, bounded
+   per-process spooling, safe dead-owner spool merging, private ledger append,
+   permission healing, and newest-line trim persistence.
+2. `bin/ambient` retains enrichment (`usage_cost`, reference price, telemetry),
+   `USAGE_PATH`/limits/wait knobs, `_fs_lock`, `_pid_alive`, `_private_dir`, and
+   the patchable `log_usage` facade while delegating persistence explicitly.
+3. New `tests/test_refactor_phase2_usage_store.py` owns import/location,
+   facade-injection, record-byte compatibility, permission, trim, lock-timeout,
+   spool cap/merge/liveness, symlink/nonregular, failure cleanup, thread/process
+   concurrency, and malformed boundary contracts.
+
+Stable behavior: additive JSONL record format/order, full-precision enrichment,
+estimated/character telemetry markers, 0600 ledger/spools, bounded newest-line
+trim, lock-timeout spooling rather than unlocked append, own/dead spool merge,
+live/unknown spool preservation, fail-open metering, and every existing facade
+patch seam. Security hardening may refuse symlink/nonregular stores, malformed
+spool names/data, oversized lines, and partial/torn files without following or
+executing them; metering remains best effort and never blocks a model result.
+
+Research decision: GitHub repository/code search and current `filelock` and
+`portalocker` registries were reviewed as untrusted reference data. No runtime
+dependency is adopted: the existing injected `_fs_lock` already provides POSIX
+`flock` plus the tested Windows `O_EXCL` policy, while adding a lock package
+would alter the stdlib-only/no-install surface without replacing spool recovery
+or ledger-specific atomicity.
+
+Do not move usage enrichment, telemetry learning, `cmd_usage`, pricing/reference
+math, spend/fleet decisions, `_fs_lock` implementation, transport, models,
+workflows, integrations, MCP, or parser/dispatch in 2D2A. 2D2B will own bounded
+record reads and report composition only after 2D2A is independently released.
+
 ## Exact resume point
 
-1. Freeze the Phase 2D2 production/test boundary for usage ledger persistence and
-   summary records without moving pricing, fleet, transport, or workflows.
-2. Write 2D2 ownership/concurrency/corruption contracts first and observe scoped
-   RED before implementation.
+1. Commit/push this 2D2A scope boundary.
+2. Write usage-store ownership/concurrency/corruption contracts first and
+   observe scoped RED before implementation.
