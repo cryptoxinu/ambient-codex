@@ -830,13 +830,22 @@ Phase 2C2B local verification:
   precheck preserves signature/depth behavior and reduces the complete local
   signature safety class to about 0.006 seconds without relaxing any threshold.
   All 1,238 guarded tests and offline stress remain green after the follow-up.
+- A clean archive of final commit `536b345` passes recursive compile, all 1,238
+  guarded tests, and isolated installation. The stdin-only commit's GitHub run
+  `29113671444` and the final signature-optimized run `29113877023` each pass all
+  18 runtime, coverage, package, plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710181726` passes all 48 focused file/
+  stdin/signature contracts, plugin validation, offline stress (26/26), MCP
+  initialize/list/self-test/offline-control with 14 tools, and no-Node startup.
+  The source manifest is restored to `1.9.0`; source `HEAD` and `origin/main`
+  match cleanly before this closeout-only ledger update.
 
 ## Exact resume point
 
-1. Review, commit, and push the four-file Phase 2C2B implementation plus its
-   continuously updated ledger.
-2. Run clean-archive, 18-job GitHub, and cache-busted installed-plugin gates.
-3. Close 2C2B before freezing the Phase 2C3 repository-intake file boundary.
+1. Commit and push the Phase 2C2B closeout ledger.
+2. Reinspect repository walking, candidate classification, gutters, git diff,
+   and their historical safety tests; then freeze Phase 2C3 at file level.
+3. Write Phase 2C3 RED contracts before moving repository intake code.
 
 Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
 recorded.
