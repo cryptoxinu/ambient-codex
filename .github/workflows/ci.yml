@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Compile check
-        run: python -m py_compile bin/ambient mcp/ambient_mcp.py
+        run: python -m py_compile bin/ambient mcp/ambient_mcp.py ambient_codex/__init__.py
       - name: Import checks
         run: |
           python -c "import importlib.machinery as m; m.SourceFileLoader('a','bin/ambient').load_module()"
@@ -42,13 +42,33 @@ jobs:
           python-version: "3.12"
       - run: pip install ruff==0.15.2 coverage==7.15.0
       # `bin/ambient` is extensionless, so a bare `ruff check .` used to skip the whole
-      # CLI. pyproject's `extend-include` fixes that; name the paths anyway.
+      # CLI. pyproject's `extend-include` fixes that; name every runtime path anyway.
       - name: Lint
-        run: ruff check bin/ambient mcp tests
+        run: ruff check bin/ambient mcp ambient_codex tests
       - name: Runtime line coverage (80% minimum)
         run: |
           coverage run -m unittest discover -s tests -q
-          coverage report --include='bin/ambient,mcp/ambient_mcp.py' --fail-under=80
+          coverage report --include='bin/ambient,mcp/ambient_mcp.py,ambient_codex/*.py' --fail-under=80
+
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: plugins/ambient-codex
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Isolated venv install smoke
+        env:
+          AMBIENT_PACKAGING_TEST: "1"
+        run: python -m unittest tests.test_refactor_phase0.PackageInstallTests -v
 
   no-node:
     # The 1.5.x plugin booted its MCP server through a Node launcher that existed only
@@ -74,7 +94,7 @@ jobs:
         run: |
           BIN="$(mktemp -d)"
           ln -s "$(command -v python3)" "$BIN/python3"
-          env -i PATH="$BIN" sh -c 'command -v node' && { echo "node reachable"; exit 1; }
+          env -i PATH="$BIN" python3 -c 'import shutil; assert shutil.which("node") is None'
           env -i PATH="$BIN" HOME="$BIN" python3 - <<'PY'
           import json, subprocess
           cfg = json.load(open(".mcp.json"))["mcpServers"]["ambient"]

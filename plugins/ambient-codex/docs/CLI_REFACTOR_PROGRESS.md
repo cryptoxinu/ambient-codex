@@ -48,8 +48,8 @@ bugs, verification, commits, or the next action changes.
 
 | Phase | Scope | Status | Commit | Exit evidence |
 |---|---|---|---|---|
-| 0A | Package seam and install fixtures | Ready to commit | — | Local gates green |
-| 0B | CI/package gate integration | Pending | — | — |
+| 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
+| 0B | CI/package gate integration | Ready to commit | — | Local gates green; GitHub pending |
 | 1 | Pure constants and records | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -64,11 +64,11 @@ bugs, verification, commits, or the next action changes.
 - [x] Add a side-effect-free internal package marker.
 - [x] Add deterministic source/plugin package bootstrap to `bin/ambient`.
 - [x] Explicitly include only `ambient_codex` in setuptools metadata.
-- [ ] Add CI compile/lint/coverage/package-install gates for the package seam.
+- [x] Add CI compile/lint/coverage/package-install gates for the package seam.
 - [x] Make the real isolated package-install smoke pass.
 - [x] Run copied-plugin and no-Node MCP smokes.
 - [x] Run the complete unit suite and 80% coverage gate.
-- [ ] Run plugin/skill/compile/lint/archive validation.
+- [x] Run plugin/skill/compile/lint/archive validation.
 - [ ] Reinstall the cache-busted plugin and run installed MCP smoke.
 - [ ] Commit Phase 0 and require GitHub's full matrix to pass.
 
@@ -116,8 +116,10 @@ source/package behavior is green.
   validation, and skill validation pass.
 - Offline stress: 26 pass, 0 fail, 0 skip.
 - No-Node MCP starts with a Python-only PATH and lists exactly 14 tools.
-- Clean committed-archive and installed-cache checks remain pending until the
-  Phase 0A commit exists.
+- The installed-cache check remains pending; it requires the cache-busted
+  reinstall after Phase 0B is committed.
+- A clean `git archive` of `c79596d` contains the internal package and passes
+  source loading plus isolated-venv installation; no cache artifact is present.
 
 ## Findings and bugs
 
@@ -136,12 +138,18 @@ source/package behavior is green.
   fake install omitted `ambient_codex`. Phase 0A now makes the fixture mirror a
   real plugin root by copying both the executable and package. CI wiring moved to
   Phase 0B so the five-file checkpoint boundary remains explicit.
+- Phase 0B uses a dedicated Python 3.12 package matrix on Linux, macOS, and
+  Windows instead of checking package installation only on Ubuntu. The normal
+  runtime matrix still covers Python 3.8/3.10/3.12/3.13 on all three platforms.
+- The no-Node CI assertion now asks the Python-only environment whether `node`
+  is resolvable. The previous `env ... sh -c` probe could fail because `sh`
+  itself was intentionally absent, producing the right job result for the wrong
+  immediate reason before the real MCP startup check.
 
 ## Exact resume point
 
-1. Commit the green Phase 0A checkpoint with its five production/test files.
-2. Build and verify a clean archive from that commit.
-3. Add and verify the Phase 0B CI gates, then commit Phase 0B.
-4. Reinstall the cache-busted plugin and run installed MCP smoke before Phase 1.
+1. Commit the locally green Phase 0B workflow checkpoint.
+2. Require the full GitHub runtime and cross-platform package matrix to pass.
+3. Reinstall the cache-busted plugin and run installed MCP smoke before Phase 1.
 
 Do not begin Phase 1 yet.
