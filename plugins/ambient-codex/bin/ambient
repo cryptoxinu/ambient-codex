@@ -175,6 +175,7 @@ from ambient_codex.records import (  # noqa: E402
     NetworkError,
     StallError,
 )
+from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 
 try:
@@ -415,15 +416,11 @@ def secret_backend():
     """Which OS secret store is usable (C1): macOS Keychain, Linux libsecret
     (secret-tool), or None → the 0600 env-file fallback. Never fails closed like
     the old Mac-only path that silently dropped everyone else to plaintext."""
-    if sys.platform == "darwin" and shutil.which("security"):
-        return "keychain"
-    if sys.platform.startswith("linux") and shutil.which("secret-tool"):
-        return "secret-tool"
-    return None
+    return _credentials_core.secret_backend(sys.platform, shutil.which)
 
 
 def keychain_available():
-    return secret_backend() is not None
+    return _credentials_core.keychain_available(secret_backend())
 
 
 def keychain_read():
@@ -432,51 +429,17 @@ def keychain_read():
     Deliberately takes no service argument: there is no supported way to point this at
     another Ambient install's keychain item.
     """
-    service = KEYCHAIN_SERVICE
-    b = secret_backend()
-    try:
-        if b == "keychain":
-            proc = subprocess.run(
-                ["security", "find-generic-password", "-s", service,
-                 "-a", KEYCHAIN_ACCOUNT, "-w"],
-                capture_output=True, text=True, timeout=10)
-        elif b == "secret-tool":
-            proc = subprocess.run(
-                ["secret-tool", "lookup", "service", service,
-                 "account", KEYCHAIN_ACCOUNT],
-                capture_output=True, text=True, timeout=10)
-        else:
-            return None
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    key = proc.stdout.strip()
-    return key if proc.returncode == 0 and key else None
+    return _credentials_core.keychain_read(
+        secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
+    )
 
 
 def keychain_write(key):
     """Store the key in the OS secret store, passing the secret over STDIN so it
     never appears in any process's argv. Returns True on success."""
-    b = secret_backend()
-    if "\n" in key:  # a newline would break the security -i command stream
-        return False
-    try:
-        if b == "keychain":
-            if '"' in key or "\\" in key:
-                return False
-            cmd = (f'add-generic-password -U -s "{KEYCHAIN_SERVICE}" '
-                   f'-a "{KEYCHAIN_ACCOUNT}" -l "Ambient API key" -w "{key}"\n')
-            proc = subprocess.run(["security", "-i"], input=cmd,
-                                  capture_output=True, text=True, timeout=15)
-        elif b == "secret-tool":
-            proc = subprocess.run(
-                ["secret-tool", "store", "--label=Ambient API key",
-                 "service", KEYCHAIN_SERVICE, "account", KEYCHAIN_ACCOUNT],
-                input=key, capture_output=True, text=True, timeout=15)
-        else:
-            return False
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0
+    return _credentials_core.keychain_write(
+        key, secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
+    )
 
 
 def keychain_delete():
@@ -484,27 +447,16 @@ def keychain_delete():
     key is gone (deleted or was absent) and False on a real failure — a locked
     Keychain must not let `setup --remove` claim success while the key still
     resolves."""
-    b = secret_backend()
-    try:
-        if b == "keychain":
-            proc = subprocess.run(
-                ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE,
-                 "-a", KEYCHAIN_ACCOUNT], capture_output=True, text=True, timeout=10)
-            # 0 = deleted; 44 (errSecItemNotFound) = nothing stored — both fine.
-            return proc.returncode in (0, 44)
-        if b == "secret-tool":
-            proc = subprocess.run(
-                ["secret-tool", "clear", "service", KEYCHAIN_SERVICE,
-                 "account", KEYCHAIN_ACCOUNT], capture_output=True, text=True, timeout=10)
-            return proc.returncode == 0
-        return True  # no OS store in play — nothing to delete
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+    return _credentials_core.keychain_delete(
+        secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
+    )
 
 
 def shared_key_env_is_set():
     """True when the cross-install `AMBIENT_API_KEY` is exported. We IGNORE it."""
-    return bool(os.environ.get(SHARED_API_KEY_ENV))
+    return _credentials_core.shared_key_env_is_set(
+        os.environ.get(SHARED_API_KEY_ENV)
+    )
 
 
 def resolve_key_and_backend(conf):
@@ -514,15 +466,9 @@ def resolve_key_and_backend(conf):
     name, so honouring it would hand one key to all of them — the exact coupling this
     install exists to avoid. An explicit AMBIENT_KEY_BACKEND=file skips the Keychain so
     `setup --file` can't be shadowed by a stale Keychain entry."""
-    if os.environ.get(API_KEY_ENV):
-        return os.environ[API_KEY_ENV], "env"
-    if conf.get("AMBIENT_KEY_BACKEND") != "file":
-        kc = keychain_read()
-        if kc:
-            return kc, (secret_backend() or "keychain")
-    if conf.get("AMBIENT_API_KEY"):
-        return conf["AMBIENT_API_KEY"], "file"
-    return None, None
+    return _credentials_core.resolve_key_and_backend(
+        conf, os.environ.get(API_KEY_ENV), keychain_read, secret_backend
+    )
 
 
 def _is_local_host(host):

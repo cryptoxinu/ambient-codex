@@ -249,7 +249,7 @@ RED/compatibility contract:
 Purpose: move only dependency-free types that can sit directly above constants
 without changing method resolution, test patching, or runtime effects.
 
-Production/test file boundary (three files):
+Production/test file boundary (four files):
 
 1. `tests/test_refactor_phase1_records.py` — RED-first ownership, field/default,
    error-payload, side-effect, and facade-compatibility tests.
@@ -427,6 +427,9 @@ Production/test file boundary (three files):
    account, environment-key, and config inputs.
 3. `bin/ambient` — thin compatibility wrappers preserve current function names,
    constants, facade monkeypatch points, exact return values, and key precedence.
+4. `tests/test_state_isolation.py` — retarget its secret-store service/command
+   source-ownership assertion to `ambient_codex/credentials.py` while retaining
+   facade signature, cross-install refusal, and patchability coverage.
 
 Move in 2B1:
 
@@ -439,6 +442,27 @@ Explicitly defer config-file reads/writes and setup/onboarding orchestration.
 2B1 does not validate key syntax, contact Ambient, mutate config, or alter user
 messages. Existing security tests must continue proving that secrets travel over
 stdin and never process argv.
+
+## Phase 2B1 verification
+
+- RED observed: six direct internal imports errored, the import-side-effect
+  subprocess failed, and two source-ownership checks errored because
+  `ambient_codex.credentials` did not exist. The facade-only compatibility test
+  remained green, proving the failure was isolated to the planned ownership move.
+- Review-driven RED checks then proved an arbitrary backend string was treated
+  as available and malformed macOS `security -i` stream fields/carriage returns
+  were not rejected at the new internal boundary. The adapter now accepts only
+  `keychain`/`secret-tool`, requires non-empty string keys, and rejects command-
+  stream metacharacters before spawning a process. Public valid-key behavior is
+  unchanged because facade service/account values are fixed constants.
+- Pre/post comparison against `1a2eb16` proves exact facade behavior across 15
+  macOS Keychain, Linux libsecret, unsupported-platform, read/write/delete, and
+  env/keychain/file precedence scenarios.
+- All 1,163 guarded tests pass on Python 3.11, 3.12, and 3.14. Runtime coverage
+  is 82% total and `credentials.py` is 100% covered.
+- Full ruff/compile, isolated-venv installation, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
+  GitHub matrix, and installed-cache gates remain pending.
 
 ## Exact resume point
 

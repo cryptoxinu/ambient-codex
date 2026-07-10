@@ -23,6 +23,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "bin" / "ambient"
+CREDENTIALS = ROOT / "ambient_codex" / "credentials.py"
 STRESS_HARNESS = ROOT / "tools" / "stress_test.sh"
 MODEL_MATRIX = ROOT / "tools" / "model_matrix.sh"
 
@@ -496,23 +497,25 @@ class TestNoCrossInstallKeyAccess(unittest.TestCase):
         The domain is legitimate; naming it near secret-store code is not.
         """
         offenders = []
-        for lineno, line in enumerate(CLI.read_text(encoding="utf-8").split("\n"), 1):
-            low = line.lower()
-            if "ambient.xyz" not in low:
-                continue
-            if any(t in low for t in ("keychain", "secret-tool", "security",
-                                      "find-generic-password", "service")):
-                offenders.append(f"{lineno}: {line.strip()[:70]}")
+        for path in (CLI, CREDENTIALS):
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+                low = line.lower()
+                if "ambient.xyz" not in low:
+                    continue
+                if any(t in low for t in ("keychain", "secret-tool", "security",
+                                          "find-generic-password", "service")):
+                    offenders.append(f"{path.name}:{lineno}: {line.strip()[:70]}")
         self.assertEqual(offenders, [], "ambient.xyz used as a secret-store service")
 
     def test_keychain_service_is_only_ever_this_installs_item(self):
         with tempfile.TemporaryDirectory() as home:
             cli = load_cli(home)
             self.assertEqual(cli.KEYCHAIN_SERVICE, "ambient-codex")
-        source = CLI.read_text(encoding="utf-8")
-        # every `-s` service argument must be the module constant, never a literal
+        source = CREDENTIALS.read_text(encoding="utf-8")
+        # The internal adapter accepts an explicit service; the public facade
+        # exposes no service argument and always supplies KEYCHAIN_SERVICE.
         self.assertNotIn('"-s", "ambient.xyz"', source)
-        self.assertIn('"-s", KEYCHAIN_SERVICE', source)
+        self.assertIn('"-s", service', source)
 
     ALLOWED_FOREIGN_DIR_LINES = (
         'os.path.expanduser("~/.config/ambient"),',
