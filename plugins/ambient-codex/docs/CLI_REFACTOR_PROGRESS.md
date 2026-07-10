@@ -603,8 +603,9 @@ normal contention event aborted one writer and failed the batch.
 - All 1,215 guarded tests, full ruff/compile, and 20 forced portable-lock runs
   of 48 concurrent writers (960 writes total) pass locally. GitHub run
   `29112620337` also passes all 18 jobs at the preceding intake commit, including
-  Windows 3.10; a replacement matrix containing the deterministic race fix is
-  still required before installation.
+  Windows 3.10. Replacement run `29112858149`, which contains the deterministic
+  race fix, passes all 18 jobs across Linux, macOS, Windows, Python 3.8/3.10/
+  3.12/3.13, coverage, packaging, plugin, and no-Node gates.
 
 ## Phase 2C program — input, secret, and repository safety
 
@@ -740,8 +741,15 @@ Phase 2C2A local verification:
   3.14 before three additional error-branch contracts were added. The new
   `intake.py` module has 100% line coverage and total runtime coverage is 82%.
 - Full ruff/compile, isolated-venv installation, plugin/skill validators,
-  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
-  GitHub matrix, and installed-cache gates remain pending.
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass.
+- A clean archive of final commit `73e71cd` passes recursive compile, all 1,215
+  guarded tests, and isolated installation. GitHub run `29112858149` passes all
+  18 jobs, including every Windows runtime and package lane.
+- Cache-busted install `1.9.0+codex.20260710180025` passes all 36 focused intake/
+  config-write contracts, plugin validation, offline stress (26/26), MCP
+  initialize/list/self-test/offline-control with 14 tools, and no-Node startup.
+  The source manifest is restored to `1.9.0`; source `HEAD` and `origin/main`
+  match cleanly before this closeout-only ledger update.
 
 ## Phase 2C2B plan — liveness-safe stdin intake
 
@@ -765,11 +773,10 @@ input.
 
 ## Exact resume point
 
-1. Commit and push the Phase 2C1 closeout and Phase 2C2 program boundary.
-2. Write only the three-file 2C2A explicit-file RED contracts and record the
-   observed failures.
-3. Extract explicit-file intake, run local/clean-archive/CI/installed-cache
-   gates, and close 2C2A before freezing or coding 2C2B.
+1. Commit and push the Phase 2C2A closeout ledger.
+2. Reinspect historical stdin/readiness/warning tests and freeze the exact
+   three-file 2C2B exports, dependencies, error values, and facade patch points.
+3. Write the 2C2B RED contracts before moving any stdin implementation.
 
-Do not begin 2C2B until 2C2A is green, committed, pushed, installed, and
+Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
 recorded.
