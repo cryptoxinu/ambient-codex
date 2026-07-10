@@ -52,9 +52,12 @@ bugs, verification, commits, or the next action changes.
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
 | 1B | Pure record and error types | Complete | `8ec853d` | All gates green after `d7bad68` |
-| 2A | State-path validation core | Committed | `2d623f5` | Local/archive green; GitHub/install pending |
-| 2B | Config, keychain, and atomic state | Pending | — | — |
-| 2C | Secret, input, and repository safety | Pending | — | — |
+| 2A | State-path validation core | Complete | `2d623f5` | All gates green after `37afbe9` |
+| 2B | Config, keychain, and atomic state | Complete | `edaf8b1` | All gates green after `73e71cd` |
+| 2C1 | Secret detection | Complete | `b4bc6f7` | All gates green |
+| 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
+| 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
+| 2C3B-C | Repository discovery and diff | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -918,15 +921,23 @@ Phase 2C3A local verification:
   Python 3.11, 3.12, and 3.14. Pinned coverage is 83% total with
   `repository.py` at 100%; full ruff/compile, plugin/skill validators, and
   offline stress (26/26) pass before the corrective commit.
+- Corrective commit `cdde512` is pushed to `origin/main`. Its clean Git archive
+  passes recursive compile, all 1,252 guarded tests, isolated installation, and
+  direct package import/gutter behavior. Replacement GitHub run `29115745009`
+  passes all 18 jobs on exact SHA `cdde512`, including Linux/macOS/Windows,
+  Python 3.8/3.10/3.12/3.13, lint/coverage, package, plugin, and no-Node gates.
+- Cache-busted install `1.9.0+codex.20260710185426` byte-matches the source
+  repository module and passes all 14 focused contracts, plugin validation,
+  offline stress (26/26), and MCP initialize/list/self-test/offline-control with
+  14 tools on a Python-only PATH with no Node. Codex lists that cache version as
+  installed and enabled; the source manifest is restored to stable `1.9.0`.
 
 ## Exact resume point
 
-1. Run the focused and complete local suite for the cross-platform fixture
-   correction, then commit and push it as a separate test checkpoint.
-2. Require a clean-archive pass and all 18 replacement GitHub jobs before
-   cache-busting/installing Phase 2C3A.
-3. Complete installed-cache plugin, stress, MCP, and no-Node gates, record the
-   exact cache version, then freeze 2C3B at file and export level.
+1. Commit and push this Phase 2C3A closeout ledger.
+2. Freeze Phase 2C3B at file/export/behavior level before writing tests.
+3. Write only the bounded 2C3B RED contracts; do not move git diff/status capture
+   or `repo_audit_inputs`, which remain reserved for 2C3C and Phase 4.
 
-Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
-recorded.
+Do not begin 2C3B until 2C3A is green, committed, pushed, installed, and
+recorded; that gate is now satisfied.
