@@ -17,8 +17,8 @@ jobs:
       run:
         working-directory: plugins/ambient-codex
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Compile check
@@ -36,8 +36,8 @@ jobs:
       run:
         working-directory: plugins/ambient-codex
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install ruff==0.15.2 coverage==7.15.0
@@ -59,8 +59,8 @@ jobs:
       run:
         working-directory: plugins/ambient-codex
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: No Node artifacts remain
@@ -99,8 +99,8 @@ jobs:
       run:
         working-directory: plugins/ambient-codex
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Version sync
