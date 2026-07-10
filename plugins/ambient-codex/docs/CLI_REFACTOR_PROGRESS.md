@@ -57,7 +57,7 @@ bugs, verification, commits, or the next action changes.
 | 2C1 | Secret detection | Complete | `b4bc6f7` | All gates green |
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
-| 2C3B | Repository discovery and classification | Local green | — | Commit/CI/install pending |
+| 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
 | 2C3C | Repository diff/status intake | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -1028,13 +1028,24 @@ Phase 2C3B implementation checkpoint:
   MCP initialize/list/self-test/offline-control with 14 tools pass. A synthetic
   100,000-path byte/NUL Git listing parses in 0.009 seconds locally. Clean-
   archive, GitHub matrix, and installed-cache gates remain pending.
+- Checkpoint commit `ae34b98` is pushed to `origin/main`. Its clean Git archive
+  passes recursive compile, all 1,270 guarded tests, isolated installation, and
+  direct package discovery/record behavior. GitHub run `29118198336` passes all
+  18 jobs on exact SHA `ae34b98`, including Linux/macOS/Windows, Python 3.8/
+  3.10/3.12/3.13, lint/coverage, package, plugin, and no-Node gates.
+- Cache-busted install `1.9.0+codex.20260710193235` byte-matches the source
+  runtime and focused test files and passes all 32 discovery/gutter contracts,
+  plugin validation, offline stress (26/26), and MCP initialize/list/self-test/
+  offline-control with 14 tools on a Python-only PATH with no Node. Codex lists
+  that cache version as installed and enabled; the source manifest is restored
+  to stable `1.9.0`.
 
 ## Exact resume point
 
-1. Commit and push the bounded Phase 2C3B checkpoint.
-2. Require clean-archive and all 18 GitHub jobs before cache-busting/installing
-   the exact commit.
-3. Complete installed-cache gates and closeout before freezing 2C3C.
+1. Commit and push this Phase 2C3B closeout ledger.
+2. Freeze Phase 2C3C at file/export/behavior level before writing tests.
+3. Keep `repo_audit_inputs` and audit cost/partial orchestration in the facade;
+   2C3C moves only bounded diff/status capture and changed-path parsing.
 
 Do not begin 2C3B until 2C3A is green, committed, pushed, installed, and
 recorded; that gate is now satisfied.
