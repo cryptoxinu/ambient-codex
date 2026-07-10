@@ -7670,7 +7670,7 @@ def _text_has_unparsed_finding(text):
     text = _strip_illustrative(_strip_code_fences(text[:PROSE_SCAN_MAX]))
     has_loc = bool(_PROSE_BARE_FILELINE_RE.search(text)
                    or _PROSE_LINEREF_RE.search(text))
-    return bool(_PROSE_SEVERITY_HINT_RE.search(text)      # sev LABEL + file:line (1 line)
+    return bool((has_loc and _PROSE_SEVERITY_HINT_RE.search(text))  # sev LABEL + location
                 or _PROSE_FIELD_SEV_RE.search(text)       # 'Severity: <level>' field
                 or _PROSE_TABLE_ROW_RE.search(text)       # '| P0 | … |' severity cell
                 or _PROSE_XML_SEV_RE.search(text)         # '<severity>HIGH</severity>'

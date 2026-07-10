@@ -51,7 +51,7 @@ bugs, verification, commits, or the next action changes.
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
-| 1B | Pure record and error types | Committed | `8ec853d` | Local/archive green; GitHub/install pending |
+| 1B | Pure record and error types | Remediation ready | `8ec853d` | One CI perf failure fixed locally |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -291,10 +291,24 @@ RED/compatibility contract:
 - A clean archive of `8ec853d` passes all guarded tests and isolated-venv
   installation with both internal modules present.
 
+## Phase 1B CI finding
+
+- GitHub run `29106709125` passed 17 of 18 jobs. macOS Python 3.8 alone failed
+  the existing two-second prose-regex ReDoS performance assertion.
+- Profiling showed `_PROSE_SEVERITY_HINT_RE` consumed nearly all scan time on a
+  500 KB severity-only line even though the function had already computed that
+  no location existed. That pattern requires a location and therefore could
+  never match this input.
+- The pattern now runs only when the existing `has_loc` precheck is true. This
+  preserves finding semantics and reduces the adversarial local case from about
+  0.52 seconds to 0.035 seconds without increasing the test threshold.
+- All 68 prose-recovery tests and the complete guarded suite pass after the fix
+  on Python 3.11, 3.12, and 3.14.
+
 ## Exact resume point
 
-1. Push Phase 1B and require the full GitHub matrix to pass.
-2. Reinstall and verify the cache-busted installed plugin.
-3. Mark Phase 1 complete and scope Phase 2 before moving any stateful behavior.
+1. Commit and push the ReDoS performance fix and this finding.
+2. Require the replacement full GitHub matrix to pass.
+3. Reinstall and verify the cache-busted installed plugin, then close Phase 1.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
