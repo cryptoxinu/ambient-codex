@@ -374,4 +374,3 @@ __all__ = (
     "line_has_secret",
     "secret_hits",
 )
-
