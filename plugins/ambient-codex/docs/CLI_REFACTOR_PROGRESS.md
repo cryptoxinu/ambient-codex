@@ -49,7 +49,7 @@ bugs, verification, commits, or the next action changes.
 | Phase | Scope | Status | Commit | Exit evidence |
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
-| 0B | CI/package gate integration | Committed | `4c8e31f` | Local gates green; GitHub pending |
+| 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1 | Pure constants and records | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -69,8 +69,8 @@ bugs, verification, commits, or the next action changes.
 - [x] Run copied-plugin and no-Node MCP smokes.
 - [x] Run the complete unit suite and 80% coverage gate.
 - [x] Run plugin/skill/compile/lint/archive validation.
-- [ ] Reinstall the cache-busted plugin and run installed MCP smoke.
-- [ ] Commit Phase 0 and require GitHub's full matrix to pass.
+- [x] Reinstall the cache-busted plugin and run installed MCP smoke.
+- [x] Commit Phase 0 and require GitHub's full matrix to pass.
 
 ## Current implementation boundary
 
@@ -120,6 +120,14 @@ source/package behavior is green.
   reinstall after Phase 0B is committed.
 - A clean `git archive` of `c79596d` contains the internal package and passes
   source loading plus isolated-venv installation; no cache artifact is present.
+- GitHub Actions run `29104722339` passed all 18 jobs: 12 runtime OS/Python
+  combinations, three cross-platform package installs, lint/81% coverage,
+  plugin validation, and no-Node MCP startup.
+- Cache-busted install `1.9.0+codex.20260710154546` contains the package and
+  passes plugin validation, CLI version/control, MCP initialize/list/self-test/
+  control with 14 tools, and installed MCP startup on a Python-only PATH.
+- The source manifest was restored to release version `1.9.0` after reinstall;
+  the source tree remained clean and matched `origin/main`.
 
 ## Findings and bugs
 
@@ -148,8 +156,10 @@ source/package behavior is green.
 
 ## Exact resume point
 
-1. Push the committed Phase 0 checkpoints and require the full GitHub runtime
-   and cross-platform package matrix to pass.
-2. Reinstall the cache-busted plugin and run installed MCP smoke before Phase 1.
+1. Define the Phase 1 file-level checkpoint (maximum five production/test
+   files) for pure constants/records only.
+2. Write RED characterization/compatibility tests before moving any symbol.
+3. Extract one acyclic pure boundary, retain facade re-exports, and run the full
+   Phase 0 gate set before committing.
 
-Do not begin Phase 1 yet.
+Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
