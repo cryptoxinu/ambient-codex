@@ -51,8 +51,11 @@ bugs, verification, commits, or the next action changes.
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
-| 1B | Pure record and error types | Remediation ready | `8ec853d` | One CI perf failure fixed locally |
-| 2 | State, safety, and spend boundaries | Pending | — | — |
+| 1B | Pure record and error types | Complete | `8ec853d` | All gates green after `d7bad68` |
+| 2A | State-path validation core | Planning | — | — |
+| 2B | Config, keychain, and atomic state | Pending | — | — |
+| 2C | Secret, input, and repository safety | Pending | — | — |
+| 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
@@ -304,11 +307,58 @@ RED/compatibility contract:
   0.52 seconds to 0.035 seconds without increasing the test threshold.
 - All 68 prose-recovery tests and the complete guarded suite pass after the fix
   on Python 3.11, 3.12, and 3.14.
+- Replacement GitHub run `29106971726` passed all 18 jobs, including macOS
+  Python 3.8 and the unchanged two-second ReDoS assertion.
+- Cache-busted install `1.9.0+codex.20260710162209` passes record/facade class
+  identity, adversarial prose timing (0.055 seconds locally), plugin validation,
+  MCP initialize/list/self-test with 14 tools, and no-Node startup.
+- The source manifest was restored to `1.9.0`; source `HEAD` and `origin/main`
+  matched with a clean worktree after installed-cache verification.
+
+## Phase 2 program — state, safety, and spend
+
+Phase 2 is split so each effect boundary can be reviewed and reverted on its own:
+
+- 2A: extract pure path normalization/containment/state-root checks behind
+  facade wrappers that preserve `SystemExit` text and patchable dependencies.
+- 2B: extract config/keychain/state persistence behind explicit filesystem and
+  subprocess adapters; preserve ownership, permissions, and atomic writes.
+- 2C: extract secret scanning, bounded readers, build-path validation, and
+  repository intake safety without moving audit orchestration.
+- 2D: extract usage/cache/spend/fleet persistence and locking; preserve pricing,
+  reservation, concurrent-write, and receipt contracts.
+
+No Phase 2 checkpoint may import transport, models, map/reduce, audit,
+generation, integration, or CLI modules.
+
+## Phase 2A plan — state-path validation core
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_state_paths.py` — RED-first normalization,
+   symlink/drive containment, foreign-root, error-text, side-effect, and facade
+   patchability contracts.
+2. `ambient_codex/state.py` — pure path/root validation functions accepting
+   roots, marker, and environment-name values explicitly; imports only `os`.
+3. `bin/ambient` — thin compatibility wrappers retain facade globals and map a
+   returned validation error to the existing `sys.exit` behavior.
+
+Move in 2A:
+
+- `_resolve` and `_is_within` implementation.
+- Foreign-root selection over an explicitly supplied immutable root sequence.
+- Existing-config/ownership-marker validation and exact user-facing errors.
+
+Explicitly defer all environment reads, directory/file creation, keychain work,
+config parsing/writes, permissions, locks, mutable paths, and purge behavior to
+2B. The internal state module performs no I/O beyond read-only path/existence
+queries supplied by the standard `os` module.
 
 ## Exact resume point
 
-1. Commit and push the ReDoS performance fix and this finding.
-2. Require the replacement full GitHub matrix to pass.
-3. Reinstall and verify the cache-busted installed plugin, then close Phase 1.
+1. Commit the Phase 1 closure and Phase 2A written plan.
+2. Write and run state-path ownership/equivalence tests RED.
+3. Extract the pure validation core behind facade wrappers and repeat every
+   Phase 1 gate before committing.
 
-Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
+Do not begin Phase 2B until 2A is green, committed, pushed, installed, and recorded.
