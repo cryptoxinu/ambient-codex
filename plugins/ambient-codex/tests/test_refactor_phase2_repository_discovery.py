@@ -18,8 +18,11 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
 MOVED_NAMES = (
     "RepositorySkips",
+    "GitDiffSnapshot",
+    "GitDiffFailure",
     "candidate_paths",
     "classify_repository_files",
+    "capture_git_diff",
     "with_line_gutters",
     "guttered_file_size",
 )
@@ -76,18 +79,19 @@ class CandidatePathTests(unittest.TestCase):
 
         self.assertEqual(paths, ("src/a.py", "space name.py"))
         self.assertTrue(used_git)
+        self.assertEqual(len(calls), 1)
+        command, kwargs = calls[0]
         self.assertEqual(
-            calls,
+            command,
             [
-                (
-                    [
-                        "git", "-C", "/repo", "ls-files", "-z",
-                        "--cached", "--others", "--exclude-standard",
-                    ],
-                    {"capture_output": True, "timeout": 30},
-                )
+                "git", "-c", "core.fsmonitor=false", "--no-pager", "-C",
+                "/repo", "ls-files", "-z", "--cached", "--others",
+                "--exclude-standard",
             ],
         )
+        self.assertTrue(kwargs["capture_output"])
+        self.assertEqual(kwargs["timeout"], 30)
+        self.assertEqual(kwargs["env"]["GIT_PAGER"], "")
 
     @unittest.skipIf(os.name == "nt", "arbitrary filename bytes are POSIX-only")
     def test_git_lane_preserves_non_utf8_posix_filename_bytes(self):
@@ -527,6 +531,7 @@ class RepositoryImportAndFacadeTests(unittest.TestCase):
                 facade.subprocess.run,
                 facade.subprocess.TimeoutExpired,
                 facade.REPO_SKIP_DIRS,
+                popen=facade.subprocess.Popen,
             )
 
             skipped = facade._repository_core.RepositorySkips(
@@ -564,6 +569,28 @@ class RepositoryImportAndFacadeTests(unittest.TestCase):
                 facade.REPO_FILE_MAX_BYTES,
                 facade.REPO_SKIP_DIRS,
                 facade.REPO_LOCKFILES,
+            )
+
+    def test_facade_keeps_legacy_run_only_subprocess_double_compatible(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            subprocess_double = types.SimpleNamespace(
+                run=mock.Mock(), TimeoutExpired=subprocess.TimeoutExpired,
+            )
+            with mock.patch.object(facade, "subprocess", subprocess_double), \
+                    mock.patch.object(
+                        facade._repository_core,
+                        "candidate_paths",
+                        return_value=((), False),
+                    ) as candidates:
+                self.assertEqual(facade._repo_candidate_paths("/repo"), ([], False))
+
+            candidates.assert_called_once_with(
+                "/repo",
+                subprocess_double.run,
+                subprocess_double.TimeoutExpired,
+                facade.REPO_SKIP_DIRS,
+                popen=None,
             )
 
 

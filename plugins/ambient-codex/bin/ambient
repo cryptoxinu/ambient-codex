@@ -7280,6 +7280,7 @@ def _repo_candidate_paths(root):
         subprocess.run,
         subprocess.TimeoutExpired,
         REPO_SKIP_DIRS,
+        popen=getattr(subprocess, "Popen", None),
     )
     return list(paths), used_git
 
@@ -7572,49 +7573,54 @@ def git_diff_inputs(staged, ref):
     """Build audit inputs from a git diff PLUS the full current content of each
     changed file — a diff-only audit misses bugs that depend on unchanged
     code. Returns (labeled, diff_text) or exits cleanly outside a repo."""
-    def git(*a):
-        return subprocess.run(["git", *a], capture_output=True, text=True, timeout=30)
-    inside = git("rev-parse", "--is-inside-work-tree")
-    if inside.returncode != 0 or inside.stdout.strip() != "true":
-        _fail_exit(None, "audit", "usage",
-                   "--staged/--diff must run inside a git repository.",
-                   exit_code=EXIT_USAGE)
-    diff_args = (["diff", "--cached"] if staged else ["diff", ref])
-    name_args = diff_args + ["--name-only"]
-    proc = git(*diff_args)
-    if proc.returncode != 0:
-        # A bad ref must not masquerade as "no changes".
-        _fail_exit(None, "audit", "input",
-                   f"git diff failed: {proc.stderr.strip()[:300]}")
-    diff = proc.stdout
-    if not diff.strip():
-        _fail_exit(None, "audit", "usage", "no changes to audit (empty diff).",
-                   exit_code=EXIT_USAGE)
-    # git emits repo-root-relative paths; resolve them against the toplevel so
-    # the audit reads full file content from ANY subdirectory. Probing the raw
-    # (CWD-relative) path silently dropped every changed file when run outside
-    # the repo root, degrading the audit to diff-text-only with no warning.
-    root = git("rev-parse", "--show-toplevel").stdout.strip()
-    real_root = os.path.realpath(root) if root else None
-    labeled = [("DIFF (git)", diff)]
-    for path in git(*name_args).stdout.splitlines():
-        path = path.strip()
-        if not path:
-            continue
-        full = os.path.join(root, path) if root else path
-        # Defense-in-depth: never read outside the repo root, even if git ever
-        # emits an absolute or ..-traversing path from an unusual/malicious tree.
-        if real_root is not None:
-            real_full = os.path.realpath(full)
-            if not _within_root(real_full, real_root):   # M9: correct at root '/'
-                print(f"ambient: skipping {path} (outside repo root)",
-                      file=sys.stderr)
-                continue
-        # read_files does its own lstat/S_ISREG/binary/empty guards (incl. the
-        # symlink block); keep the repo-relative label on the finding output.
-        for _p, text in read_files([full]):
-            labeled.extend(with_line_gutters([(path, text)]))
-    return labeled
+    snapshot, failure = _repository_core.capture_git_diff(
+        staged,
+        ref,
+        subprocess.Popen,
+        subprocess.TimeoutExpired,
+        ABS_MAX_CHARS,
+    )
+    if failure is not None:
+        if failure.usage:
+            _fail_exit(
+                None, "audit", failure.category, failure.message,
+                exit_code=EXIT_USAGE,
+            )
+        _fail_exit(None, "audit", failure.category, failure.message)
+    for path in snapshot.omitted_paths:
+        shown = path if all(char.isprintable() for char in path) else ascii(path)
+        print(f"ambient: skipping {shown} (outside repo root)", file=sys.stderr)
+    if len(snapshot.diff_text) > ABS_MAX_CHARS:
+        _fail_exit(
+            None, "audit", "input",
+            f"git diff exceeds the {ABS_MAX_CHARS:,}-character input ceiling; "
+            "narrow the revision range.",
+        )
+    remaining = max(1, ABS_MAX_CHARS - len(snapshot.diff_text))
+    full_paths = tuple(full for _label, full in snapshot.changed_files)
+    chunks, warnings, overflow_path = _intake_core.read_files(full_paths, remaining)
+    for warning in warnings:
+        print(sanitize(f"ambient: {warning}"), file=sys.stderr)
+    if overflow_path is not None:
+        shown_path = sanitize(overflow_path)
+        _fail_exit(
+            None, "audit", "input",
+            f"git diff plus changed-file context exceeds the "
+            f"{ABS_MAX_CHARS:,}-character input ceiling at {shown_path}; "
+            "narrow the revision range or audit files separately.",
+        )
+    labels = {full: label for label, full in snapshot.changed_files}
+    pairs = tuple((labels.get(path, path), text) for path, text in chunks)
+    guttered = _repository_core.with_line_gutters(pairs)
+    total = len(snapshot.diff_text) + sum(len(text) for _label, text in guttered)
+    if total > ABS_MAX_CHARS:
+        _fail_exit(
+            None, "audit", "input",
+            f"git diff plus line-numbered changed files exceeds the "
+            f"{ABS_MAX_CHARS:,}-character input ceiling; narrow the revision "
+            "range or audit files separately.",
+        )
+    return [("DIFF (git)", snapshot.diff_text), *guttered]
 
 
 # --------------------------------------------------------------------------

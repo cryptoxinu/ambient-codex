@@ -18,8 +18,11 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
 MOVED_NAMES = (
     "RepositorySkips",
+    "GitDiffSnapshot",
+    "GitDiffFailure",
     "candidate_paths",
     "classify_repository_files",
+    "capture_git_diff",
     "with_line_gutters",
     "guttered_file_size",
 )

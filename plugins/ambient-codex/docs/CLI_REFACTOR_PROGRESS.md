@@ -58,7 +58,7 @@ bugs, verification, commits, or the next action changes.
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
-| 2C3C | Repository diff/status intake | Planned | — | Boundary frozen below |
+| 2C3C | Repository diff/status intake | Local green | — | Full gates pending |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -1106,9 +1106,70 @@ Research decision: GitHub code/repository metadata and current `subprocess-tee`,
 the runtime remains Python 3.8+, stdlib-only, no-Node, and installable from
 source/plugin cache/pipx without dependency or API drift.
 
+Phase 2C3C RED observed: the 46 focused diff/discovery/gutter contracts fail
+with three export-ownership failures and 23 missing record/capture/facade API
+errors because `GitDiffSnapshot`, `GitDiffFailure`, `capture_git_diff`, and the
+new facade composition do not exist. Existing repository import purity and all
+unchanged 2C3A/2C3B behavior stay green, confining RED to the frozen seam.
+
+Phase 2C3C implementation checkpoint:
+
+- The 763-line repository module owns three new immutable exports while every
+  production function remains below 50 lines. Git stdout/stderr are drained
+  concurrently as bytes, capped independently, and terminated with a one-second
+  kill escalation on overflow/timeout; malformed pipes and every launch/read/
+  wait state return explicit failures.
+- Staged and revision diff commands are option-terminated, revision values are
+  validated, changed paths use NUL framing/filesystem decoding, all four Git
+  command results are checked, and snapshot path/omission data is immutable.
+- The facade reads changed files once under the remaining aggregate character
+  budget, adds exact line gutters, and refuses post-gutter overflow before any
+  catalog/API/spend work. Stable staged-diff output from a subdirectory matches
+  boundary commit `6a10ce3` exactly for patch text, labels, and full-file text.
+- Real Git integrations cover staged/subdirectory, Unicode/space/newline paths,
+  `--diff HEAD`, and forced 512-byte overflow. A child that ignores termination
+  is killed and returns no partial snapshot.
+
+### Critical Git helper/environment security fix
+
+Security review found that the historical plain `git diff` could honor
+repository `diff.external`/textconv helpers while inheriting Ambient and other
+token environment variables. A POSIX adversarial repo deterministically
+executed its configured helper and suppressed the real patch, proving the issue.
+
+- Every diff/path command now uses `--no-ext-diff`, `--no-textconv`,
+  `core.fsmonitor=false`, and `--no-pager`; changed-path and candidate commands
+  run through bounded capture where the facade invokes them.
+- Child Git environments remove Ambient/shared keys, token/secret/password/
+  credential/auth variables, `GIT_EXTERNAL_DIFF`, and Git config-injection
+  variables case-insensitively for Windows parity; pagers are disabled and
+  system attributes are ignored.
+- The hostile external/textconv fixture no longer executes, secret-environment
+  contracts pass, and all source runtime Git call sites were reviewed. The one
+  remaining direct call is hook-directory `rev-parse`, which cannot invoke
+  diff/textconv/fsmonitor helpers and remains scoped to the later integrations
+  phase.
+- The full suites exposed one compatibility regression in legacy tests that
+  inject a `run`-only subprocess double. The production facade still selects
+  bounded `Popen`; injected doubles without `Popen` now retain the historical
+  runner seam. Its focused regression failed before the fix and passes after.
+- Mixed/lowercase Git helper/config environment names now have an explicit
+  RED/GREEN contract, closing the Windows case-insensitive bypass before commit.
+- Changed-file intake warnings and overflow paths are terminal-sanitized; an
+  adversarial ANSI filename/warning contract failed before the fix and passes.
+- All 52 focused diff/discovery/gutter contracts and all 1,290 guarded tests pass
+  on Python 3.11, 3.12, and 3.14. Pinned runtime coverage is 84% total and 92%
+  for `repository.py`; full ruff, recursive compile, plugin/skill validators,
+  version/manifests/hooks, offline stress (26/26), and no-Node MCP startup with
+  14 tools pass. The new test file is 790 lines and `repository.py` is 763 lines,
+  both below the 800-line ceiling.
+- A synthetic 100,000-path byte/NUL listing parses in 0.010 seconds, and a real
+  staged 2 MB diff is terminated/refused at a 1 MB byte ceiling in 0.025 seconds.
+  Exact pre/post stable staged-diff behavior remains green.
+
 ## Exact resume point
 
-1. Commit and push the exact Phase 2C3C boundary above.
-2. Write only the five-file RED contract surface and record the failures.
-3. Implement minimum GREEN, compare stable pre/post behavior against this
-   boundary, then require local/archive/CI/installed gates before Phase 2D.
+1. Commit/push the locally green checkpoint, then require clean-archive and all
+   18 GitHub jobs
+   before cache-busting/installing the exact commit.
+2. Complete installed-cache gates and closeout before Phase 2D.
