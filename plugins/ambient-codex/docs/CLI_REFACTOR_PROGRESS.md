@@ -249,7 +249,7 @@ RED/compatibility contract:
 Purpose: move only dependency-free types that can sit directly above constants
 without changing method resolution, test patching, or runtime effects.
 
-Production/test file boundary (four files):
+Production/test file boundary (three files):
 
 1. `tests/test_refactor_phase1_records.py` — RED-first ownership, field/default,
    error-payload, side-effect, and facade-compatibility tests.
@@ -417,7 +417,7 @@ tests and integrations patch facade globals.
 
 ## Phase 2B1 plan — credential boundary
 
-Production/test file boundary (three files):
+Production/test file boundary (four files):
 
 1. `tests/test_refactor_phase2_credentials.py` — RED-first ownership, backend
    routing, argv/stdin secret safety, timeout/failure, delete, precedence,
@@ -461,14 +461,46 @@ stdin and never process argv.
 - All 1,163 guarded tests pass on Python 3.11, 3.12, and 3.14. Runtime coverage
   is 82% total and `credentials.py` is 100% covered.
 - Full ruff/compile, isolated-venv installation, plugin/skill validators,
-  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
-  GitHub matrix, and installed-cache gates remain pending.
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass.
+- A clean archive of commit `6945b87` passes recursive compile, all 1,163
+  guarded tests, and isolated installation. GitHub run `29109055056` passes all
+  18 runtime, package, quality, plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710165823` passes credential module
+  ownership, facade signature/patchability, malformed command-stream refusal,
+  namespaced-key precedence, plugin validation, MCP initialize/list/self-test/
+  offline-control with 14 tools, and no-Node startup. The source manifest is
+  restored to `1.9.0`; source `HEAD` and `origin/main` match cleanly.
+
+## Phase 2B2 plan — safe config reads
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_config_read.py` — RED-first parser, duplicate,
+   file-type, ownership, POSIX permission-heal, Windows no-op, invalid UTF-8,
+   read-error, import-side-effect, and facade-path/stream contracts.
+2. `ambient_codex/config_store.py` — defensive env-line parsing plus config
+   reads over an explicit path, launcher name, stderr stream, and platform
+   name; standard-library filesystem calls occur only when invoked.
+3. `bin/ambient` — a thin `read_config_file()` wrapper supplies patchable
+   `CONFIG_PATH`, `LAUNCHER_NAME`, `sys.stderr`, and `os.name` values.
+
+Move in 2B2:
+
+- Env-line parsing semantics: trim whitespace, ignore comments/bare lines,
+  split on the first `=`, trim key/value, and keep the last duplicate.
+- Existing `lstat` regular-file and POSIX owner checks, owner-only permission
+  healing/reporting, UTF-8 corruption fallback, and read-error diagnostics.
+
+Explicitly defer all directory creation, state marker writes, locks, temp files,
+fsync/replace, and config mutation to 2B3. The facade retains a zero-argument,
+independently patchable `read_config_file` binding, and all user-facing messages
+must remain byte-equivalent for existing inputs.
 
 ## Exact resume point
 
-1. Commit and push the Phase 2A closeout/Phase 2B1 boundary ledger.
-2. Write the 2B1 credential contract tests and record the expected RED failure.
-3. Implement only the three-file 2B1 boundary, then run local, clean-archive,
-   GitHub, and installed-cache gates before planning 2B2 in file-level detail.
+1. Commit and push the Phase 2B1 closeout/Phase 2B2 boundary ledger.
+2. Write the three-file 2B2 config-read contract tests and record expected RED.
+3. Implement only parsing/read behavior; complete local, clean-archive, GitHub,
+   and installed-cache gates before planning 2B3 in file-level detail.
 
-Do not begin 2B2 until 2B1 is green, committed, pushed, installed, and recorded.
+Do not begin 2B3 until 2B2 is green, committed, pushed, installed, and recorded.
