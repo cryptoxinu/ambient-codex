@@ -49,7 +49,7 @@ bugs, verification, commits, or the next action changes.
 | Phase | Scope | Status | Commit | Exit evidence |
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
-| 0B | CI/package gate integration | Ready to commit | — | Local gates green; GitHub pending |
+| 0B | CI/package gate integration | Committed | `4c8e31f` | Local gates green; GitHub pending |
 | 1 | Pure constants and records | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -148,8 +148,8 @@ source/package behavior is green.
 
 ## Exact resume point
 
-1. Commit the locally green Phase 0B workflow checkpoint.
-2. Require the full GitHub runtime and cross-platform package matrix to pass.
-3. Reinstall the cache-busted plugin and run installed MCP smoke before Phase 1.
+1. Push the committed Phase 0 checkpoints and require the full GitHub runtime
+   and cross-platform package matrix to pass.
+2. Reinstall the cache-busted plugin and run installed MCP smoke before Phase 1.
 
 Do not begin Phase 1 yet.
