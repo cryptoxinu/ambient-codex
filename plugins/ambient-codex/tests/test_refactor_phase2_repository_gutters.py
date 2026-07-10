@@ -84,7 +84,7 @@ class GutteredSizeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             ascii_path = Path(td) / "hundred.py"
             ascii_text = "\n".join("x" for _ in range(100))
-            ascii_path.write_text(ascii_text, encoding="utf-8")
+            ascii_path.write_bytes(ascii_text.encode("utf-8"))
             self.assertEqual(
                 repository.guttered_file_size(
                     str(ascii_path), ascii_path.stat().st_size
@@ -103,6 +103,19 @@ class GutteredSizeTests(unittest.TestCase):
             )[0][1])
 
         self.assertGreaterEqual(estimate, actual)
+
+    def test_crlf_size_matches_preserved_repository_text(self):
+        repository = importlib.import_module("ambient_codex.repository")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "windows.py"
+            raw = b"one\r\ntwo\r\n"
+            text = raw.decode("utf-8")
+            path.write_bytes(raw)
+
+            estimate = repository.guttered_file_size(str(path), len(raw))
+            actual = len(repository.with_line_gutters((("windows.py", text),))[0][1])
+
+        self.assertEqual(estimate, actual)
 
     def test_missing_directory_and_symlink_fall_back_to_snapshot_size(self):
         repository = importlib.import_module("ambient_codex.repository")

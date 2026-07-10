@@ -900,12 +900,33 @@ Phase 2C3A local verification:
   and no-Node MCP startup (14 tools) pass. Clean-archive, GitHub matrix, and
   installed-cache gates remain pending.
 
+### Phase 2C3A Windows fixture follow-up
+
+- Checkpoint commit `09b03b1` passed every Linux/macOS runtime, package, lint,
+  coverage, plugin, and no-Node job in GitHub run `29115188845`; all four
+  Windows runtime jobs failed the same three-digit-width fixture assertion.
+- The fixture used `Path.write_text()` to create an LF-only in-memory string.
+  Windows translated those writes to CRLF, so the file snapshot and descriptor
+  correctly contained 99 additional carriage returns while the expected value
+  still measured the original LF-only string. The production repository reader
+  uses `newline=""` and preserves CRLF, so the raw-byte estimate remains exact
+  for the text actually sent; changing runtime accounting would undercount it.
+- The fixture now writes explicit LF bytes, and a separate explicit-CRLF
+  contract proves preserved Windows-style text is also estimated exactly. No
+  production behavior changes in this corrective checkpoint.
+- All 14 focused gutter contracts and all 1,252 guarded tests pass locally on
+  Python 3.11, 3.12, and 3.14. Pinned coverage is 83% total with
+  `repository.py` at 100%; full ruff/compile, plugin/skill validators, and
+  offline stress (26/26) pass before the corrective commit.
+
 ## Exact resume point
 
-1. Commit and push the Phase 2C3 program and exact 2C3A boundary.
-2. Write only the three-file gutter/size RED contracts and record the failures.
-3. Complete 2C3A local/archive/CI/installed gates before freezing 2C3B at file
-   and export level.
+1. Run the focused and complete local suite for the cross-platform fixture
+   correction, then commit and push it as a separate test checkpoint.
+2. Require a clean-archive pass and all 18 replacement GitHub jobs before
+   cache-busting/installing Phase 2C3A.
+3. Complete installed-cache plugin, stress, MCP, and no-Node gates, record the
+   exact cache version, then freeze 2C3B at file and export level.
 
 Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
 recorded.
