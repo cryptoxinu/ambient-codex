@@ -175,6 +175,7 @@ from ambient_codex.records import (  # noqa: E402
     StallError,
 )
 from ambient_codex import config_store as _config_store  # noqa: E402
+from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
@@ -3161,65 +3162,19 @@ def _cache_key(model, system, chunk, max_tokens, temperature,
  namespaces otherwise-identical calls — each --best-of sample
     index gets its OWN cache entry so re-runs resume per sample; salt=None is
     byte-identical to the pre-salt key."""
-    h = hashlib.sha256()
-    h.update(f"{model}\0{max_tokens}\0{temperature}\0".encode())
-    h.update(json.dumps(response_format, sort_keys=True).encode())
-    h.update(b"\0")
-    h.update(system.encode("utf-8", "replace"))
-    h.update(b"\0")
-    h.update(chunk.encode("utf-8", "replace"))
-    if salt is not None:
-        h.update(f"\0salt:{salt}".encode())
-    return h.hexdigest()
+    return _cache_store.cache_key(
+        model, system, chunk, max_tokens, temperature, response_format, salt
+    )
 
 
 def _cache_get(key, ttl):
-    path = os.path.join(CACHE_DIR, key + ".json")
-    try:
-        if ttl and time.time() - os.stat(path).st_mtime > ttl:
-            return None
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh).get("text")
-    except (OSError, json.JSONDecodeError):
-        return None
+    return _cache_store.cache_get(CACHE_DIR, key, ttl)
 
 
 def _cache_put(key, text):
-    try:
-        _private_dir(CACHE_DIR)
-        entries = os.listdir(CACHE_DIR)
-        if len(entries) > CACHE_MAX_FILES:  # prune oldest ~10%
-            def _mtime(p):
-                # A sibling process can delete p between exists() and stat();
-                # swallow the race so one FileNotFoundError inside sorted()
-                # can't abort the whole _cache_put and drop this new entry.
-                try:
-                    return os.stat(p).st_mtime
-                except OSError:
-                    return 0.0
-            paths = sorted(
-                (os.path.join(CACHE_DIR, e) for e in entries),
-                key=_mtime)
-            for p in paths[:len(paths) // 10 + 1]:
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
-        # mkstemp: unique name (two processes caching the same key can't tear
-        # one shared tmp inode) and 0600 (entries quote the
-        # user's code — owner-only like the env file).
-        fd, tmp = tempfile.mkstemp(dir=CACHE_DIR, prefix=".tmp-")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"text": text, "ts": int(time.time())}, fh)
-            os.replace(tmp, os.path.join(CACHE_DIR, key + ".json"))
-        except OSError:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-    except OSError:
-        pass
+    _cache_store.cache_put(
+        CACHE_DIR, key, text, CACHE_MAX_FILES, _private_dir
+    )
 
 
 _USAGE_LOCK = threading.Lock()  # serialize the read-rewrite trim across chunk workers

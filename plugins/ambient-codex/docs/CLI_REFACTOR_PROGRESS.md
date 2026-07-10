@@ -1229,8 +1229,38 @@ Do not move `cmd_cache`, usage/telemetry state, pricing, spend/fleet gates,
 transport retries, models, workflows, integrations, MCP, or parser/dispatch in
 2D1.
 
+Phase 2D1 RED observed: all 13 initial cache contracts fail with 12 missing
+module/adapter errors and one import failure; no unrelated contract fails.
+
+Phase 2D1 implementation checkpoint:
+
+- The 191-line `cache_store.py` module owns stable content addresses, bounded
+  descriptor-based reads, validated cache-local keys, string/object JSON
+  validation, private same-directory atomic writes, deterministic approximate
+  pruning, and best-effort cleanup. The facade preserves all three historical
+  `_cache_*` signatures and runtime-patchable `CACHE_DIR`/limit/private-dir seam.
+- Security hardening turns traversal/absolute/separator keys, symlinks,
+  directories, oversized entries, malformed/non-object/non-string/deep JSON,
+  and invalid write payloads into disposable misses rather than outside-root
+  reads, unbounded loads, crashes, or writes.
+- Two explicit RED/GREEN resource tests found descriptor leaks when `fstat` or
+  `fdopen` failed after a successful open. Both paths now close exactly once;
+  temp files are also removed after replace failure.
+- Final cross-version stress found Python 3.11 raises `RecursionError` for a
+  deeply nested bounded JSON entry where newer decoders return a normal parse
+  failure. The 3.11 contract failed before the fix; deep cache JSON now becomes
+  a miss consistently on every supported runtime.
+- Stable SHA-256 key fixtures include response-format and best-of salt behavior;
+  0600 entry/0700 directory modes, TTL, pruning races, concurrent same-key
+  readers/writers, import purity, and facade call composition pass.
+- All 15 focused cache contracts, 66 combined cache/repository contracts, and
+  all 1,305 guarded tests pass on Python 3.11, 3.12, and 3.14. Pinned coverage
+  is 84% total and 84% for `cache_store.py`; full ruff/compile, plugin/skill
+  validators, offline stress (26/26), and no-Node MCP startup with 14 tools pass.
+  Clean-archive, GitHub matrix, and installed-cache gates remain pending.
+
 ## Exact resume point
 
-1. Commit/push this 2D1 scope boundary.
-2. Write the new cache ownership/security/stability contracts and observe scoped
-   RED before implementing the cache module and thin facade adapters.
+1. Run the final exact-worktree gates, then commit/push Phase 2D1.
+2. Require clean archive, all 18 GitHub jobs, and installed-cache verification
+   before closing 2D1 and freezing the 2D2 usage-ledger boundary.
