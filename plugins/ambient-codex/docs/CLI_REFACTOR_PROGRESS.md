@@ -59,7 +59,7 @@ bugs, verification, commits, or the next action changes.
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
-| 2D1 | Cache state | Scoped | — | Boundary pending commit |
+| 2D1 | Cache state | Complete | `0b12b10` | All gates green |
 | 2D2 | Usage ledger and summary | Pending | — | — |
 | 2D3 | Pricing and spend gates | Pending | — | — |
 | 2D4 | Fleet reservations and concurrency | Pending | — | — |
@@ -1257,10 +1257,20 @@ Phase 2D1 implementation checkpoint:
   all 1,305 guarded tests pass on Python 3.11, 3.12, and 3.14. Pinned coverage
   is 84% total and 84% for `cache_store.py`; full ruff/compile, plugin/skill
   validators, offline stress (26/26), and no-Node MCP startup with 14 tools pass.
-  Clean-archive, GitHub matrix, and installed-cache gates remain pending.
+- Checkpoint commit `0b12b10` is pushed to `origin/main`. Its clean Git archive
+  passes recursive compile, all 1,305 guarded tests, and a real isolated-venv
+  package install. GitHub run `29121317434` passes all 18 jobs on the exact SHA,
+  including Linux/macOS/Windows, Python 3.8/3.10/3.12/3.13, lint/coverage,
+  package, plugin, and no-Node gates.
+- Cache-busted install `1.9.0+codex.20260710202712` byte-matches source cache
+  runtime/tests and passes all 15 focused contracts, both validators, offline
+  stress (26/26), and MCP initialize/list/self-test/offline-control with 14 tools
+  on a Python-only PATH with no Node. The source manifest is restored to stable
+  `1.9.0`.
 
 ## Exact resume point
 
-1. Run the final exact-worktree gates, then commit/push Phase 2D1.
-2. Require clean archive, all 18 GitHub jobs, and installed-cache verification
-   before closing 2D1 and freezing the 2D2 usage-ledger boundary.
+1. Freeze the Phase 2D2 production/test boundary for usage ledger persistence and
+   summary records without moving pricing, fleet, transport, or workflows.
+2. Write 2D2 ownership/concurrency/corruption contracts first and observe scoped
+   RED before implementation.
