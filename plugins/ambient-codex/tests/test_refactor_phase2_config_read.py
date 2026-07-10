@@ -18,7 +18,14 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
-MOVED_NAMES = ("parse_config_lines", "read_config_file")
+MOVED_NAMES = (
+    "parse_config_lines",
+    "read_config_file",
+    "claim_state_dir",
+    "private_dir",
+    "config_lock",
+    "save_config_values",
+)
 
 
 def load_facade(home):

@@ -520,7 +520,7 @@ must remain byte-equivalent for existing inputs.
 
 ## Phase 2B3 plan — locked atomic config writes
 
-Production/test file boundary (three files):
+Production/test file boundary (four files):
 
 1. `tests/test_refactor_phase2_config_write.py` — RED-first state-marker,
    private-directory, POSIX flock, fallback O_EXCL/stale/timeout, merge/delete/
@@ -532,6 +532,9 @@ Production/test file boundary (three files):
 3. `bin/ambient` — thin `_claim_state_dir`, `_config_lock`, `_private_dir`, and
    `save_config_values` wrappers bind patchable state/config paths, version,
    `fcntl`, clocks, subprocess-independent filesystem primitives, and `sys.exit`.
+4. `tests/test_refactor_phase2_config_read.py` — extend its module ownership
+   tuple now that the same lower-layer store intentionally owns read and write
+   APIs; all Phase 2B2 read contracts remain unchanged.
 
 Move in 2B3:
 
@@ -548,6 +551,30 @@ No transport, model, spend, cache-entry, usage-ledger, build-state, or OpenCode
 write path moves in this checkpoint. Existing public wrappers retain their
 signatures and all failure text; no lock path may enter a critical section after
 timeout or lock-open failure.
+
+## Phase 2B3 verification
+
+- RED observed: eight direct write/lock tests errored because the planned APIs
+  were absent and the export-set assertion failed; import purity and the existing
+  facade write flow remained green.
+- The first complete suite then failed only the Phase 2B2 exact-export assertion,
+  which still named the read-only API set. The 2B3 boundary was expanded from
+  three to four files before updating that ownership contract.
+- Review-driven RED tests exposed raw lock-acquisition/config-read errors and
+  destination permission enforcement occurring after lock release in the first
+  extraction draft. Lock/open/temp/read failures now produce bounded user-facing
+  errors, a broken abort callback still cannot enter the critical section, and
+  destination `0600` enforcement occurs before unlock.
+- Pre/post comparison against `367a3cf` proves valid facade behavior for marker
+  content, private-directory/file modes, duplicate/delete/callable merges, and
+  POSIX/portable lock cleanup. A 24-writer concurrent stress preserves every
+  independent key without leaving a lock or temp artifact.
+- All 1,190 guarded tests pass on Python 3.11, 3.12, and 3.14. Runtime coverage
+  remains 82% total; `config_store.py` is 98% covered, with only nested cleanup-
+  failure handlers unexecuted.
+- Full ruff/compile, isolated-venv installation, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
+  GitHub matrix, and installed-cache gates remain pending.
 
 ## Exact resume point
 
