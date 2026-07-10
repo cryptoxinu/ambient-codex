@@ -24,7 +24,7 @@ packages = ["ambient_codex"]            # explicit: never auto-discover tests/do
 py-modules = []
 
 [tool.pytest.ini_options]
-# Canonical runner is `python3 -m unittest discover -s tests`; this only lets
+# Canonical runner is `python3 -m unittest discover -s tests -t .`; this only lets
 # `pytest tests/` collect despite the sibling-module imports (tests/ is a pkg).
 pythonpath = ["tests"]
 

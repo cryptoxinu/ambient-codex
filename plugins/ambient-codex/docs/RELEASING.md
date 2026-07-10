@@ -21,7 +21,7 @@ python3 -m py_compile bin/ambient mcp/ambient_mcp.py
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .
 python3 "$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py" skills/ambient
-python3 -m unittest discover -s tests -q
+python3 -m unittest discover -s tests -t . -q
 bash -n hooks/session-start.sh
 ```
 
