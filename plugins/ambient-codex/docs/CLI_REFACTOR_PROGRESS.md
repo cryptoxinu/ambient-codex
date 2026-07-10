@@ -50,7 +50,8 @@ bugs, verification, commits, or the next action changes.
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
-| 1 | Pure constants and records | Pending | — | — |
+| 1A | Immutable runtime constants | Planning | — | — |
+| 1B | Immutable records and model metadata | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -154,12 +155,54 @@ source/package behavior is green.
   itself was intentionally absent, producing the right job result for the wrong
   immediate reason before the real MCP startup check.
 
+## Phase 1A plan — immutable runtime constants
+
+Purpose: create the first real acyclic implementation boundary while preserving
+every facade symbol and all runtime behavior. This checkpoint moves only literal,
+immutable values and compiled terminal-sanitization patterns.
+
+Production/test file boundary (four files):
+
+1. `tests/test_refactor_phase1_constants.py` — RED-first ownership, snapshot,
+   side-effect, and facade-compatibility tests.
+2. `ambient_codex/constants.py` — stdlib-only immutable constants; imports only
+   `re`, performs no environment, filesystem, network, or state access.
+3. `bin/ambient` — imports and re-exports the moved names; all existing command
+   functions continue resolving the facade globals so direct test patching works.
+4. `.github/workflows/ci.yml` — compile every internal package module instead of
+   naming only `__init__.py`.
+
+Move in Phase 1A:
+
+- State/key/launcher names and public URLs, but not `STATE_DIR`, paths derived
+  from it, `FOREIGN_STATE_DIRS`, or any state helper.
+- Exit codes and terminal ANSI/control compiled patterns.
+- Default model, timeout, output, stream, context, reasoning, and chunk limits.
+- Telemetry numeric bounds, but not mutable telemetry caches.
+- Repo-map budgets and immutable skip/lockfile sets.
+
+Explicitly defer:
+
+- `__version__`, prompts/schemas, catalog/model-note dictionaries, environment-
+  derived values, filesystem paths, mutable caches/holders, and every function.
+- Dataclasses/named tuples and model metadata to Phase 1B after 1A is green.
+
+RED/compatibility contract:
+
+- The internal module owns the exact expected export set and imports without
+  creating files or reading Ambient state.
+- Representative values, regex patterns/flags, frozenset types, and derived
+  equalities match the pre-move facade contract.
+- `bin/ambient` still exposes every moved name with equal values and no duplicate
+  module-level assignments.
+- Source, copied-plugin, isolated-venv, archive, no-Node MCP, coverage, and the
+  full OS/Python CI matrix remain required before Phase 1A closes.
+
 ## Exact resume point
 
-1. Define the Phase 1 file-level checkpoint (maximum five production/test
-   files) for pure constants/records only.
-2. Write RED characterization/compatibility tests before moving any symbol.
-3. Extract one acyclic pure boundary, retain facade re-exports, and run the full
-   Phase 0 gate set before committing.
+1. Commit this Phase 1A file-level plan.
+2. Write and run the constants ownership/compatibility tests RED.
+3. Extract the acyclic constants module, retain facade re-exports, and run the
+   full Phase 0 gate set before committing.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
