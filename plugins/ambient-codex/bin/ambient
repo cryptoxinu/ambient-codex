@@ -169,6 +169,12 @@ from ambient_codex.constants import (  # noqa: E402
     TELEMETRY_CPT_MIN,
     TELEMETRY_EWMA_ALPHA,
 )
+from ambient_codex.records import (  # noqa: E402
+    ChatError,
+    ModelProfile,
+    NetworkError,
+    StallError,
+)
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -1202,10 +1208,6 @@ def resolve_model(args, conf, kind="chat", phase=None):
         or conf.get(env_key)
         or fallback
     )
-
-
-class NetworkError(Exception):
-    """The API was unreachable (DNS, connection refused, timeout)."""
 
 
 def api_request(api_url, api_key, path, payload=None, timeout=DEFAULT_TIMEOUT_S):
@@ -2939,13 +2941,6 @@ def resolve_reduce_model(args, conf, map_model, catalog=None):
     return chosen
 
 
-ModelProfile = collections.namedtuple(
-    "ModelProfile",
-    "model is_reasoning context_length max_output_length "
-    "output_budget single_shot_chars chunk_chars escalation_ceiling features",
-)
-
-
 def response_format_for(profile, schema):
     """Capability-gated structured-output request for a model (A4): strict
     json_schema when supported, else json_object, else None (prompt-only).
@@ -3904,23 +3899,6 @@ def usage_exit(msg):
         emit_json_error("usage", "usage", msg, exit_code=EXIT_USAGE)
     print(f"ambient: {msg}", file=sys.stderr)
     sys.exit(EXIT_USAGE)
-
-
-class ChatError(Exception):
-    def __init__(self, category, diagnosis):
-        super().__init__(diagnosis)
-        self.category = category
-        self.diagnosis = diagnosis
-
-
-class StallError(Exception):
-    """The stream went silent (or hit the hard wall) mid-generation."""
-
-    def __init__(self, message, partial="", reasoning="", hard_wall=False):
-        super().__init__(message)
-        self.partial = partial
-        self.reasoning = reasoning
-        self.hard_wall = hard_wall  # true = time cap, not a data-flow silence
 
 
 def stream_completion(api_url, api_key, payload, timeout, on_delta=None):

@@ -51,7 +51,7 @@ bugs, verification, commits, or the next action changes.
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
-| 1B | Pure record and error types | Planning | — | — |
+| 1B | Pure record and error types | Ready to commit | — | Local gates green |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -276,11 +276,23 @@ RED/compatibility contract:
 - Importing `ambient_codex.records` performs no state, environment, filesystem,
   keychain, or network work.
 
+## Phase 1B verification
+
+- RED observed: all six ownership/behavior tests failed because
+  `ambient_codex.records` did not exist.
+- The internal module owns exactly four exports; the facade re-exports the same
+  class objects and retains independently patchable bindings.
+- `ModelProfile` fields/tuple behavior and all error payload/default contracts
+  match the pre-move facade behavior.
+- 1,146 guarded tests pass on Python 3.11, 3.12, and 3.14.
+- Runtime coverage remains 81% total; `records.py` is 100% covered.
+- Isolated-venv installation, recursive compile, full ruff, plugin/skill
+  validators, offline stress (26/26), and no-Node MCP (14 tools) pass.
+
 ## Exact resume point
 
-1. Commit this Phase 1B plan.
-2. Write and run the record/error ownership tests RED.
-3. Extract only the four dependency-free types, then repeat every Phase 1A gate
-   before committing or beginning Phase 2.
+1. Commit the green three-file Phase 1B implementation checkpoint.
+2. Run clean-archive, GitHub, and cache-busted installed-plugin gates.
+3. Mark Phase 1 complete and scope Phase 2 before moving any stateful behavior.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
