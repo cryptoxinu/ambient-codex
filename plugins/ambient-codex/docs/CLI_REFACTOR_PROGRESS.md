@@ -58,7 +58,7 @@ bugs, verification, commits, or the next action changes.
 | 2C2 | File and stdin intake | Complete | `5f4cf9e` | All gates green after `536b345` |
 | 2C3A | Repository gutters and size | Complete | `09b03b1` | All gates green after `cdde512` |
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
-| 2C3C | Repository diff/status intake | Pending | — | — |
+| 2C3C | Repository diff/status intake | Planned | — | Boundary frozen below |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -1040,12 +1040,75 @@ Phase 2C3B implementation checkpoint:
   that cache version as installed and enabled; the source manifest is restored
   to stable `1.9.0`.
 
+## Phase 2C3C plan — bounded Git diff and changed-file intake
+
+Purpose: make `audit --staged` / `audit --diff REF` memory-bounded and safe for
+arbitrary Git filenames while preserving existing CLI output, full-current-file
+context, subdirectory behavior, and audit orchestration.
+
+Production/test file boundary (five files):
+
+1. `tests/test_refactor_phase2_repository_diff.py` — RED-first immutable record,
+   bounded process, timeout/launch/read/overflow, revision validation, real Git,
+   NUL filename, subdirectory/root, containment, aggregate-cap, import-purity,
+   and facade contracts.
+2. `ambient_codex/repository.py` — add immutable `GitDiffSnapshot`,
+   `GitDiffFailure`, and `capture_git_diff(...)`; keep the bounded process runner
+   private and standard-library-only.
+3. `bin/ambient` — keep `git_diff_inputs(staged, ref)` as a thin compatibility/
+   error-orchestration facade over the lower capture plus existing safe intake
+   and gutter modules.
+4. `tests/test_refactor_phase2_repository_discovery.py` — extend only the exact
+   repository export ownership tuple; all 2C3B contracts remain unchanged.
+5. `tests/test_refactor_phase2_repository_gutters.py` — extend only the same
+   export tuple; all 2C3A contracts remain unchanged.
+
+Required lower-layer contracts:
+
+- Launch Git without a shell through injected `Popen`. Drain stdout and stderr
+  concurrently as bytes, retain no more than each explicit cap, terminate on
+  overflow, kill after bounded termination failure, and close every pipe.
+  Launch, read, timeout, malformed-stream, and overflow states return explicit
+  immutable failures; none may hang or silently become an empty diff.
+- Preserve the existing 30-second Git timeout. Bound rev-parse outputs to 64 KiB,
+  stderr evidence to 4 KiB, and diff/path output to the caller's positive byte
+  ceiling. Oversized diffs fail explicitly before model/API work; partial Git
+  output is never presented as complete.
+- Validate `--diff` revision strings before launch: nonempty string, at most
+  4,096 characters, no NUL/control characters, and no leading `-`. Users must
+  use `--staged` instead of smuggling Git options such as `--cached` through the
+  revision value. End revision parsing with `--` in every diff command.
+- Check inside-repo, diff, repo-root, and changed-path command results
+  independently. Keep the historical outside-repo, bad-diff, and empty-diff
+  messages for their existing cases; root/path-list failures become explicit
+  input errors instead of silently degrading to diff-only coverage.
+- Request changed paths with `--name-only -z`; split only on NUL and decode with
+  the filesystem codec. Preserve leading/trailing spaces and embedded newlines.
+  Reject absolute, NUL, and parent-traversing entries, resolve every path against
+  the real top-level, and return outside-root omissions explicitly.
+- `GitDiffSnapshot` contains decoded diff text, resolved root, immutable
+  `(portable_label, full_path)` changed-file tuples, and immutable omitted-path
+  evidence. Invalid diff bytes decode with replacement rather than crashing.
+- The facade reserves diff size from `ABS_MAX_CHARS`, reads all changed files in
+  one aggregate bounded intake call, applies line gutters, and verifies the
+  final diff-plus-gutters character count. Overflow fails with a clear split/
+  narrow-range message before catalog lookup or spend.
+
+Explicit RED-locked fixes are limited to bounded process memory/liveness,
+byte/NUL Git framing, revision option-injection refusal, checked root/path-list
+commands, containment evidence, and one aggregate context ceiling. Do not move
+secret policy, audit prompts, model/catalog routing, cost/partial policy,
+map/reduce, consensus/deep passes, hooks, generation, integrations, MCP, or
+command dispatch in 2C3C.
+
+Research decision: GitHub code/repository metadata and current `subprocess-tee`,
+`plumbum`, and `sh` registry options were reviewed. No dependency is adopted:
+the runtime remains Python 3.8+, stdlib-only, no-Node, and installable from
+source/plugin cache/pipx without dependency or API drift.
+
 ## Exact resume point
 
-1. Commit and push this Phase 2C3B closeout ledger.
-2. Freeze Phase 2C3C at file/export/behavior level before writing tests.
-3. Keep `repo_audit_inputs` and audit cost/partial orchestration in the facade;
-   2C3C moves only bounded diff/status capture and changed-path parsing.
-
-Do not begin 2C3B until 2C3A is green, committed, pushed, installed, and
-recorded; that gate is now satisfied.
+1. Commit and push the exact Phase 2C3C boundary above.
+2. Write only the five-file RED contract surface and record the failures.
+3. Implement minimum GREEN, compare stable pre/post behavior against this
+   boundary, then require local/archive/CI/installed gates before Phase 2D.
