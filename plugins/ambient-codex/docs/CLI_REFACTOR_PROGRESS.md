@@ -508,14 +508,52 @@ must remain byte-equivalent for existing inputs.
 - All 1,173 guarded tests pass on Python 3.11, 3.12, and 3.14. Runtime coverage
   is 82% total; `config_store.py` and every earlier internal module are 100%.
 - Full ruff/compile, isolated-venv installation, plugin/skill validators,
-  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
-  GitHub matrix, and installed-cache gates remain pending.
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass.
+- A clean archive of commit `997cb27` passes recursive compile, all 1,173
+  guarded tests, and isolated installation. GitHub run `29109890376` passes all
+  18 runtime, package, quality, plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710171044` passes parser semantics,
+  POSIX permission healing, symlink refusal, Windows behavior, facade path/
+  platform patchability, plugin validation, MCP initialize/list/self-test/
+  offline-control with 14 tools, and no-Node startup. The source manifest is
+  restored to `1.9.0`; source `HEAD` and `origin/main` match cleanly.
+
+## Phase 2B3 plan — locked atomic config writes
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_config_write.py` — RED-first state-marker,
+   private-directory, POSIX flock, fallback O_EXCL/stale/timeout, merge/delete/
+   duplicate, callable freshness, atomic replace, permissions, cleanup,
+   side-effect, and facade-patchability contracts.
+2. `ambient_codex/config_store.py` — extend the existing lower-layer module with
+   explicit state claiming, private-directory healing, a cross-platform lock
+   context, and atomic merge-preserving writes.
+3. `bin/ambient` — thin `_claim_state_dir`, `_config_lock`, `_private_dir`, and
+   `save_config_values` wrappers bind patchable state/config paths, version,
+   `fcntl`, clocks, subprocess-independent filesystem primitives, and `sys.exit`.
+
+Move in 2B3:
+
+- Marker creation for this install only, with existing best-effort behavior and
+  owner-only permissions.
+- Owner-only directory creation/healing used by state/cache/usage surfaces.
+- POSIX `flock` and Windows/portable O_EXCL locking, including stale-lock break,
+  bounded wait, ownership-token write, fail-closed timeout, and cleanup.
+- Fresh-under-lock callable updates, managed-key dedup/delete, fsync of a unique
+  owner-only temp file, atomic replace, destination permission enforcement, and
+  temp cleanup on failures.
+
+No transport, model, spend, cache-entry, usage-ledger, build-state, or OpenCode
+write path moves in this checkpoint. Existing public wrappers retain their
+signatures and all failure text; no lock path may enter a critical section after
+timeout or lock-open failure.
 
 ## Exact resume point
 
-1. Commit and push the Phase 2B1 closeout/Phase 2B2 boundary ledger.
-2. Write the three-file 2B2 config-read contract tests and record expected RED.
-3. Implement only parsing/read behavior; complete local, clean-archive, GitHub,
-   and installed-cache gates before planning 2B3 in file-level detail.
+1. Commit and push the Phase 2B2 closeout/Phase 2B3 boundary ledger.
+2. Write the three-file 2B3 config-write contract tests and record expected RED.
+3. Implement only state/config lock and atomic-write behavior; complete local,
+   clean-archive, GitHub, and installed-cache gates before planning 2C.
 
 Do not begin 2B3 until 2B2 is green, committed, pushed, installed, and recorded.
