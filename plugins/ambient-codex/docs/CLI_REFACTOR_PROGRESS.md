@@ -50,7 +50,7 @@ bugs, verification, commits, or the next action changes.
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
-| 1A | Immutable runtime constants | Planning | — | — |
+| 1A | Immutable runtime constants | Ready to commit | — | Local gates green; docs/CI pending |
 | 1B | Immutable records and model metadata | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -161,7 +161,7 @@ Purpose: create the first real acyclic implementation boundary while preserving
 every facade symbol and all runtime behavior. This checkpoint moves only literal,
 immutable values and compiled terminal-sanitization patterns.
 
-Production/test file boundary (four files):
+Production/test file boundary (five files):
 
 1. `tests/test_refactor_phase1_constants.py` — RED-first ownership, snapshot,
    side-effect, and facade-compatibility tests.
@@ -170,7 +170,9 @@ Production/test file boundary (four files):
 3. `bin/ambient` — imports and re-exports the moved names; all existing command
    functions continue resolving the facade globals so direct test patching works.
 4. `.github/workflows/ci.yml` — compile every internal package module instead of
-   naming only `__init__.py`.
+   naming only `__init__.py`, and load the test hermeticity package guard.
+5. `tests/test_ambient_v5_fleet_hardening.py` — package-qualify its sole
+   cross-test-module import so guarded discovery works.
 
 Move in Phase 1A:
 
@@ -198,11 +200,43 @@ RED/compatibility contract:
 - Source, copied-plugin, isolated-venv, archive, no-Node MCP, coverage, and the
   full OS/Python CI matrix remain required before Phase 1A closes.
 
+## Phase 1A verification
+
+- RED observed: all five initial constants tests failed because the internal
+  module did not exist; the test-discovery guard test then failed before the CI
+  runner was corrected.
+- 51 moved names are type-and-value equivalent to the pre-extraction `c79596d`
+  facade, including regex patterns/flags and immutable set contents.
+- 1,140 guarded tests pass concurrently in the same checkout on Python 3.11,
+  3.12, and 3.14; one package-install test remains an explicit opt-in gate.
+- Runtime coverage remains 81% total: facade 81%, MCP 84%, internal package
+  modules 100%.
+- Isolated-venv installation, recursive package compilation, full ruff, plugin
+  and skill validators, offline stress (26/26), and no-Node MCP (14 tools) pass.
+- Clean archive, installed-cache, and GitHub cross-platform gates remain pending
+  until the Phase 1A implementation commit exists.
+
+## Phase 1A findings
+
+- The canonical `unittest discover -s tests` command treated test modules as
+  top-level modules and never imported `tests/__init__.py`. Its telemetry/fleet
+  hermeticity guard therefore did not run in CI or the documented local gate.
+- Under three simultaneous suites, v18/v19 spend tests wrote process reservations
+  to the real Ambient Codex fleet ledger and correctly saw the other test PIDs as
+  siblings, causing spend-gate failures. Guarded discovery (`-s tests -t .`)
+  disables non-fleet-test reservations as intended; the same three-way run is
+  now green and the real reservation ledger is empty after cleanup.
+- Guarded discovery exposed one stale top-level fixture import in the v5 fleet
+  tests. It was the only `from test_*` occurrence and is now package-qualified.
+- `DEFAULT_MAX_TOKENS` is a compatibility-only facade symbol. It remains an
+  explicit same-name re-export even though current runtime code does not read it.
+
 ## Exact resume point
 
-1. Commit this Phase 1A file-level plan.
-2. Write and run the constants ownership/compatibility tests RED.
-3. Extract the acyclic constants module, retain facade re-exports, and run the
-   full Phase 0 gate set before committing.
+1. Commit the green five-file Phase 1A implementation checkpoint.
+2. Synchronize documented unittest commands to guarded discovery in bounded
+   documentation-only checkpoints.
+3. Run clean-archive, GitHub, and cache-busted installed-plugin gates before
+   marking Phase 1A complete or beginning Phase 1B.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.

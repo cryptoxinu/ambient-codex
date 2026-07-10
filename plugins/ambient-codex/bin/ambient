@@ -116,6 +116,59 @@ def _prepend_bundled_package_root():
 _prepend_bundled_package_root()
 from ambient_codex import LAYOUT_VERSION as INTERNAL_PACKAGE_LAYOUT  # noqa: E402, F401
 from ambient_codex import PACKAGE_NAME as INTERNAL_PACKAGE_NAME  # noqa: E402, F401
+from ambient_codex.constants import (  # noqa: E402
+    ABS_MAX_CHARS,
+    AMBIENT_CODEX_HOME_ENV,
+    ANSI_RE,
+    ANSWER_TOKENS_RESERVE,
+    API_KEY_ENV,
+    CHARS_PER_TOKEN,
+    CHUNK_CHARS,
+    CODE_MAP_BUDGET_DEFAULT,
+    CODE_MAP_BUDGET_MAX,
+    CODE_MAP_SIGS_PER_FILE,
+    CONTEXT_OVERHEAD_TOKENS,
+    CTRL_RE,
+    DEFAULT_API_URL,
+    DEFAULT_CODE_MODEL,
+    DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS,
+    DEFAULT_MODEL,
+    DEFAULT_TIMEOUT_S,
+    EXIT_PARTIAL,
+    EXIT_UNCONFIGURED,
+    EXIT_USAGE,
+    FALLBACK_CONTEXT,
+    FALLBACK_MAX_OUTPUT,
+    HEARTBEAT_S,
+    INPUT_TOKEN_SAFETY,
+    KEYCHAIN_ACCOUNT,
+    KEYCHAIN_SERVICE,
+    KEY_CONSOLE_URL,
+    LAUNCHER_NAME,
+    MAX_AUTO_BUDGET_TOKENS,
+    MAX_PARALLEL_CHUNKS,
+    MAX_REQUESTED_TOKENS,
+    MIN_OUTPUT_TOKENS,
+    MIN_REASONING_CHUNK,
+    NONREASONING_CONTEXT_MARGIN,
+    NONREASONING_OUTPUT_BUDGET,
+    OUTPUT_SAFETY,
+    REASONING_CHUNK_FACTOR,
+    REASONING_EXPANSION,
+    REASONING_SINGLE_SHOT_CHARS,
+    REPO_FILE_MAX_BYTES,
+    REPO_LOCKFILES,
+    REPO_SKIP_DIRS,
+    SHARED_API_KEY_ENV,
+    SIG_SCAN_LINE_MAX,
+    SINGLE_SHOT_MAX_CHARS_DEFAULT,
+    STATE_MARKER,
+    STREAM_LINE_MAX,
+    SUPPORT_LINE,
+    TELEMETRY_CPT_MAX,
+    TELEMETRY_CPT_MIN,
+    TELEMETRY_EWMA_ALPHA,
+)
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -124,14 +177,6 @@ except ImportError:
 
 __version__ = "1.9.0"  # kept in sync with plugin.json + pyproject.toml (test- and CI-asserted)
 
-# Ambient Codex keeps ALL state — settings, credentials, ledgers, caches — under its
-# own root. It never reads or writes another Ambient install's state, not even once and
-# not even to offer a convenience. Two installs on one machine are fully independent and
-# each holds its own API key.
-AMBIENT_CODEX_HOME_ENV = "AMBIENT_CODEX_HOME"
-# Dropped into our state root the first time we write it. A root that already holds an
-# `env` but no marker belongs to somebody else, and we refuse to touch it.
-STATE_MARKER = ".ambient-codex"
 # Trees another Ambient install (or its host agent) owns. We never place our state
 # inside any of them, at any depth.
 FOREIGN_STATE_DIRS = (
@@ -216,66 +261,8 @@ def _claim_state_dir(conf_dir):
 STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
-# This install's own secret-store item. Another Ambient install owns a different one;
-# we never name it, read it, or delete it.
-KEYCHAIN_SERVICE = "ambient-codex"
-KEYCHAIN_ACCOUNT = "api-key"
-# This install's own key override. `AMBIENT_API_KEY` is the conventional name that EVERY
-# Ambient install reads, so exporting it hands one key to all of them. Prefer the
-# namespaced variable; `doctor` flags the shared one.
-API_KEY_ENV = "AMBIENT_CODEX_API_KEY"
-SHARED_API_KEY_ENV = "AMBIENT_API_KEY"
-# NOT `ambient`: another Ambient install owns that name on PATH.
-LAUNCHER_NAME = "ambient-codex"
-DEFAULT_API_URL = "https://api.ambient.xyz"
-KEY_CONSOLE_URL = "https://app.ambient.xyz"   # where users create/manage API keys
-SUPPORT_LINE = ("If this keeps happening, contact Ambient support with the "
-                "[category] code shown above — support/community links at "
-                "https://ambient.xyz")
-# Exit-code contract (documented in README + --help):
-#   0 clean · 1 diagnosed error · 2 PARTIAL result · 3 unconfigured (no key)
-#   64 usage error · 130 interrupted
-EXIT_PARTIAL = 2
-EXIT_UNCONFIGURED = 3
-EXIT_USAGE = 64
-# Terminal-injection guard: model output comes from anonymous, untrusted remote nodes on a
-# decentralized network. Strip ANSI/OSC/DCS escapes and stray C0 controls
-# (keeping only \n and \t) before anything model-derived reaches a terminal —
-# otherwise a poisoned reply can rewrite verdicts, spoof the PARTIAL banner,
-# or fire OSC-52 clipboard writes. Carriage return (\x0d) is stripped too: a bare
-# CR moves the cursor to column 0 and lets model output overwrite the current
-# line (spoofing a verdict/banner/receipt). AMBIENT_NO_SANITIZE=1 = debug escape hatch.
-ANSI_RE = re.compile(
-    r"\x1b(?:\[[0-?]*[ -/]*[@-~]"          # CSI
-    r"|\][^\x07\x1b]*(?:\x07|\x1b\\)?"      # OSC (incl. unterminated)
-    r"|[PX^_][^\x1b]*(?:\x1b\\)?"           # DCS/SOS/PM/APC
-    r"|[@-Z\\-_=><~])"                      # two-char sequences
-)
-# Strips C0 controls 0x00-0x08 and 0x0b-0x1f (incl. \x0d CR), DEL (0x7f), and the
-# C1 control block (0x80-0x9f) — keeps only \t (0x09) and \n (0x0a). C1 stripping
-# is defense-in-depth: some terminals in 8-bit mode treat 0x9b/0x9d as CSI/OSC.
-CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]")
-# Kimi is the default for BOTH lanes; GLM-5.2 stays fully selectable
-# (`ambient use z-ai/glm-5.2 --chat`).
-DEFAULT_MODEL = "moonshotai/kimi-k2.7-code"
-DEFAULT_CODE_MODEL = "moonshotai/kimi-k2.7-code"
-DEFAULT_TIMEOUT_S = 300
-DEFAULT_MAX_TOKENS = 16384
-# The API catalog owns the real per-model output limit.  This is only the
-# user-input safety ceiling before model_profile() applies that live limit;
-# keep it above today's 262,144-token frontier models without pretending a
-# future model's catalog value is already known.
-MAX_REQUESTED_TOKENS = 1_000_000
-# A reasoning model (Kimi/GLM/etc.) spends tokens THINKING before it answers, so
-# an output budget below this floor can't produce a usable result — the CLI
-# raises it rather than let a self-defeating value run silently.
-MIN_OUTPUT_TOKENS = 2048
-HEARTBEAT_S = 20  # stderr liveness ping while a long generation streams
-# Reasoning models sometimes spend the ENTIRE token budget thinking and emit no
-# final answer. Instead of failing with "raise --max-tokens", the CLI escalates
-# the budget itself, once, up to this ceiling (a bounded amount of extra output
-# on the priciest model — visible on stderr).
-MAX_AUTO_BUDGET_TOKENS = 65536
+
+
 def _env_pos_int(name, default, floor=1):
     """A positive-int env override; a missing/invalid/too-small value keeps the
     default (with a sane floor so a fat-fingered '0' can't disable a guard)."""
@@ -316,12 +303,6 @@ HARD_WALL_S = _env_pos_int("AMBIENT_HARD_WALL_S", 5400, floor=60)
 # emitting NO new content or reasoning — that fools a pure silence timeout. If
 # nothing useful grows for this long, treat it as a stall.
 NOPROGRESS_S = _env_pos_int("AMBIENT_NOPROGRESS_S", 150, floor=10)
-# Cap one streamed SSE line so a stream that sends bytes but NEVER a newline can
-# neither buffer without bound nor starve the hard-wall / no-progress checks that
-# live AFTER readline() — readline(N) returns after N bytes even with no '\n', so
-# the loop keeps ticking. Far larger than any real single delta line, so a valid
-# stream is never split/corrupted.
-STREAM_LINE_MAX = 8 * 1024 * 1024
 # The streamed heartbeat ("…writing (N chars, Xs)") and the build phase lines
 # ("generating <paths> [X/Y]") are pure UX. This toggle gates ONLY their DISPLAY —
 # the smart-timeout guards above (HARD_WALL_S / NOPROGRESS_S / stall) are safety
@@ -358,80 +339,9 @@ def progress_display_enabled():
     return _progress_from_env_or_conf(None) if v is None else v
 
 
-# No hard "no": inputs above a model's single-shot budget are automatically
-# map-reduced — split on file boundaries, processed as parallel chunk calls,
-# then merged by budget-aware synthesis. The single-shot/chunk budgets are
-# computed PER MODEL from its real context_length (see model_profile); the value
-# below is only the pack_chunks default when no per-model budget is passed.
-CHUNK_CHARS = 300_000         # default per-chunk budget (overridden per model)
-# --- Per-model tuning (see model_profile) -----------------------------------
-# THE crux: `max_tokens` caps reasoning + answer COMBINED. A reasoning model
-# spends tokens thinking before it answers, so for reasoning-heavy work the
-# output budget must cover (reasoning over the input) PLUS (the answer), and the
-# input chunk must stay small enough that reasoning fits. These constants drive
-# that per-model math. No Ambient model exposes a reasoning-effort knob (verified
-# against supported_sampling_parameters), so output-budget + chunk-size are the
-# only levers.
-CHARS_PER_TOKEN = 3.2                  # aligns with estimate_cost/cost_gate
-INPUT_TOKEN_SAFETY = 1.75              # guttered/source code often tokenizes denser
-REASONING_EXPANSION = 1.5              # reasoning chars produced per input char on
-                                       # dense code (empirical ~1.43, rounded up)
-# --- Telemetry-EWMA routing ------------------------------------
-# The tool gets SMARTER WITH USE: every real usage object the API returns is
-# already metered in the local ledger; observed_cpt() turns that history into
-# a per-model observed chars-per-token EWMA. model_profile SIZING uses it
-# directly (_effective_cpt); the COST/SPEND-GATE math uses a conservative clamp
-# (_cost_cpt = min(observed, default)) so telemetry can only TIGHTEN the gate,
-# never under-price. With NO usable history the math is byte-identical to the
-# static CHARS_PER_TOKEN constant. AMBIENT_TELEMETRY=off opts out.
-TELEMETRY_CPT_MIN = 1.0                # sane clamp — a corrupt ledger can't
-TELEMETRY_CPT_MAX = 8.0                # skew budgets past believable ratios
-TELEMETRY_EWMA_ALPHA = 0.3             # recent-weighted: newest sample = 30%
-_TELEMETRY_CPT_CACHE = None            # per-process ledger memo (hot path)
-ANSWER_TOKENS_RESERVE = 6000           # tokens kept for the answer after reasoning
-OUTPUT_SAFETY = 1.15                   # headroom for expansion variance
-CONTEXT_OVERHEAD_TOKENS = 2500         # system prompt + chat framing margin
-REASONING_SINGLE_SHOT_CHARS = 32_000   # minimum single-shot input for a reasoner
-# A1: single-shot is sized to the model's REAL window (not a flat 32k), so a
-# whole-repo audit stays in ONE high-quality pass on big models (GLM/Kimi have
-# 200k+ context) instead of being chopped 6-8x. Capped by a cost knob so a very
-# large one-pass call is deliberate; override with AMBIENT_SINGLE_SHOT_MAX_CHARS.
-SINGLE_SHOT_MAX_CHARS_DEFAULT = 120_000
-REASONING_CHUNK_FACTOR = 0.85          # chunk = single * this (map-prompt overhead)
-MIN_REASONING_CHUNK = 8_000            # never chunk a reasoner below this
-NONREASONING_OUTPUT_BUDGET = 16_384    # non-reasoners spend 0 tokens thinking
-NONREASONING_CONTEXT_MARGIN = 0.85     # leave 15% of context for the system prompt
-FALLBACK_CONTEXT = 200_000             # offline/unknown-model context assumption
-# Conservative offline output cap: every real Ambient model allows >= 16384, so
-# assuming this when the catalog is unreachable keeps an auto budget from ever
-# exceeding a strict model's real cap (escalation grows it if the model has more).
-FALLBACK_MAX_OUTPUT = 16_384
-ABS_MAX_CHARS = 20_000_000    # hard ~20M-char process/input safety ceiling
-MAX_PARALLEL_CHUNKS = 3       # concurrent chunk calls (bounded to not overload the network)
-# --- Repo intelligence ---------------------------------------------
-CODE_MAP_BUDGET_DEFAULT = 4_000   # repo-map chars when the model window is unknown
-CODE_MAP_BUDGET_MAX = 40_000      # hard cap — the map must never crowd out code
-CODE_MAP_SIGS_PER_FILE = 40       # signature cap per file in the repo map
-SIG_SCAN_LINE_MAX = 4_096         # never regex-scan a longer line (
-#   a minified/pathological line has no useful column-0 signature, and long
-#   single-class runs are exactly where regex backtracking blows up)
-# Keep one source file in the repo audit up to the same bounded input ceiling
-# used by read_files().  model_profile()/pack_chunks() then split it safely.
-# This used to be 1 MB, which silently excluded generated-but-auditable source
-# files before the chunker ever saw them.
-REPO_FILE_MAX_BYTES = ABS_MAX_CHARS
-REPO_SKIP_DIRS = frozenset({
-    ".git", ".hg", ".svn", "node_modules", "dist", "build", "out", "vendor",
-    "__pycache__", "target", "venv", ".venv", ".tox", ".mypy_cache",
-    ".ruff_cache", ".pytest_cache", "coverage", ".next", ".nuxt",
-    "DerivedData", "Pods",
-})
-REPO_LOCKFILES = frozenset({
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
-    "bun.lock", "poetry.lock", "Pipfile.lock", "uv.lock", "Cargo.lock",
-    "Gemfile.lock", "composer.lock", "go.sum", "flake.lock",
-    "packages.lock.json", "Package.resolved", "mix.lock",
-})
+# Mutable telemetry memoization remains facade-owned until the state boundary
+# moves in Phase 2. All numeric tuning inputs come from ambient_codex.constants.
+_TELEMETRY_CPT_CACHE = None
 
 AUDIT_SYSTEM_PROMPT = """You are an adversarial senior code reviewer giving a second opinion.
 Audit the provided code/diff for real defects: correctness bugs, security vulnerabilities,
