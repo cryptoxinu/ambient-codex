@@ -249,7 +249,7 @@ RED/compatibility contract:
 Purpose: move only dependency-free types that can sit directly above constants
 without changing method resolution, test patching, or runtime effects.
 
-Production/test file boundary (three files):
+Production/test file boundary (four files):
 
 1. `tests/test_refactor_phase1_records.py` — RED-first ownership, field/default,
    error-payload, side-effect, and facade-compatibility tests.
@@ -765,6 +765,8 @@ Production/test file boundary (three files):
 3. `bin/ambient` — compatibility wrappers retain `read_stdin_if_piped`,
    `_stdin_read_and_decode`, `_read_stdin_bounded`, and
    `warn_if_stdin_ignored`, including existing user-facing wording.
+4. `tests/test_refactor_phase2_intake_files.py` — extend the exact module-export
+   ownership tuple; every 2C2A file contract remains otherwise unchanged.
 
 The exact lower-layer export set after 2C2B is:
 
