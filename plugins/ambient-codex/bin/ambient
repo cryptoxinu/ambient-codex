@@ -175,6 +175,7 @@ from ambient_codex.records import (  # noqa: E402
     NetworkError,
     StallError,
 )
+from ambient_codex import state as _state_core  # noqa: E402
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -193,27 +194,17 @@ FOREIGN_STATE_DIRS = (
 
 def _resolve(path):
     """realpath so `..`, symlinks, and `/private` aliasing cannot dodge a prefix check."""
-    return os.path.normcase(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
+    return _state_core.resolve(path)
 
 
 def _is_within(child, parent):
     """True when `child` IS `parent` or lives beneath it. Prefix-safe."""
-    child, parent = _resolve(child), _resolve(parent)
-    if child == parent:
-        return True
-    try:
-        return os.path.commonpath([child, parent]) == parent
-    except ValueError:      # different drives on Windows
-        return False
+    return _state_core.is_within(child, parent)
 
 
 def foreign_root(path):
     """The foreign tree `path` falls inside, or None."""
-    for root in FOREIGN_STATE_DIRS:
-        if os.path.exists(root) or os.path.isabs(root):
-            if _is_within(path, root):
-                return root
-    return None
+    return _state_core.foreign_root(path, FOREIGN_STATE_DIRS)
 
 
 def validate_state_root(root):
@@ -223,20 +214,11 @@ def validate_state_root(root):
     install's key and rewrite its delegate mode, and `~/.config/ambient/cache` dodged an
     exact-match check. Compare on realpath, at any depth.
     """
-    owner = foreign_root(root)
-    if owner is not None:
-        sys.exit(
-            f"ambient: refusing to use {root} as a state root — it is inside {owner}, "
-            f"which belongs to another Ambient install. Unset {AMBIENT_CODEX_HOME_ENV}, "
-            "or point it at a directory of your own."
-        )
-    if os.path.exists(os.path.join(root, "env")) \
-            and not os.path.exists(os.path.join(root, STATE_MARKER)):
-        sys.exit(
-            f"ambient: refusing to use {root} as a state root — it already holds an "
-            f"Ambient config this install did not create (no {STATE_MARKER} marker). "
-            f"Point {AMBIENT_CODEX_HOME_ENV} at an empty directory."
-        )
+    error = _state_core.state_root_error(
+        root, FOREIGN_STATE_DIRS, STATE_MARKER, AMBIENT_CODEX_HOME_ENV
+    )
+    if error is not None:
+        sys.exit(error)
     return root
 
 

@@ -52,7 +52,7 @@ bugs, verification, commits, or the next action changes.
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
 | 1B | Pure record and error types | Complete | `8ec853d` | All gates green after `d7bad68` |
-| 2A | State-path validation core | Planning | — | — |
+| 2A | State-path validation core | Ready to commit | — | Local gates green |
 | 2B | Config, keychain, and atomic state | Pending | — | — |
 | 2C | Secret, input, and repository safety | Pending | — | — |
 | 2D | Usage, cache, spend, and fleet state | Pending | — | — |
@@ -333,7 +333,7 @@ generation, integration, or CLI modules.
 
 ## Phase 2A plan — state-path validation core
 
-Production/test file boundary (three files):
+Production/test file boundary (four files):
 
 1. `tests/test_refactor_phase2_state_paths.py` — RED-first normalization,
    symlink/drive containment, foreign-root, error-text, side-effect, and facade
@@ -342,6 +342,8 @@ Production/test file boundary (three files):
    roots, marker, and environment-name values explicitly; imports only `os`.
 3. `bin/ambient` — thin compatibility wrappers retain facade globals and map a
    returned validation error to the existing `sys.exit` behavior.
+4. `tests/test_state_isolation.py` — update its exact source-reference count for
+   the definition plus two refusal-only facade adapters.
 
 Move in 2A:
 
@@ -354,11 +356,26 @@ config parsing/writes, permissions, locks, mutable paths, and purge behavior to
 2B. The internal state module performs no I/O beyond read-only path/existence
 queries supplied by the standard `os` module.
 
+## Phase 2A verification
+
+- RED observed: eight internal/facade tests failed because `ambient_codex.state`
+  did not exist; the existing source-reference assertion then failed on the new
+  third refusal-only adapter.
+- Pre/post comparison against `d7bad68` proves path normalization, containment,
+  foreign-root selection, and exact refusal text are equivalent.
+- 1,155 guarded tests pass on Python 3.11, 3.12, and 3.14.
+- Runtime coverage remains 81% total; `state.py` is 100% covered.
+- State-isolation tests, isolated-venv install, recursive compile, full ruff,
+  plugin/skill validators, offline stress (26/26), and no-Node MCP (14 tools)
+  pass.
+- Facade wrappers still read patchable `FOREIGN_STATE_DIRS`; the internal module
+  imports without creating state or reading the environment.
+
 ## Exact resume point
 
-1. Commit the Phase 1 closure and Phase 2A written plan.
-2. Write and run state-path ownership/equivalence tests RED.
-3. Extract the pure validation core behind facade wrappers and repeat every
-   Phase 1 gate before committing.
+1. Commit the green four-file Phase 2A implementation checkpoint.
+2. Run clean-archive, GitHub, and cache-busted installed-plugin gates.
+3. Mark 2A complete and write the 2B persistence-adapter file boundary before
+   moving config or keychain behavior.
 
 Do not begin Phase 2B until 2A is green, committed, pushed, installed, and recorded.

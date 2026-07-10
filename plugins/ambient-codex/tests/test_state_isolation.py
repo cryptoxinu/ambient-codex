@@ -536,7 +536,9 @@ class TestNoCrossInstallKeyAccess(unittest.TestCase):
         source = CLI.read_text(encoding="utf-8")
         uses = [ln.strip() for ln in source.split("\n")
                 if "FOREIGN_STATE_DIRS" in ln and not ln.lstrip().startswith("#")]
-        self.assertEqual(len(uses), 2, uses)   # the definition + foreign_root()'s loop
+        # Definition + two refusal-only adapters: foreign_root selection and
+        # state-root validation. No read/write path may consume this tuple.
+        self.assertEqual(len(uses), 3, uses)
 
     def test_setup_never_offers_an_import(self):
         source = CLI.read_text(encoding="utf-8")
