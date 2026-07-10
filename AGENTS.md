@@ -25,7 +25,7 @@ Run these from `plugins/ambient-codex` before marking implementation phases comp
 
 ```bash
 python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
-python3 -m unittest discover -s tests -q
+python3 -m unittest discover -s tests -t . -q
 ```
 
 For skill changes, also run the Codex skill validator from `/Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py` when available.
