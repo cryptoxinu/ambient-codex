@@ -840,12 +840,53 @@ Phase 2C2B local verification:
   The source manifest is restored to `1.9.0`; source `HEAD` and `origin/main`
   match cleanly before this closeout-only ledger update.
 
+## Phase 2C3 program — repository and git intake
+
+Phase 2C3 is split into three independently installed checkpoints:
+
+- 2C3A: pure line gutters plus descriptor-safe bounded gutter-size accounting.
+- 2C3B: git/plain candidate discovery, containment, type/size/binary
+  classification, and immutable skip/coverage metadata.
+- 2C3C: bounded git-diff/status capture, NUL-delimited changed paths, and thin
+  facade composition with the existing safe file reader/gutter layer.
+
+This split prevents a repository walker rewrite from being reviewed in the same
+patch as subprocess framing. No 2C3 lower layer may import command handlers,
+audit orchestration, prompts, models, transport, spend, map/reduce, generation,
+integrations, MCP, or the facade. `repo_audit_inputs` stays in the facade until
+Phase 4 because it owns cost/partial policy and coverage-note orchestration.
+
+## Phase 2C3A plan — gutters and bounded size accounting
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_repository_gutters.py` — RED-first export,
+   numbering/width/trailing-line, immutable result, ASCII/multibyte size,
+   missing/symlink/FIFO, growth bound, import-purity, and facade patchability
+   contracts.
+2. `ambient_codex/repository.py` — `with_line_gutters(labeled)` and
+   `guttered_file_size(path, size)` only; imports standard-library filesystem
+   primitives and performs no work at import time.
+3. `bin/ambient` — compatibility `with_line_gutters` and `_guttered_size`
+   wrappers retain list return values and independently patchable core bindings.
+
+The lower size reader opens non-following/nonblocking descriptors where
+supported, revalidates them as regular with `fstat`, reads no more than the
+caller-supplied snapshot size plus one byte, and returns the conservative raw
+size on any classification/read failure. It must never open a FIFO/device or
+chase a swapped symlink. Existing line labels and size estimates remain exact for
+stable files.
+
+Do not move candidate discovery, skip counters, containment, binary sniffing,
+git subprocesses, coverage-note policy, `repo_audit_inputs`, or diff intake in
+2C3A.
+
 ## Exact resume point
 
-1. Commit and push the Phase 2C2B closeout ledger.
-2. Reinspect repository walking, candidate classification, gutters, git diff,
-   and their historical safety tests; then freeze Phase 2C3 at file level.
-3. Write Phase 2C3 RED contracts before moving repository intake code.
+1. Commit and push the Phase 2C3 program and exact 2C3A boundary.
+2. Write only the three-file gutter/size RED contracts and record the failures.
+3. Complete 2C3A local/archive/CI/installed gates before freezing 2C3B at file
+   and export level.
 
 Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
 recorded.
