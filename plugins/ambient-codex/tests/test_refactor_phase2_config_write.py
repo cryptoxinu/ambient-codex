@@ -187,6 +187,7 @@ class InternalConfigWriteTests(unittest.TestCase):
             self.assertFalse(entered)
             self.assertIn("config is locked", str(raised.exception))
 
+            lock_path.unlink()
             with mock.patch.object(
                 config_store.os, "open", side_effect=PermissionError("blocked")
             ):
@@ -197,6 +198,7 @@ class InternalConfigWriteTests(unittest.TestCase):
                         self.fail("entered without a lock")
             self.assertIn("cannot open config lock", str(raised.exception))
 
+            lock_path.write_text("live", encoding="utf-8")
             with mock.patch.object(
                 config_store.os.path, "getmtime",
                 side_effect=OSError("metadata denied"),
@@ -207,6 +209,36 @@ class InternalConfigWriteTests(unittest.TestCase):
                         lambda: fixed_now, lambda _: None,
                     ):
                         self.fail("entered with an unreadable live lock")
+
+    def test_fallback_lock_retries_windows_permission_race_on_existing_lock(self):
+        config_store = importlib.import_module("ambient_codex.config_store")
+        with tempfile.TemporaryDirectory() as td:
+            lock_path = Path(td) / ".env.lock"
+            lock_path.write_text("live", encoding="utf-8")
+            fixed_now = os.path.getmtime(lock_path)
+            real_open = os.open
+            attempts = []
+
+            def windows_open(path, flags, mode=0o777):
+                attempts.append(path)
+                if len(attempts) == 1:
+                    raise PermissionError(13, "sharing violation", path)
+                return real_open(path, flags, mode)
+
+            def release_lock(_seconds):
+                lock_path.unlink()
+
+            with mock.patch.object(
+                config_store.os, "open", side_effect=windows_open
+            ):
+                with config_store.config_lock(
+                    td, mock.Mock(), None, abort,
+                    lambda: fixed_now, release_lock,
+                ):
+                    self.assertTrue(lock_path.exists())
+
+            self.assertEqual(len(attempts), 2)
+            self.assertFalse(lock_path.exists())
 
     def test_fallback_lock_write_and_cleanup_errors_fail_closed(self):
         config_store = importlib.import_module("ambient_codex.config_store")

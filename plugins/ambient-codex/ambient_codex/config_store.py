@@ -124,6 +124,34 @@ def _posix_config_lock(lock_path, fcntl_module, abort):
             os.close(descriptor)
 
 
+def _portable_lock_is_contended(error, lock_path):
+    if isinstance(error, FileExistsError):
+        return True
+    if not isinstance(error, PermissionError):
+        return False
+    try:
+        return os.path.lexists(lock_path)
+    except OSError:
+        return False
+
+
+def _wait_for_portable_lock(lock_path, abort, clock, sleeper, waited):
+    try:
+        if clock() - os.path.getmtime(lock_path) > 30:
+            os.unlink(lock_path)
+            return waited
+    except OSError:
+        pass
+    if waited >= 10.0:
+        _abort(
+            abort,
+            "ambient: config is locked by another ambient process "
+            "(waited 10s). Retry in a moment.",
+        )
+    sleeper(0.1)
+    return waited + 0.1
+
+
 @contextlib.contextmanager
 def _portable_config_lock(lock_path, abort, clock, sleeper):
     descriptor = None
@@ -134,22 +162,12 @@ def _portable_config_lock(lock_path, abort, clock, sleeper):
                 lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600
             )
             os.write(descriptor, str(os.getpid()).encode())
-        except FileExistsError:
-            try:
-                if clock() - os.path.getmtime(lock_path) > 30:
-                    os.unlink(lock_path)
-                    continue
-            except OSError:
-                pass
-            if waited >= 10.0:
-                _abort(
-                    abort,
-                    "ambient: config is locked by another ambient process "
-                    "(waited 10s). Retry in a moment.",
-                )
-            sleeper(0.1)
-            waited += 0.1
         except OSError as err:
+            if descriptor is None and _portable_lock_is_contended(err, lock_path):
+                waited = _wait_for_portable_lock(
+                    lock_path, abort, clock, sleeper, waited
+                )
+                continue
             if descriptor is not None:
                 os.close(descriptor)
                 descriptor = None

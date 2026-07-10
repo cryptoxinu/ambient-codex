@@ -583,6 +583,29 @@ timeout or lock-open failure.
   control with 14 tools, and no-Node startup. The source manifest is restored
   to `1.9.0`; source `HEAD` and `origin/main` match cleanly.
 
+### Phase 2B3 Windows contention follow-up
+
+GitHub run `29111937821` exposed an intermittent Windows 3.10 failure in the
+24-writer portable-lock stress: opening an already-existing `.env.lock` returned
+`PermissionError` (Windows sharing violation semantics) instead of
+`FileExistsError`. The lock failed closed, so no unlocked write occurred, but a
+normal contention event aborted one writer and failed the batch.
+
+- Deterministic RED reproduces `PermissionError` while the lock path exists,
+  releases the competing lock during the bounded wait, and requires the writer
+  to acquire on its second attempt.
+- Portable locking now classifies `FileExistsError`, plus `PermissionError` only
+  while the lock path still exists, as contention. Permission failures without
+  an extant lock remain immediate user-facing errors; ownership-token write
+  failures still clean up and fail closed.
+- Stale-lock, ten-second timeout, unreadable-metadata, broken-abort, cleanup,
+  and 24-writer preservation contracts remain in the same test surface.
+- All 1,215 guarded tests, full ruff/compile, and 20 forced portable-lock runs
+  of 48 concurrent writers (960 writes total) pass locally. GitHub run
+  `29112620337` also passes all 18 jobs at the preceding intake commit, including
+  Windows 3.10; a replacement matrix containing the deterministic race fix is
+  still required before installation.
+
 ## Phase 2C program — input, secret, and repository safety
 
 Phase 2C is split into four bounded checkpoints:
