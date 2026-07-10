@@ -639,14 +639,91 @@ detection heuristics; review-driven hardening requires a separate RED example.
   performance contracts pass. `secrets.py` is 95% covered.
 - All 1,196 guarded tests pass on Python 3.11, 3.12, and 3.14. Full ruff/compile,
   isolated-venv installation, plugin/skill validators, offline stress (26/26),
-  and no-Node MCP startup (14 tools) pass. Clean-archive, GitHub matrix, and
-  installed-cache gates remain pending.
+  and no-Node MCP startup (14 tools) pass.
+- A clean archive of commit `b4bc6f7` passes recursive compile, all 1,196
+  guarded tests, and isolated installation. GitHub run `29111557343` passes all
+  18 runtime, package, quality, plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710173832` passes direct secret-module
+  imports, true/false detection, credential filename and layered-gutter
+  locations, a one-million-character benign-line bound, facade aliases/refusal,
+  plugin validation, MCP initialize/list/self-test/offline-control with 14 tools,
+  and no-Node startup. The source manifest is restored to `1.9.0`; source
+  `HEAD` and `origin/main` match cleanly.
+
+## Phase 2C2 program — bounded text intake
+
+Phase 2C2 is split into two independently releasable checkpoints so filesystem
+descriptor safety and cross-platform stdin liveness never share one review:
+
+- 2C2A: explicit batch-file and one-map-item reads.
+- 2C2B: piped stdin readiness, bounded reading/decoding, and ignored-input
+  detection.
+
+Both checkpoints preserve facade-level names and patch points. The lower layer
+receives limits and environment/runtime dependencies explicitly, returns
+immutable data or explicit failures, and has no import-time filesystem, stream,
+thread, environment, or terminal effects. Map gathering/JSONL parsing stays in
+the facade until its per-item orchestration phase; repository discovery stays in
+2C3.
+
+## Phase 2C2A plan — explicit file intake
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_intake_files.py` — RED-first exact exports,
+   import purity, regular/symlink/directory/FIFO, missing/unreadable, empty,
+   binary, UTF-8 replacement, multibyte cap, cumulative cap, map per-item error,
+   facade message/category, and compatibility-patch contracts.
+2. `ambient_codex/intake.py` — bounded regular-file reads for batch and map
+   callers over an explicit character ceiling, returning immutable chunks,
+   warnings, and overflow metadata rather than exiting or printing.
+3. `bin/ambient` — thin `read_files` and `_read_map_item` wrappers retain
+   patchable `ABS_MAX_CHARS`, `_fail_exit`, `_argv_command`, and stderr behavior.
+
+Move in 2C2A:
+
+- Regular-file/type checks, bounded byte reads, lossy UTF-8 decoding, NUL/binary
+  classification, empty-file classification, cumulative character accounting,
+  and map's per-item result text.
+- Correct map's existing byte/character mismatch: a valid multibyte file below
+  the character ceiling must be read fully, while decoded content above the
+  ceiling must be refused without silent truncation.
+- Apply binary detection to the complete bounded payload for both lanes; map's
+  documentation already promises the same binary guard as `read_files`.
+
+Do not move stdin, map JSONL/cumulative gathering, repository walking, gutters,
+diffs, secret policy, prompt construction, or command orchestration in 2C2A.
+Any descriptor-race hardening that cannot preserve cross-platform regular-file
+behavior in this three-file checkpoint must be recorded for 2C3, not hidden in
+an expanding patch.
+
+## Phase 2C2B plan — liveness-safe stdin intake
+
+Expected production/test file boundary (three files, frozen only after 2C2A is
+installed and closed):
+
+1. `tests/test_refactor_phase2_intake_stdin.py` — readiness, timeout, binary,
+   invalid text, over-limit, read-error, worker-error propagation, no-hang,
+   ignored-data, import-purity, and facade-patch contracts.
+2. `ambient_codex/intake.py` — extend the lower layer with explicit stream,
+   selector, environment, clock/thread, and platform adapters; immutable worker
+   outcomes replace the facade's shared mutable result dictionary.
+3. `bin/ambient` — compatibility wrappers retain `read_stdin_if_piped`,
+   `_stdin_read_and_decode`, `_read_stdin_bounded`, and
+   `warn_if_stdin_ignored`, including existing user-facing wording.
+
+The exact 2C2B ownership set may be narrowed before RED, but it may not absorb
+setup-key input, interactive takeover/chat input, MCP stdio, or map JSONL
+semantics. Unexpected stream failures must not be silently converted to empty
+input.
 
 ## Exact resume point
 
-1. Commit and push the Phase 2B3 closeout/Phase 2C1 boundary ledger.
-2. Write the three-file 2C1 pure-secret contracts and record expected RED.
-3. Move only classification/hit enumeration; complete local, clean-archive,
-   GitHub, and installed-cache gates before planning 2C2 in file-level detail.
+1. Commit and push the Phase 2C1 closeout and Phase 2C2 program boundary.
+2. Write only the three-file 2C2A explicit-file RED contracts and record the
+   observed failures.
+3. Extract explicit-file intake, run local/clean-archive/CI/installed-cache
+   gates, and close 2C2A before freezing or coding 2C2B.
 
-Do not begin 2B3 until 2B2 is green, committed, pushed, installed, and recorded.
+Do not begin 2C2B until 2C2A is green, committed, pushed, installed, and
+recorded.
