@@ -881,6 +881,25 @@ Do not move candidate discovery, skip counters, containment, binary sniffing,
 git subprocesses, coverage-note policy, `repo_audit_inputs`, or diff intake in
 2C3A.
 
+Phase 2C3A RED observed: all ten direct gutter/size contracts errored because
+`ambient_codex.repository` did not exist, its import-purity subprocess failed,
+and the facade contract errored because `_repository_core` was absent. RED is
+confined to the planned three-file ownership seam.
+
+Phase 2C3A local verification:
+
+- Core gutter results are immutable tuples; the facade preserves historical
+  list results. Stable ASCII, multibyte, empty, missing, numbering-width, and
+  trailing-line behavior matches pre-extraction commit `00c2989` exactly.
+- Size accounting now opens non-following/nonblocking descriptors where
+  supported, revalidates with `fstat`, refuses nonregular paths, bounds reads to
+  snapshot-size-plus-one, and falls back conservatively across every open/
+  stat/read/type/close failure. The new 81-line module has 100% line coverage.
+- All 1,251 guarded tests pass on Python 3.11, 3.12, and 3.14. Full ruff/compile,
+  isolated-venv installation, plugin/skill validators, offline stress (26/26),
+  and no-Node MCP startup (14 tools) pass. Clean-archive, GitHub matrix, and
+  installed-cache gates remain pending.
+
 ## Exact resume point
 
 1. Commit and push the Phase 2C3 program and exact 2C3A boundary.

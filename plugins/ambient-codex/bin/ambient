@@ -178,6 +178,7 @@ from ambient_codex.records import (  # noqa: E402
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
+from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 
@@ -7267,14 +7268,7 @@ def with_line_gutters(labeled):
     reviewer can cite EXACT lines even after a file is split across chunks —
     without this the model reports chunk-relative numbers that are silently
     wrong on any map-reduced audit (A2)."""
-    out = []
-    for label, text in labeled:
-        lines = text.split("\n")
-        width = max(2, len(str(len(lines))))
-        out.append((label,
-                    "\n".join(f"{i:>{width}}| {ln}"
-                              for i, ln in enumerate(lines, 1))))
-    return out
+    return list(_repository_core.with_line_gutters(tuple(labeled)))
 
 
 def _repo_candidate_paths(root):
@@ -7380,15 +7374,7 @@ def _guttered_size(full, size):
 . Newlines counted in binary: exact for ASCII, conservative
     (over-counts chars) for multibyte — never under the true sent size by
     more than the decode difference."""
-    lines = 1
-    try:
-        with open(full, "rb") as fh:
-            for block in iter(lambda: fh.read(1 << 16), b""):
-                lines += block.count(b"\n")
-    except OSError:
-        return size
-    width = max(2, len(str(lines)))
-    return size + lines * (width + 2)
+    return _repository_core.guttered_file_size(full, size)
 
 
 def repo_audit_inputs(args, api_key):
