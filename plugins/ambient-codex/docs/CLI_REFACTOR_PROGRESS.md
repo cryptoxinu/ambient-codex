@@ -753,23 +753,46 @@ Phase 2C2A local verification:
 
 ## Phase 2C2B plan — liveness-safe stdin intake
 
-Expected production/test file boundary (three files, frozen only after 2C2A is
-installed and closed):
+Production/test file boundary (three files):
 
 1. `tests/test_refactor_phase2_intake_stdin.py` — readiness, timeout, binary,
    invalid text, over-limit, read-error, worker-error propagation, no-hang,
    ignored-data, import-purity, and facade-patch contracts.
 2. `ambient_codex/intake.py` — extend the lower layer with explicit stream,
-   selector, environment, clock/thread, and platform adapters; immutable worker
-   outcomes replace the facade's shared mutable result dictionary.
+   selector, environment, thread-factory, and optional `fcntl` adapters;
+   immutable worker outcomes replace the facade's shared mutable result
+   dictionary.
 3. `bin/ambient` — compatibility wrappers retain `read_stdin_if_piped`,
    `_stdin_read_and_decode`, `_read_stdin_bounded`, and
    `warn_if_stdin_ignored`, including existing user-facing wording.
 
-The exact 2C2B ownership set may be narrowed before RED, but it may not absorb
-setup-key input, interactive takeover/chat input, MCP stdio, or map JSONL
-semantics. Unexpected stream failures must not be silently converted to empty
-input.
+The exact lower-layer export set after 2C2B is:
+
+- Existing `read_files` and `read_map_item`.
+- `stdin_wait_seconds(environment, default_wait, maximum_wait)` parses a finite,
+  positive, bounded wait from `AMBIENT_STDIN_WAIT` without reading `os.environ`
+  itself.
+- `read_stdin_text(stream, char_cap)` returns immutable
+  `(text, warnings, error)` values; it neither prints nor exits.
+- `read_stdin_bounded(reader, wait_s, thread_factory)` returns immutable
+  `(text, timed_out)` values and re-raises worker exceptions on the caller
+  thread instead of converting them to empty input.
+- `stdin_ready(stream, selector, wait_s)` distinguishes ready, timed-out, and
+  unsupported-selector states.
+- `stdin_has_waiting_data(stream, selector, fcntl_module)` performs the current
+  zero-timeout/FIONREAD check and returns only a boolean.
+
+Facade constants retain the ten-second default and add a named sixty-second
+maximum; facade wrappers retain all four public/private stdin names, patchable
+`sys.stdin`, `select.select`, `threading.Thread`, `fcntl`, environment, error
+category, and exact existing diagnostics. Binary NUL stripping/warning applies
+to the complete bounded payload, invalid/failed reads become explicit `input`
+errors, invalid or non-finite wait overrides fall back safely, and selector
+incompatibility still takes the daemon-thread timeout path.
+
+Do not absorb setup-key input, interactive takeover/chat input, MCP stdio, map
+JSONL semantics, command-level stdin precedence, or prompt construction.
+Unexpected stream failures must not be silently converted to empty input.
 
 ## Exact resume point
 
