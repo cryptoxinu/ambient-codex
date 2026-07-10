@@ -573,14 +573,64 @@ timeout or lock-open failure.
   remains 82% total; `config_store.py` is 98% covered, with only nested cleanup-
   failure handlers unexecuted.
 - Full ruff/compile, isolated-venv installation, plugin/skill validators,
-  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
-  GitHub matrix, and installed-cache gates remain pending.
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass.
+- A clean archive of commit `edaf8b1` passes recursive compile, all 1,190
+  guarded tests, and isolated installation. GitHub run `29110930210` passes all
+  18 runtime, package, quality, plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710172757` passes marker/private-mode
+  behavior, callable and fallback-lock writes, real 24-writer concurrency,
+  lock/temp cleanup, plugin validation, MCP initialize/list/self-test/offline-
+  control with 14 tools, and no-Node startup. The source manifest is restored
+  to `1.9.0`; source `HEAD` and `origin/main` match cleanly.
+
+## Phase 2C program — input, secret, and repository safety
+
+Phase 2C is split into four bounded checkpoints:
+
+- 2C1: pure credential/secret detection and location enumeration.
+- 2C2: bounded stdin, explicit-file, and map-item text intake.
+- 2C3: git/plain repository candidate discovery, containment, binary/size
+  classification, gutter sizing, and diff intake.
+- 2C4: generated/build path validation and safe record parsing, coordinated
+  with Phase 4 if generation-layer dependencies make an earlier move acyclically
+  incorrect.
+
+No Phase 2C module may import transport, model routing, spend, audit orchestration,
+generation, integrations, MCP, or the facade. System exits and user-facing
+command categories remain facade responsibilities; lower layers return bounded
+data, explicit errors, or immutable findings.
+
+## Phase 2C1 plan — pure secret tripwire
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_secrets.py` — RED-first export, precise/loose,
+   assignment/reference, filename, layered-gutter location, long-line runtime,
+   side-effect, and facade-equivalence contracts.
+2. `ambient_codex/secrets.py` — secret regexes plus pure identifier/value/line
+   classification and immutable hit enumeration; imports only `os`, `re`, and
+   the scan-bound constant.
+3. `bin/ambient` — compatibility aliases/wrappers retain `_env_is_strong`,
+   `_value_looks_nonsecret`, `_env_assignment_is_secret`, `_line_has_secret`,
+   `SECRET_NAMES_RE`, and `refuse_if_secrets`; only the facade maps hits to the
+   existing `_fail_exit` message/category.
+
+Move in 2C1:
+
+- All regex construction and pure classification from the loose/precise secret
+  pattern block through URL-credential scanning.
+- Credential-named-file checks, absolute line extraction, repeated gutter
+  stripping, first-20 location bounding, and hit enumeration.
+
+Preserve the current documented false-positive boundary and every existing
+tripwire corpus result. Do not combine this mechanical ownership move with new
+detection heuristics; review-driven hardening requires a separate RED example.
 
 ## Exact resume point
 
-1. Commit and push the Phase 2B2 closeout/Phase 2B3 boundary ledger.
-2. Write the three-file 2B3 config-write contract tests and record expected RED.
-3. Implement only state/config lock and atomic-write behavior; complete local,
-   clean-archive, GitHub, and installed-cache gates before planning 2C.
+1. Commit and push the Phase 2B3 closeout/Phase 2C1 boundary ledger.
+2. Write the three-file 2C1 pure-secret contracts and record expected RED.
+3. Move only classification/hit enumeration; complete local, clean-archive,
+   GitHub, and installed-cache gates before planning 2C2 in file-level detail.
 
 Do not begin 2B3 until 2B2 is green, committed, pushed, installed, and recorded.
