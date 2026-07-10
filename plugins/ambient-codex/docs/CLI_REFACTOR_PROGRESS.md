@@ -626,6 +626,22 @@ Preserve the current documented false-positive boundary and every existing
 tripwire corpus result. Do not combine this mechanical ownership move with new
 detection heuristics; review-driven hardening requires a separate RED example.
 
+## Phase 2C1 verification
+
+- RED observed: four direct internal tests errored and import purity failed
+  because `ambient_codex.secrets` did not exist. The new facade assertion also
+  caught and corrected its own singular `secret` expectation to the existing
+  `secrets` error category before implementation.
+- The regex corpus was moved mechanically; facade compatibility aliases retain
+  prior symbols while only immutable hit enumeration is new. The facade still
+  owns `_fail_exit`, command categorization, and the exact refusal message.
+- All 49 historical tripwire corpus tests and six new ownership/location/
+  performance contracts pass. `secrets.py` is 95% covered.
+- All 1,196 guarded tests pass on Python 3.11, 3.12, and 3.14. Full ruff/compile,
+  isolated-venv installation, plugin/skill validators, offline stress (26/26),
+  and no-Node MCP startup (14 tools) pass. Clean-archive, GitHub matrix, and
+  installed-cache gates remain pending.
+
 ## Exact resume point
 
 1. Commit and push the Phase 2B3 closeout/Phase 2C1 boundary ledger.
