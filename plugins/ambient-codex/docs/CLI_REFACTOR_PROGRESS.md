@@ -389,13 +389,62 @@ queries supplied by the standard `os` module.
   3.12, and 3.14; pinned coverage remains 81% total with `state.py` at 100%.
   Full ruff, isolated installation, recursive compile, plugin/skill validators,
   offline stress (26/26), and no-Node MCP startup (14 tools) also pass.
+- Corrective commit `37afbe9` passes clean-archive compile, all 1,155 guarded
+  tests, and isolated installation. Replacement GitHub run `29108136134`
+  passes all 18 jobs, including Windows Python 3.8/3.10/3.12/3.13.
+- Cache-busted install `1.9.0+codex.20260710164110` contains `state.py` and
+  passes installed facade/internal equivalence, foreign-root refusal, plugin
+  validation, MCP initialize/list/self-test/offline-control with 14 tools, and
+  no-Node startup. The source manifest is restored to `1.9.0`; source `HEAD`
+  and `origin/main` match with a clean worktree.
+
+## Phase 2B program — credentials and config persistence
+
+Phase 2B is divided into three independently reviewable checkpoints so secret
+process boundaries are never mixed with file parsing or lock/rename behavior:
+
+- 2B1: credential backend detection, OS keychain/libsecret operations, and key
+  precedence policy.
+- 2B2: owner/type/permission-safe config reading and defensive env-line parsing.
+- 2B3: state-root claiming, private-directory healing, cross-platform config
+  locking, and atomic merge-preserving config writes.
+
+Every internal function receives paths, environment values, service/account
+names, or process adapters explicitly. Modules may use the standard library but
+must not import the facade, read state, inspect the environment, invoke a secret
+store, or create files at import time. Facade wrappers remain where existing
+tests and integrations patch facade globals.
+
+## Phase 2B1 plan — credential boundary
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase2_credentials.py` — RED-first ownership, backend
+   routing, argv/stdin secret safety, timeout/failure, delete, precedence,
+   side-effect, and facade-patchability contracts.
+2. `ambient_codex/credentials.py` — credential backend selection and operations
+   over explicit platform, executable lookup, subprocess runner, service,
+   account, environment-key, and config inputs.
+3. `bin/ambient` — thin compatibility wrappers preserve current function names,
+   constants, facade monkeypatch points, exact return values, and key precedence.
+
+Move in 2B1:
+
+- `secret_backend`, `keychain_available`, `keychain_read`, `keychain_write`, and
+  `keychain_delete` decision/command construction.
+- `shared_key_env_is_set` and `resolve_key_and_backend` policy, including the
+  deliberate refusal to consult the cross-install `AMBIENT_API_KEY` variable.
+
+Explicitly defer config-file reads/writes and setup/onboarding orchestration.
+2B1 does not validate key syntax, contact Ambient, mutate config, or alter user
+messages. Existing security tests must continue proving that secrets travel over
+stdin and never process argv.
 
 ## Exact resume point
 
-1. Run the local/clean-archive gates for the Windows contract correction,
-   commit, push, and require the replacement GitHub matrix to pass.
-2. Reinstall and verify the cache-busted installed plugin.
-3. Mark 2A complete and write the 2B persistence-adapter file boundary before
-   moving config or keychain behavior.
+1. Commit and push the Phase 2A closeout/Phase 2B1 boundary ledger.
+2. Write the 2B1 credential contract tests and record the expected RED failure.
+3. Implement only the three-file 2B1 boundary, then run local, clean-archive,
+   GitHub, and installed-cache gates before planning 2B2 in file-level detail.
 
-Do not begin Phase 2B until 2A is green, committed, pushed, installed, and recorded.
+Do not begin 2B2 until 2B1 is green, committed, pushed, installed, and recorded.
