@@ -51,7 +51,7 @@ bugs, verification, commits, or the next action changes.
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
 | 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
-| 1B | Pure record and error types | Ready to commit | — | Local gates green |
+| 1B | Pure record and error types | Committed | `8ec853d` | Local/archive green; GitHub/install pending |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -288,11 +288,13 @@ RED/compatibility contract:
 - Runtime coverage remains 81% total; `records.py` is 100% covered.
 - Isolated-venv installation, recursive compile, full ruff, plugin/skill
   validators, offline stress (26/26), and no-Node MCP (14 tools) pass.
+- A clean archive of `8ec853d` passes all guarded tests and isolated-venv
+  installation with both internal modules present.
 
 ## Exact resume point
 
-1. Commit the green three-file Phase 1B implementation checkpoint.
-2. Run clean-archive, GitHub, and cache-busted installed-plugin gates.
+1. Push Phase 1B and require the full GitHub matrix to pass.
+2. Reinstall and verify the cache-busted installed plugin.
 3. Mark Phase 1 complete and scope Phase 2 before moving any stateful behavior.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
