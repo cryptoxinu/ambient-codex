@@ -496,6 +496,21 @@ fsync/replace, and config mutation to 2B3. The facade retains a zero-argument,
 independently patchable `read_config_file` binding, and all user-facing messages
 must remain byte-equivalent for existing inputs.
 
+## Phase 2B2 verification
+
+- RED observed: eight direct internal tests errored and the import-side-effect
+  subprocess failed because `ambient_codex.config_store` did not exist. The
+  facade-only zero-argument/path/platform test stayed green, isolating RED to
+  the planned ownership move.
+- Pre/post comparison against `ebc767f` proves exact config dictionaries,
+  diagnostics, and permission results across seven regular, Windows-mode,
+  corrupt, missing, symlink, read-error, and foreign-owner scenarios.
+- All 1,173 guarded tests pass on Python 3.11, 3.12, and 3.14. Runtime coverage
+  is 82% total; `config_store.py` and every earlier internal module are 100%.
+- Full ruff/compile, isolated-venv installation, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
+  GitHub matrix, and installed-cache gates remain pending.
+
 ## Exact resume point
 
 1. Commit and push the Phase 2B1 closeout/Phase 2B2 boundary ledger.
