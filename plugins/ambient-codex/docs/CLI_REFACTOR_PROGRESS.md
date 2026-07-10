@@ -50,8 +50,8 @@ bugs, verification, commits, or the next action changes.
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
-| 1A | Immutable runtime constants | Committed | `c0b5bb1` | Local/archive green; GitHub/install pending |
-| 1B | Immutable records and model metadata | Pending | — | — |
+| 1A | Immutable runtime constants | Complete | `c0b5bb1` | All gates green |
+| 1B | Pure record and error types | Planning | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
@@ -218,6 +218,13 @@ RED/compatibility contract:
   GitHub cross-platform gates remain pending.
 - Canonical local test commands were synchronized in bounded follow-up commits
   `a267f7b` and `637db65`; no documented gate bypasses `tests/__init__.py` now.
+- GitHub Actions run `29106204600` passed all 18 runtime, package, quality,
+  plugin, and no-Node jobs.
+- Cache-busted install `1.9.0+codex.20260710160907` contains the constants module
+  and passes facade import, plugin validation, MCP initialize/list/self-test/
+  control with 14 tools, and no-Node installed MCP startup.
+- The source manifest was restored to `1.9.0`; source `HEAD` and `origin/main`
+  matched with a clean worktree after installed-cache verification.
 
 ## Phase 1A findings
 
@@ -234,10 +241,46 @@ RED/compatibility contract:
 - `DEFAULT_MAX_TOKENS` is a compatibility-only facade symbol. It remains an
   explicit same-name re-export even though current runtime code does not read it.
 
+## Phase 1B plan — pure record and error types
+
+Purpose: move only dependency-free types that can sit directly above constants
+without changing method resolution, test patching, or runtime effects.
+
+Production/test file boundary (three files):
+
+1. `tests/test_refactor_phase1_records.py` — RED-first ownership, field/default,
+   error-payload, side-effect, and facade-compatibility tests.
+2. `ambient_codex/records.py` — stdlib-only `ModelProfile`, `NetworkError`,
+   `ChatError`, and `StallError`; no facade imports or effects.
+3. `bin/ambient` — imports/re-exports those four types and removes duplicate
+   definitions while existing functions continue resolving facade globals.
+
+Explicitly defer:
+
+- `Session`: its catalog method depends on facade-owned `safe_catalog`, locking,
+  and a weak cache, so it belongs with the transport/models extraction.
+- `RequestSpec`: its output-budget method depends on facade model-sizing helpers;
+  moving it now would reverse the dependency direction or break monkeypatching.
+- `AttemptState`: it contains `RequestSpec` and a mutable messages list despite a
+  frozen outer dataclass; move it with `RequestSpec` after that boundary is ready.
+- Mutable model-note/schema/config dictionaries; Phase 1 does not disguise
+  mutable global data as immutable metadata.
+
+RED/compatibility contract:
+
+- Exact `ModelProfile` fields/default construction and tuple semantics remain.
+- Error inheritance, string value, categories, partial/reasoning text, and
+  hard-wall flags remain byte-equivalent.
+- The facade exposes the same class objects with patchable bindings and owns no
+  duplicate assignments/class definitions.
+- Importing `ambient_codex.records` performs no state, environment, filesystem,
+  keychain, or network work.
+
 ## Exact resume point
 
-1. Push the Phase 1A commits and require the full GitHub matrix to pass.
-2. Reinstall and verify the cache-busted installed plugin before marking Phase
-   1A complete or beginning Phase 1B.
+1. Commit this Phase 1B plan.
+2. Write and run the record/error ownership tests RED.
+3. Extract only the four dependency-free types, then repeat every Phase 1A gate
+   before committing or beginning Phase 2.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
