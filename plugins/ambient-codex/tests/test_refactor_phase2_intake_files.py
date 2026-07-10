@@ -18,7 +18,15 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
-MOVED_NAMES = ("read_files", "read_map_item")
+MOVED_NAMES = (
+    "read_files",
+    "read_map_item",
+    "stdin_wait_seconds",
+    "read_stdin_text",
+    "read_stdin_bounded",
+    "stdin_ready",
+    "stdin_has_waiting_data",
+)
 
 
 def load_facade(home):

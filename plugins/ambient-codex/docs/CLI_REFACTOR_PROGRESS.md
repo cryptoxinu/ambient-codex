@@ -796,12 +796,40 @@ Do not absorb setup-key input, interactive takeover/chat input, MCP stdio, map
 JSONL semantics, command-level stdin precedence, or prompt construction.
 Unexpected stream failures must not be silently converted to empty input.
 
+Phase 2C2B RED observed: 19 direct stdin contracts errored because the five
+planned lower-layer APIs were absent; import purity alone stayed green. The
+existing exact-export ownership test failed on the intentionally expanded set,
+and both facade-path tests errored at the absent core patch points. RED is
+confined to the four-file ownership boundary.
+
+Phase 2C2B local verification:
+
+- The facade keeps all four stdin entry points while `intake.py` now owns finite
+  wait parsing, bounded lossy decoding, readiness classification, immutable
+  thread outcomes, and conservative ignored-data probing through explicit
+  adapters. It has no import-time stream/environment/thread effects.
+- Review-driven RED closes three prior liveness/integrity gaps: non-finite or
+  extreme wait overrides cannot exceed sixty seconds; unexpected reader-thread
+  failures reappear on the caller thread; and NUL stripping cannot hide that a
+  raw byte stream exceeded the maximum UTF-8 byte budget.
+- Pre/post comparison against `1e2114d` proves exact data and diagnostics across
+  six TTY, binary, plain-text, timeout, unsupported-selector, and invalid-wait
+  scenarios. Existing valid behavior is unchanged; only the RED-locked unsafe
+  cases differ.
+- All 1,237 guarded tests pass on the canonical Python 3.12 run; the preceding
+  1,236-test checkpoint passed independently on Python 3.11, 3.12, and 3.14.
+  The expanded `intake.py` module has 100% line coverage and total runtime
+  coverage remains above the 80% release floor.
+- Full ruff/compile, isolated-venv installation, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) pass. Clean-archive,
+  GitHub matrix, and installed-cache gates remain pending.
+
 ## Exact resume point
 
-1. Commit and push the Phase 2C2A closeout ledger.
-2. Reinspect historical stdin/readiness/warning tests and freeze the exact
-   three-file 2C2B exports, dependencies, error values, and facade patch points.
-3. Write the 2C2B RED contracts before moving any stdin implementation.
+1. Review, commit, and push the four-file Phase 2C2B implementation plus its
+   continuously updated ledger.
+2. Run clean-archive, 18-job GitHub, and cache-busted installed-plugin gates.
+3. Close 2C2B before freezing the Phase 2C3 repository-intake file boundary.
 
 Do not begin 2C3 until 2C2B is green, committed, pushed, installed, and
 recorded.

@@ -4183,27 +4183,26 @@ def chat(api_key, api_url, model, messages, args, kind="ask", session=None):
 
 
 STDIN_WAIT_S = 10  # how long to wait for piped data before treating stdin as empty
+STDIN_WAIT_MAX_S = 60  # hostile/accidental env overrides must never wait forever
 
 
 def read_stdin_if_piped():
-    if sys.stdin.isatty():
-        return ""
-    wait_s = float(STDIN_WAIT_S)
-    raw_wait = os.environ.get("AMBIENT_STDIN_WAIT")
-    if raw_wait:
-        try:
-            wait_s = max(0.1, float(raw_wait))
-        except ValueError:
-            pass
+    try:
+        if sys.stdin.isatty():
+            return ""
+    except (OSError, ValueError, AttributeError):
+        pass
+    wait_s = _intake_core.stdin_wait_seconds(
+        os.environ, float(STDIN_WAIT_S), float(STDIN_WAIT_MAX_S)
+    )
     # Guard against an IDE/CI wrapper that holds stdin open with NO data: wait
     # briefly for readability instead of blocking forever. A real pipe (git diff,
     # a file redirect) is readable immediately.
     no_data_msg = (
         f"ambient: stdin produced no data within {wait_s:g}s — proceeding "
         "without it (slow pipe? set AMBIENT_STDIN_WAIT=<seconds>)")
-    try:
-        ready, _, _ = select.select([sys.stdin], [], [], wait_s)
-    except (OSError, ValueError):
+    ready = _intake_core.stdin_ready(sys.stdin, select.select, wait_s)
+    if ready is None:
         # select() is unavailable here (Windows pipes, some IDE/CI wrappers) —
         # exactly the case the guard exists for. Do NOT fall through to an
         # UNBOUNDED blocking read: a held-open, dataless stdin would hang forever
@@ -4218,54 +4217,27 @@ def read_stdin_if_piped():
 def _stdin_read_and_decode():
     """Read stdin fully (bounded by ABS_MAX_CHARS) and decode lossily — blocks
     until EOF, so call only when data is present or the read is time-bounded."""
-    # Read BYTES and decode lossily: `git diff` on latin-1 sources or log data
-    # with stray bytes must degrade, not crash text-mode stdin.read().
-    buf = getattr(sys.stdin, "buffer", None)
-    if buf is not None:
-        raw = buf.read(ABS_MAX_CHARS * 4 + 1)  # bytes cap >= char cap for UTF-8
-        if b"\x00" in raw[:8192]:
-            print("ambient: stdin looks binary — decoding lossily (NUL bytes "
-                  "stripped)", file=sys.stderr)
-            raw = raw.replace(b"\x00", b"")
-        data = raw.decode("utf-8", errors="replace")
-    else:  # a test harness replaced stdin with a text stream
-        try:
-            data = sys.stdin.read(ABS_MAX_CHARS + 1)
-        except UnicodeDecodeError:
-            _fail_exit(None, _argv_command(), "input",
-                       "stdin is not valid UTF-8 text")
-    if len(data) > ABS_MAX_CHARS:
-        _fail_exit(
-            None, _argv_command(), "input",
-            f"stdin exceeds {ABS_MAX_CHARS:,} chars (too large for one request) "
-            "— split the job (e.g. per-directory) as a cost sanity check."
-        )
-    return data
+    data, warnings, error = _intake_core.read_stdin_text(
+        sys.stdin, ABS_MAX_CHARS
+    )
+    for warning in warnings:
+        print(f"ambient: {warning}", file=sys.stderr)
+    if error is not None:
+        _fail_exit(None, _argv_command(), "input", error)
+    return data or ""
 
 
 def _read_stdin_bounded(wait_s, no_data_msg):
     """Read stdin without EVER hanging: run the blocking read in a daemon thread
     and give up after wait_s. A real pipe reaches EOF within the wait; a held-open
     dataless stdin (where select() is unavailable) would otherwise block forever."""
-    result = {}
-
-    def _worker():
-        try:
-            result["data"] = _stdin_read_and_decode()
-        except SystemExit as exc:   # a _fail_exit inside the thread
-            result["exit"] = exc.code
-        except BaseException:       # never let the reader thread crash silently
-            result["data"] = ""
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-    t.join(wait_s)
-    if t.is_alive():                # still blocked on a dataless pipe — give up
+    data, timed_out = _intake_core.read_stdin_bounded(
+        _stdin_read_and_decode, wait_s, threading.Thread
+    )
+    if timed_out:                   # still blocked on a dataless pipe — give up
         print(no_data_msg, file=sys.stderr)
         return ""
-    if "exit" in result:
-        sys.exit(result["exit"])
-    return result.get("data", "")
+    return data
 
 
 def warn_if_stdin_ignored(hint):
@@ -4275,26 +4247,12 @@ def warn_if_stdin_ignored(hint):
     'readable' with zero bytes (`< /dev/null` from any agent harness), so only
     warn when bytes are ACTUALLY waiting — a false note in front of --json
     output breaks machine consumers (live-battery finding)."""
-    try:
-        if sys.stdin.isatty():
-            return
-        ready, _, _ = select.select([sys.stdin], [], [], 0)
-        if not ready:
-            return
-        if fcntl is None:
-            return  # can't count bytes portably — stay silent over crying wolf
-        import array
-        import termios
-        buf = array.array("i", [0])
-        fcntl.ioctl(sys.stdin.fileno(), termios.FIONREAD, buf)
-        if buf[0] > 0:
-            print(
-                f"ambient: note — data is waiting on stdin but was NOT read "
-                f"({hint})",
-                file=sys.stderr,
-            )
-    except (OSError, ValueError, ImportError, AttributeError):
-        pass
+    if _intake_core.stdin_has_waiting_data(sys.stdin, select.select, fcntl):
+        print(
+            f"ambient: note — data is waiting on stdin but was NOT read "
+            f"({hint})",
+            file=sys.stderr,
+        )
 
 
 def read_files(paths):
