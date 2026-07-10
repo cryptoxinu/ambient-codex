@@ -47,7 +47,8 @@ class InternalStatePathTests(unittest.TestCase):
             child = root / "nested" / ".." / "file"
             sibling_prefix = Path(f"{root}-foreign") / "file"
 
-            self.assertEqual(state.resolve(child), os.path.realpath(root / "file"))
+            expected = os.path.normcase(os.path.realpath(root / "file"))
+            self.assertEqual(state.resolve(child), expected)
             self.assertTrue(state.is_within(child, root))
             self.assertTrue(state.is_within(root, root))
             self.assertFalse(state.is_within(sibling_prefix, root))

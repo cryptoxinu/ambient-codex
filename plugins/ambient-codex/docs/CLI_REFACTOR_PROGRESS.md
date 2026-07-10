@@ -373,9 +373,27 @@ queries supplied by the standard `os` module.
 - A clean archive of `2d623f5` passes all guarded tests and isolated-venv
   installation with `state.py` present.
 
+## Phase 2A CI finding
+
+- GitHub run `29107572182` passed every Linux/macOS runtime, package-install,
+  quality, plugin, and no-Node job; all four Windows runtime jobs failed the
+  same new `resolve` contract assertion.
+- The implementation correctly preserves the pre-extraction
+  `normcase(realpath(abspath(expanduser(path))))` behavior. On Windows,
+  `normcase` lowercases case-insensitive paths, while the test's expected value
+  used raw `realpath` and retained display casing.
+- The test now compares against `normcase(realpath(...))`. Production behavior
+  and containment security semantics are unchanged; the complete matrix must
+  pass on the corrective commit before installation.
+- After the correction, all 1,155 guarded tests pass on local Python 3.11,
+  3.12, and 3.14; pinned coverage remains 81% total with `state.py` at 100%.
+  Full ruff, isolated installation, recursive compile, plugin/skill validators,
+  offline stress (26/26), and no-Node MCP startup (14 tools) also pass.
+
 ## Exact resume point
 
-1. Push 2A and require the full GitHub matrix to pass.
+1. Run the local/clean-archive gates for the Windows contract correction,
+   commit, push, and require the replacement GitHub matrix to pass.
 2. Reinstall and verify the cache-busted installed plugin.
 3. Mark 2A complete and write the 2B persistence-adapter file boundary before
    moving config or keychain behavior.
