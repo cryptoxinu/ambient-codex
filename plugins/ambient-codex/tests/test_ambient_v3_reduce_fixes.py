@@ -554,6 +554,18 @@ class TestM2DryRunParity(unittest.TestCase):
         self.assertEqual(a[2], "strong/reduce")
         self.assertEqual(k.get("extra_calls", 0), 1)
 
+    def test_build_dry_run_labels_auto_model_as_unresolved(self):
+        with tempfile.TemporaryDirectory() as root:
+            out = io.StringIO()
+            args = build_args(root, dry_run=True, model="auto:cheapest")
+            with contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                amb.cmd_build(args, "key-abcdef123456", "https://x", {})
+        text = out.getvalue()
+        self.assertIn("auto:cheapest", text)
+        self.assertIn("live selection deferred", text)
+        self.assertIn(amb.DEFAULT_CODE_MODEL, text)
+
     def test_build_gate_is_fallback_aware(self):
         # the build generation gate + dry-run must price the
         # generation calls via the fallback-aware helper so a --fallback swap to

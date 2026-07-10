@@ -78,6 +78,36 @@ class RepositoryCoverageTests(unittest.TestCase):
         self.assertTrue(meta["coverage_gap"])
 
 
+class BuildResumeIdentityTests(unittest.TestCase):
+    def _identity(self, **changes):
+        values = {
+            "task": "build it",
+            "model": "model/a",
+            "reduce_model": "model/a",
+            "context_paths": ["a.py"],
+            "raw_context_sha": "abc123",
+            "max_files": 8,
+            "max_file_bytes": 200_000,
+            "max_tokens": 16_384,
+            "temperature": 0.1,
+        }
+        values.update(changes)
+        return amb.build_resume_identity(**values)
+
+    def test_generation_parameters_invalidate_resume_state(self):
+        original = self._identity()
+        for field, value in (
+            ("max_tokens", 32_768),
+            ("temperature", 0.7),
+            ("reduce_model", "model/b"),
+        ):
+            with self.subTest(field=field):
+                self.assertNotEqual(original, self._identity(**{field: value}))
+
+    def test_identical_build_inputs_keep_a_stable_identity(self):
+        self.assertEqual(self._identity(), self._identity())
+
+
 class RequestBudgetTests(unittest.TestCase):
     def test_public_budget_allows_current_frontier_output_cap(self):
         self.assertGreaterEqual(amb.MAX_REQUESTED_TOKENS, 262144)
@@ -91,6 +121,60 @@ class RequestBudgetTests(unittest.TestCase):
                 amb.MAX_REQUESTED_TOKENS,
             )
         self.assertIn("capped", err.getvalue())
+
+    def test_reasoning_cost_estimate_reserves_the_full_output_budget(self):
+        catalog = [{
+            "id": "reasoner",
+            "context_length": 262_144,
+            "max_output_length": 131_072,
+            "supported_features": ["reasoning"],
+            "pricing": {"input": 1.0, "output": 2.0},
+        }]
+
+        expected, bound, assumed = amb.estimate_cost(
+            catalog, "reasoner", 100_000, 10, 65_536
+        )
+
+        self.assertFalse(assumed)
+        self.assertEqual(expected, bound)
+
+    def test_non_reasoning_cost_estimate_keeps_the_answer_reserve(self):
+        catalog = [{
+            "id": "direct",
+            "context_length": 262_144,
+            "max_output_length": 131_072,
+            "supported_features": [],
+            "pricing": {"input": 1.0, "output": 2.0},
+        }]
+
+        expected, bound, assumed = amb.estimate_cost(
+            catalog, "direct", 100_000, 10, 65_536
+        )
+
+        self.assertFalse(assumed)
+        self.assertLess(expected, bound)
+
+    def test_unknown_model_cost_estimate_is_conservative(self):
+        expected, bound, assumed = amb.estimate_cost(
+            [], "unknown", 100_000, 10, 65_536
+        )
+
+        self.assertTrue(assumed)
+        self.assertEqual(expected, bound)
+
+    def test_reasoning_auto_budget_honors_global_ceiling(self):
+        catalog = [{
+            "id": "large-reasoner",
+            "context_length": 1_000_000,
+            "max_output_length": 262_144,
+            "supported_features": ["reasoning"],
+        }]
+
+        profile = amb.model_profile(catalog, "large-reasoner")
+
+        self.assertLessEqual(
+            profile.output_budget, amb.MAX_AUTO_BUDGET_TOKENS
+        )
 
 
 if __name__ == "__main__":

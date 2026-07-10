@@ -228,6 +228,7 @@ class TestMcpAdapter(unittest.TestCase):
         ambient = data["mcpServers"]["ambient"]
         self.assertEqual(ambient["command"], "python3")
         self.assertEqual(ambient["args"], ["-u", "mcp/ambient_mcp.py"])
+        self.assertEqual(ambient["cwd"], ".")
         self.assertGreaterEqual(ambient["startup_timeout_sec"], 60)
         self.assertEqual(ambient["tool_timeout_sec"], 120)
 
@@ -313,6 +314,7 @@ class TestMcpAdapter(unittest.TestCase):
             self.assertIsNotNone(shutil.which("python3", path=tmp))
             cfg = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
             ambient = cfg["mcpServers"]["ambient"]
+
             proc = subprocess.run(
                 [ambient["command"], *ambient["args"]],
                 cwd=ROOT,

@@ -388,13 +388,16 @@ class TestTelemetryBlending(unittest.TestCase):
     def test_estimate_cost_byte_identical_with_no_history(self):
         with temp_ledger(records=None):
             got = amb.estimate_cost(CATALOG, "m-reason", 123457, 3, 20000)
-        # The exact pre-telemetry formula, from the static constant:
+        # The exact no-history formula, from the static token constant and the
+        # reasoning-aware output reserve:
         price = amb.model_pricing(CATALOG, "m-reason") or (
             amb.ASSUMED_MAX_INPUT_PRICE, amb.ASSUMED_MAX_OUTPUT_PRICE)
         in_tok = 123457 / amb.CHARS_PER_TOKEN
         input_cost = in_tok * 1.3 * price[0]
         bound = (input_cost + 3 * 20000 * price[1]) / 1e6
-        expected_out = min(20000, amb.ANSWER_TOKENS_RESERVE)
+        expected_out = amb._expected_output_tokens(
+            CATALOG, "m-reason", 20000
+        )
         expected = (input_cost + 3 * expected_out * price[1]) / 1e6
         self.assertEqual(got[0], expected)
         self.assertEqual(got[1], bound)

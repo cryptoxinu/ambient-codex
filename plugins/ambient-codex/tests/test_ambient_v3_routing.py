@@ -310,11 +310,17 @@ class TestReduceModel(unittest.TestCase):
         # map input 1.0x at map prices + synth input 0.3x at reduce prices
         # + each lane's own output calls at its own price.
         in_tok = 100_000 / amb.CHARS_PER_TOKEN
-        eo = min(args.max_tokens, amb.ANSWER_TOKENS_RESERVE)
+        map_eo = amb._expected_output_tokens(
+            cat, "cheap/ready", args.max_tokens
+        )
+        reduce_eo = amb._expected_output_tokens(
+            cat, "big/ready", args.max_tokens
+        )
         mp = amb.model_pricing(cat, "cheap/ready")
         rp = amb.model_pricing(cat, "big/ready")
         input_cost = in_tok * 1.0 * mp[0] + in_tok * 0.3 * rp[0]
-        expected = (input_cost + 4 * eo * mp[1] + 4 * eo * rp[1]) / 1e6
+        expected = (input_cost + 4 * map_eo * mp[1]
+                    + 4 * reduce_eo * rp[1]) / 1e6
         bound = (input_cost + 4 * args.max_tokens * mp[1]
                  + 4 * args.max_tokens * rp[1]) / 1e6
         self.assertAlmostEqual(gated["expected"], expected, places=9)

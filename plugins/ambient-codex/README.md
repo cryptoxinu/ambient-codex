@@ -117,7 +117,8 @@ plugins/ambient-codex
 
 ## Why Codex Starts Python
 
-Codex launches `python3 -u mcp/ambient_mcp.py` as a stdio MCP server. MCP is the
+Codex resolves `.mcp.json` relative to the installed plugin root and launches
+`python3 -u mcp/ambient_mcp.py` there. MCP is the
 tool bridge that lets Codex call bounded local actions such as status, model
 selection, mode changes, key lifecycle guidance, doctor, usage, short asks, and
 small audits. The MCP process does not make network calls during startup and it
@@ -251,7 +252,10 @@ Terminal agent:
 ```
 
 Bundled `agent` uses opencode and exports the Ambient key into that subprocess
-environment. Keep credentials out of the agent working tree.
+environment. It adds opencode's `--pure` isolation flag by default so unrelated
+global plugins do not enter the agent session; pass an explicit opencode
+`--no-pure` only when that broader environment is intentional. Keep credentials
+out of the agent working tree.
 
 ## Codex Plugin Surfaces
 
@@ -315,6 +319,11 @@ Fleet-wide spend reservations are on by default so parallel Ambient calls share
 one budget ceiling. Disable them with `AMBIENT_FLEET_BUDGET=off` or
 bundled `control setting fleet-budget off`. `AMBIENT_RESERVATION_TTL` controls stale
 reservation pruning on platforms where process liveness cannot be proven.
+Reasoning models reserve their full possible completion budget for this gate,
+because internal reasoning can consume most of it. Known direct-answer models use
+a smaller expected-answer reserve. A job rejected by the ceiling can still be run
+deliberately with `--allow-cost`; explicit `--max-tokens` remains subject to the
+model's actual output and context limits.
 
 ## Current Codex Provider Status
 

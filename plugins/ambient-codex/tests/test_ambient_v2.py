@@ -460,7 +460,7 @@ class TestSpendGate(unittest.TestCase):
         e, b, assumed = amb.estimate_cost([], "m", 100_000, 3, 30_000)
         self.assertTrue(assumed)
         self.assertGreater(e, 0)
-        self.assertGreater(b, e)
+        self.assertEqual(b, e)
 
     def test_ceiling_blocks_expected(self):
         with self.assertRaises(SystemExit) as cm:

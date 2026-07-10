@@ -16,7 +16,15 @@ All notable changes to `ambient-codex`.
   startup error redaction, and truncated-frame rejection.
 - Repaired malformed Ambient Codex entries in opencode's shared config without
   modifying foreign providers, preserving restrictive file permissions and the
-  install-scoped credential boundary.
+  install-scoped credential boundary; agent runs now use opencode's isolated
+  `--pure` mode unless the caller explicitly overrides it.
+- Made reasoning-model spend estimates reserve the full completion budget,
+  capped automatic reasoning budgets at 65,536 tokens, and retained
+  `--allow-cost` plus explicit `--max-tokens` as deliberate power-user escapes.
+- Bound resumable builds to model, reducer, context digest, generation settings,
+  and runtime version; corrected unresolved `auto` model labeling in dry runs.
+- Reduced the always-loaded Codex skill contract by roughly 60% while preserving
+  delegation, takeover, model routing, massive-repository, and trust rules.
 - Corrected public launcher, key-isolation, uninstall, privacy, and portable-path
   documentation; added a published privacy-policy link to the plugin manifest.
 - Revalidated the live agent lane, large map/reduce, resumable build, takeover

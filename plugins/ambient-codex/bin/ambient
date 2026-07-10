@@ -1714,14 +1714,38 @@ def build_plan_rf_ladder(model, profile):
     return ladder
 
 
+def _expected_output_tokens(catalog, model, max_tokens):
+    """Conservative expected output for spend gating.
+
+    Ambient-compatible reasoning models account for internal reasoning inside
+    the completion budget and routinely consume far more than the final answer
+    text. Reserve their full requested budget. A missing catalog entry gets the
+    same conservative treatment; only a known non-reasoning model uses the
+    normal answer reserve.
+    """
+    meta = next(
+        (item for item in (catalog or [])
+         if isinstance(item, dict) and item.get("id") == model),
+        None,
+    )
+    if meta is None:
+        return max_tokens
+    raw_features = meta.get("supported_features")
+    features = raw_features if isinstance(raw_features, list) else []
+    if "reasoning" in features:
+        return max_tokens
+    return min(max_tokens, ANSWER_TOKENS_RESERVE)
+
+
 def estimate_cost(catalog, model, input_chars, n_calls, max_tokens):
     """(expected, bound, assumed) dollar estimates for a run. `bound` assumes
     every call emits its FULL max_tokens budget (the old, 10-30x-pessimistic
-    figure that over-refused big legitimate jobs); `expected` uses a realistic
-    per-call output. Unpriced model / missing catalog → worst-case ASSUMED
-    prices with assumed=True, so the ceiling still applies. Input tokens use
-    the CONSERVATIVE cost cpt (_cost_cpt = min(observed, static) —
-    telemetry may only tighten the gate, never under-price)."""
+    figure that over-refused big legitimate jobs); `expected` uses the full
+    output budget for reasoning or unknown models and a normal answer reserve
+    for known direct-answer models. Unpriced model / missing catalog →
+    worst-case ASSUMED prices with assumed=True, so the ceiling still applies.
+    Input tokens use the CONSERVATIVE cost cpt (_cost_cpt = min(observed,
+    static) — telemetry may only tighten the gate, never under-price)."""
     price = model_pricing(catalog, model)
     assumed = price is None
     if assumed:
@@ -1731,7 +1755,7 @@ def estimate_cost(catalog, model, input_chars, n_calls, max_tokens):
     # plus ~30% for the synthesis pass re-sending the partial results.
     input_cost = in_tok * 1.3 * price[0]
     bound = (input_cost + n_calls * max_tokens * price[1]) / 1e6
-    expected_out = min(max_tokens, ANSWER_TOKENS_RESERVE)
+    expected_out = _expected_output_tokens(catalog, model, max_tokens)
     expected = (input_cost + n_calls * expected_out * price[1]) / 1e6
     return expected, bound, assumed
 
@@ -2413,7 +2437,7 @@ def _fb_call_cost(catalog, model, chars, max_tokens, in_factor,
         price = (ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE)
     in_cost = (chars / _cost_cpt(cpt_model or model)) * in_factor * price[0]
     bound = (in_cost + max_tokens * price[1]) / 1e6
-    expected_out = min(max_tokens, ANSWER_TOKENS_RESERVE)
+    expected_out = _expected_output_tokens(catalog, model, max_tokens)
     expected = (in_cost + expected_out * price[1]) / 1e6
     return expected, bound, assumed
 
@@ -2653,7 +2677,7 @@ def estimate_cost_mr(catalog, model, reduce_model, input_chars, n_chunks,
         n_calls = n_chunks + extra_calls
         input_cost = in_tok * price[0]
         bound = (input_cost + n_calls * max_tokens * price[1]) / 1e6
-        expected_out = min(max_tokens, ANSWER_TOKENS_RESERVE)
+        expected_out = _expected_output_tokens(catalog, model, max_tokens)
         expected = (input_cost + n_calls * expected_out * price[1]) / 1e6
         return expected, bound, assumed
     rmodel = reduce_model or model
@@ -2668,9 +2692,12 @@ def estimate_cost_mr(catalog, model, reduce_model, input_chars, n_chunks,
     map_calls, red_calls = n_chunks + extra_calls, n_chunks
     bound = (input_cost + map_calls * max_tokens * mp[1]
              + red_calls * max_tokens * rp[1]) / 1e6
-    expected_out = min(max_tokens, ANSWER_TOKENS_RESERVE)
-    expected = (input_cost + map_calls * expected_out * mp[1]
-                + red_calls * expected_out * rp[1]) / 1e6
+    map_expected_out = _expected_output_tokens(catalog, model, max_tokens)
+    reduce_expected_out = _expected_output_tokens(
+        catalog, rmodel, max_tokens
+    )
+    expected = (input_cost + map_calls * map_expected_out * mp[1]
+                + red_calls * reduce_expected_out * rp[1]) / 1e6
     return expected, bound, asm_m or asm_r
 
 
@@ -3095,14 +3122,16 @@ def model_profile(catalog, model):
         # A1: size single-shot to the model's REAL window, not a flat 32k.
         single = _reasoning_single_shot_target(ctx, max_out, cpt)
         out = _reasoning_output_budget(single, cpt)
-        if out > max_out:
+        if out > ceiling:
             # Hard output cap (e.g. gemma-4-31b = 16384) can't hold
             # reasoning+answer for the target single-shot. INVERT
             # _reasoning_output_budget INCLUDING OUTPUT_SAFETY so the shrunk
             # input's derived budget actually fits the cap: solve
-            # out = (reasoning_tok + reserve) * safety = max_out.
-            out = max_out
-            reasoning_tok = max(256, max_out / OUTPUT_SAFETY - ANSWER_TOKENS_RESERVE)
+            # out = (reasoning_tok + reserve) * safety = ceiling.
+            out = ceiling
+            reasoning_tok = max(
+                256, ceiling / OUTPUT_SAFETY - ANSWER_TOKENS_RESERVE
+            )
             single = max(MIN_REASONING_CHUNK,
                          int(reasoning_tok * cpt / REASONING_EXPANSION))
         chunk = int(single * REASONING_CHUNK_FACTOR)
@@ -10259,6 +10288,34 @@ def _build_state_path(root):
     return os.path.join(root, ".ambient-build.json")
 
 
+def build_resume_identity(*, task, model, reduce_model, context_paths,
+                          raw_context_sha, max_files, max_file_bytes,
+                          max_tokens, temperature):
+    """Hash every stable input that can change generated build content.
+
+    Include the runtime version so prompt/repair changes in a plugin update do
+    not silently reuse files generated by an older pipeline. This identity is
+    separate from the on-disk state format version.
+    """
+    payload = {
+        "identity_version": 2,
+        "runtime_version": __version__,
+        "task": task,
+        "model": model,
+        "reduce_model": reduce_model,
+        "context_paths": sorted(str(path) for path in (context_paths or [])),
+        "raw_context_sha": raw_context_sha,
+        "max_files": max_files,
+        "max_file_bytes": max_file_bytes,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _save_build_state(root, state):
     """Atomic 0600 resume-state write; best-effort (a state failure must never
     kill a run whose results are already in memory)."""
@@ -10353,6 +10410,7 @@ def cmd_build(args, api_key, api_url, conf):
     batches; state in .ambient-build.json makes any interrupted run resumable
     without re-billing finished files."""
     task = " ".join(args.task).strip()
+    dry_run_auto_model = None
     if not task:
         usage_exit('describe what to build: '
                    'ambient-codex build "a flask todo API with tests" --dir out')
@@ -10397,6 +10455,7 @@ def cmd_build(args, api_key, api_url, conf):
         # so the plan (and model_profile sizing below) has a real model.
         model = resolve_model(args, conf, "code")
         if is_auto_model(model):
+            dry_run_auto_model = model
             model = DEFAULT_CODE_MODEL
     else:
         model = route_model(args, conf, "code", catalog,
@@ -10463,8 +10522,12 @@ def cmd_build(args, api_key, api_url, conf):
                 args.max_tokens, args, conf,
                 per_call_chars=[gen_call_chars] * gen_calls)
         print("ambient-codex build plan (dry run — nothing sent):")
-        print(f"  model:         {model} "
-              f"({'reasoning' if profile.is_reasoning else 'direct'})")
+        if dry_run_auto_model:
+            print(f"  model:         {dry_run_auto_model} (live selection deferred; "
+                  f"sizing preview uses {model})")
+        else:
+            print(f"  model:         {model} "
+                  f"({'reasoning' if profile.is_reasoning else 'direct'})")
         if needs_distill and reduce_model != model:
             print(f"  models:        map={model}, reduce={reduce_model}")
         print(f"  task:          {len(task):,} chars"
@@ -10505,12 +10568,20 @@ def cmd_build(args, api_key, api_url, conf):
                        api_key=api_key)
         context = context[:max(1000, single // 2)]
 
-    # M21: fold the caps into the identity so lowering --max-files/--max-file-
-    # bytes invalidates a cached larger plan instead of resuming it verbatim.
-    task_sha = hashlib.sha256(
-        (f"{task}\0{model}\0{','.join(sorted(args.context or []))}"
-         f"\0{raw_context_sha}\0{args.max_files}\0{args.max_file_bytes}").encode()
-    ).hexdigest()
+    # Resume only when every generation-affecting input matches. In particular,
+    # a larger token budget or changed temperature must not reuse files produced
+    # under the previous request shape.
+    task_sha = build_resume_identity(
+        task=task,
+        model=model,
+        reduce_model=reduce_model,
+        context_paths=args.context,
+        raw_context_sha=raw_context_sha,
+        max_files=args.max_files,
+        max_file_bytes=args.max_file_bytes,
+        max_tokens=args.max_tokens,
+        temperature=args.temperature,
+    )
     # max_plan = the user's OWN --max-files: task_sha matching is cache identity,
     # not integrity, so a poisoned same-hash state must not exceed the cap.
     state = None if args.no_resume else _load_build_state(
