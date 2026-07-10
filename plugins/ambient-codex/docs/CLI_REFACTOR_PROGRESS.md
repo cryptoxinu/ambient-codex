@@ -50,7 +50,7 @@ bugs, verification, commits, or the next action changes.
 |---|---|---|---|---|
 | 0A | Package seam and install fixtures | Complete | `c79596d` | Local gates + committed archive green |
 | 0B | CI/package gate integration | Complete | `4c8e31f` | GitHub + installed-cache gates green |
-| 1A | Immutable runtime constants | Ready to commit | — | Local gates green; docs/CI pending |
+| 1A | Immutable runtime constants | Committed | `c0b5bb1` | Local/archive green; GitHub/install pending |
 | 1B | Immutable records and model metadata | Pending | — | — |
 | 2 | State, safety, and spend boundaries | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -213,8 +213,11 @@ RED/compatibility contract:
   modules 100%.
 - Isolated-venv installation, recursive package compilation, full ruff, plugin
   and skill validators, offline stress (26/26), and no-Node MCP (14 tools) pass.
-- Clean archive, installed-cache, and GitHub cross-platform gates remain pending
-  until the Phase 1A implementation commit exists.
+- A clean archive of the committed Phase 1A tree passes recursive compile, all
+  1,140 guarded tests, and isolated-venv installation. Installed-cache and
+  GitHub cross-platform gates remain pending.
+- Canonical local test commands were synchronized in bounded follow-up commits
+  `a267f7b` and `637db65`; no documented gate bypasses `tests/__init__.py` now.
 
 ## Phase 1A findings
 
@@ -233,10 +236,8 @@ RED/compatibility contract:
 
 ## Exact resume point
 
-1. Commit the green five-file Phase 1A implementation checkpoint.
-2. Synchronize documented unittest commands to guarded discovery in bounded
-   documentation-only checkpoints.
-3. Run clean-archive, GitHub, and cache-busted installed-plugin gates before
-   marking Phase 1A complete or beginning Phase 1B.
+1. Push the Phase 1A commits and require the full GitHub matrix to pass.
+2. Reinstall and verify the cache-busted installed plugin before marking Phase
+   1A complete or beginning Phase 1B.
 
 Do not begin Phase 2 until Phase 1 is green, committed, pushed, and recorded.
