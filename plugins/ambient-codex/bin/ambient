@@ -180,6 +180,7 @@ from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import transport as _transport  # noqa: E402
+from ambient_codex import telemetry as _telemetry_core  # noqa: E402
 from ambient_codex import usage_store as _usage_store  # noqa: E402
 from ambient_codex import usage_report as _usage_report  # noqa: E402
 from ambient_codex import usage_pricing as _usage_pricing  # noqa: E402
@@ -1067,44 +1068,12 @@ def observed_cpt(model):
     TELEMETRY_CPT_MAX] so a corrupt ledger can never skew budgets. The
     ledger is read ONCE per process (memoized) — model_profile sits on the
     hot path and must not re-hit the disk per call."""
-    if not model or not _telemetry_enabled():
-        return None
     global _TELEMETRY_CPT_CACHE
-    if _TELEMETRY_CPT_CACHE is None:
-        table = {}
-        try:
-            with open(USAGE_PATH, encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        record = json.loads(line)
-                    except ValueError:
-                        continue
-                    if not isinstance(record, dict) or record.get("est"):
-                        continue
-                    mid = record.get("model")
-                    chars = record.get("chars")
-                    in_tok = record.get("in")
-                    if (not isinstance(mid, str)
-                            or isinstance(chars, bool)
-                            or isinstance(in_tok, bool)
-                            or not isinstance(chars, (int, float))
-                            or not isinstance(in_tok, (int, float))
-                            or not 0 < chars < float("inf")
-                            or not 0 < in_tok < float("inf")):
-                        continue
-                    ratio = max(TELEMETRY_CPT_MIN,
-                                min(TELEMETRY_CPT_MAX, chars / in_tok))
-                    prev = table.get(mid)
-                    table[mid] = ratio if prev is None else (
-                        TELEMETRY_EWMA_ALPHA * ratio
-                        + (1 - TELEMETRY_EWMA_ALPHA) * prev)
-        except OSError:
-            pass  # no ledger yet → no history → static defaults
-        _TELEMETRY_CPT_CACHE = table
-    val = _TELEMETRY_CPT_CACHE.get(model)
-    if val is None:
-        return None
-    return max(TELEMETRY_CPT_MIN, min(TELEMETRY_CPT_MAX, val))
+    value, _TELEMETRY_CPT_CACHE = _telemetry_core.observed_cpt(
+        model, _telemetry_enabled(), USAGE_PATH, _TELEMETRY_CPT_CACHE,
+        TELEMETRY_CPT_MIN, TELEMETRY_CPT_MAX, TELEMETRY_EWMA_ALPHA,
+    )
+    return value
 
 
 def _effective_cpt(model):
