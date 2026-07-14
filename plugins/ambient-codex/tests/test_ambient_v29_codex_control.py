@@ -145,7 +145,7 @@ class ControlSnapshotTests(ControlCase):
         setting_names = [setting["name"] for setting in data["settings"]]
         self.assertEqual(
             setting_names,
-            ["streaming", "fallback", "fleet-budget", "reference-price"],
+            ["streaming", "fallback", "fleet-budget", "reference-price", "savings"],
         )
         self.assertNotIn("spend-cap", "\n".join(data["actions"]))
 

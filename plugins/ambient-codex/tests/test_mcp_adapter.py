@@ -499,7 +499,9 @@ class TestMcpAdapter(unittest.TestCase):
         mcp = load_mcp()
         tool = next(tool for tool in mcp.TOOLS if tool["name"] == "ambient_set_config")
         names = tool["inputSchema"]["properties"]["name"]["enum"]
-        self.assertEqual(names, ["streaming", "fallback", "fleet-budget", "reference-price"])
+        self.assertEqual(
+            names,
+            ["streaming", "fallback", "fleet-budget", "reference-price", "savings"])
 
     def test_setters_validate_before_subprocess(self):
         mcp = load_mcp()

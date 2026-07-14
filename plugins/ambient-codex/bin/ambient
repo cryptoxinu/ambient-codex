@@ -871,8 +871,7 @@ def build_banner():
         status = (f"status: no API key yet — run: {LAUNCHER_NAME} setup   "
                   f"(keys at {KEY_CONSOLE_URL})")
     return f"""ambient-codex {__version__} — open frontier models in your terminal,
-from the Ambient decentralized inference network (ambient.xyz): paid per token,
-~10-40x cheaper than the closed frontier models.
+from the Ambient decentralized inference network (ambient.xyz): paid per token.
 
 Get started
   ambient-codex setup      store + verify your API key (one time)
@@ -909,8 +908,7 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
     print(f"Key verified — {probe_detail}.")
     print(f"Stored in: {where}")
     print(net)
-    print("\nWelcome to Ambient — open frontier models from your terminal, "
-          "~10-40x cheaper than the closed ones.\n")
+    print("\nWelcome to Ambient — open frontier models from your terminal.\n")
     if funds_issue:
         print(f"  NOTE: your account is OUT OF FUNDS — completions will fail until\n"
               f"  you top up at {KEY_CONSOLE_URL}, then run: ambient-codex doctor\n")
@@ -1538,7 +1536,7 @@ def _savings_enabled(conf=None):
     """Whether the opt-in savings/comparison note shows. OFF BY DEFAULT (founder
     hard rule): absolute cost is plan-dependent (API vs subscription), so the
     relative '%-cheaper' note appears only when the user turns it on (env
-    AMBIENT_SAVINGS or `settings set savings on`). A dollar figure is NEVER
+    AMBIENT_SAVINGS or `config set savings on`). A dollar figure is NEVER
     surfaced either way. Memoized on the config path like the reference price —
     it cannot change mid-run."""
     global _SAVINGS_CACHE
@@ -4884,6 +4882,22 @@ def render_result(text, partial, reason, args, api_key, usage=None, model=None,
         )
 
 
+_PUBLIC_USAGE_KEYS = frozenset((
+    "prompt_tokens", "completion_tokens", "total_tokens",
+    "reasoning_tokens", "_estimated",
+))
+
+
+def _public_usage(usage):
+    """Only token counts and the estimation marker are safe to emit. A provider
+    response may attach cost/price/saved_pct metadata to `usage`; those never
+    leave the tool (founder hard rule: never surface money, and the savings
+    comparison is opt-in)."""
+    if not isinstance(usage, dict):
+        return usage
+    return {k: usage[k] for k in usage if k in _PUBLIC_USAGE_KEYS}
+
+
 def emit_json(kind, *, model, api_key="", content=None, findings=None,
               verdict=None, partial=False, reason=None, usage=None,
               finish_reason=None, extra=None, allow_partial=False,
@@ -4906,7 +4920,7 @@ def emit_json(kind, *, model, api_key="", content=None, findings=None,
         "partial": partial,
         "coverage_gap": reason or None,
         "finish_reason": finish_reason,
-        "usage": usage,
+        "usage": _public_usage(usage),
         "exit_code": code,
     }
     if content is not None:
@@ -10479,6 +10493,7 @@ CONTROL_ACTIONS = tuple(
         "control setting fallback on|off",
         "control setting fleet-budget on|off",
         "control setting reference-price IN/OUT",
+        "control setting savings on|off",
         "ask PROMPT",
         "audit --staged --json",
         "audit FILE... --json",
@@ -10491,7 +10506,8 @@ CONTROL_ACTIONS = tuple(
     )
 )
 
-CONTROL_SETTING_NAMES = ("streaming", "fallback", "fleet-budget", "reference-price")
+CONTROL_SETTING_NAMES = ("streaming", "fallback", "fleet-budget",
+                         "reference-price", "savings")
 
 CONTROL_MODE_OPTIONS = (
     ("off", "Off", "Codex works normally; Ambient runs only when you ask."),

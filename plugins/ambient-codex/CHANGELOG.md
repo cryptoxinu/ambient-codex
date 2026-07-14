@@ -7,7 +7,7 @@ All notable changes to `ambient-codex`.
 ### Cost/savings display is off by default
 
 - The relative savings note ("~N% cheaper than a frontier model") no longer
-  appears unless you opt in with `settings set savings on` (or env
+  appears unless you opt in with `config set savings on` (or env
   `AMBIENT_SAVINGS`). Absolute cost is never shown — no dollar or cent figure
   anywhere — because billing is plan-dependent (API vs subscription). When
   enabled, only the relative percentage shows, on receipts and in

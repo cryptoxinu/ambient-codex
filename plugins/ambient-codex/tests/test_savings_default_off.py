@@ -183,5 +183,32 @@ class SavingsKnobTests(unittest.TestCase):
         self.assertEqual(amb._config_norm_bool("off"), "off")
 
 
+class ProviderUsageLeakTests(unittest.TestCase):
+    def test_json_envelope_strips_provider_cost_and_savings(self):
+        out = io.StringIO()
+        with no_savings_env(), savings_cache(False), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(io.StringIO()):
+            amb.emit_json(
+                "ask", model="cheap/model",
+                usage={"prompt_tokens": 10, "completion_tokens": 5,
+                       "cost": 0.004, "saved_pct": 88, "price": 3.0,
+                       "_estimated": True},
+                exit_now=False)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(
+            payload["usage"],
+            {"prompt_tokens": 10, "completion_tokens": 5, "_estimated": True})
+        self.assertNotIn("saved_pct", out.getvalue())
+        self.assertNotIn("$", out.getvalue())
+
+    def test_public_usage_helper_allowlists_tokens_only(self):
+        self.assertEqual(
+            amb._public_usage({"prompt_tokens": 1, "completion_tokens": 2,
+                               "cost": 9.9, "saved_pct": 50, "price": 3.0}),
+            {"prompt_tokens": 1, "completion_tokens": 2})
+        self.assertEqual(amb._public_usage(None), None)
+
+
 if __name__ == "__main__":
     unittest.main()
