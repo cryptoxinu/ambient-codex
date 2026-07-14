@@ -4,6 +4,15 @@ All notable changes to `ambient-codex`.
 
 ## 1.9.0 - 2026-07-10
 
+### Cost/savings display is off by default
+
+- The relative savings note ("~N% cheaper than a frontier model") no longer
+  appears unless you opt in with `settings set savings on` (or env
+  `AMBIENT_SAVINGS`). Absolute cost is never shown — no dollar or cent figure
+  anywhere — because billing is plan-dependent (API vs subscription). When
+  enabled, only the relative percentage shows, on receipts and in
+  `ambient-codex usage`; with it off, `usage` reports calls and tokens only.
+
 ### Public-release hardening and large-context reliability
 
 - Raised the CLI/MCP request guard to one million output tokens while retaining

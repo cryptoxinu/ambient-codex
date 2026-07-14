@@ -1531,13 +1531,36 @@ def reference_cost(usage, ref):
     return (tin * ref[0] + tout * ref[1]) / 1e6
 
 
+_SAVINGS_CACHE = None
+
+
+def _savings_enabled(conf=None):
+    """Whether the opt-in savings/comparison note shows. OFF BY DEFAULT (founder
+    hard rule): absolute cost is plan-dependent (API vs subscription), so the
+    relative '%-cheaper' note appears only when the user turns it on (env
+    AMBIENT_SAVINGS or `settings set savings on`). A dollar figure is NEVER
+    surfaced either way. Memoized on the config path like the reference price —
+    it cannot change mid-run."""
+    global _SAVINGS_CACHE
+    if conf is None:
+        if _SAVINGS_CACHE is None:
+            _SAVINGS_CACHE = _savings_enabled(read_config_file())
+        return _SAVINGS_CACHE
+    raw = os.environ.get("AMBIENT_SAVINGS")
+    if raw is None:
+        raw = conf.get("AMBIENT_SAVINGS")
+    return str(raw or "").strip().lower() in ("1", "on", "true")
+
+
 def savings_note(model, usage, catalog=None, conf=None):
     """Receipt suffix: ' — ~97% cheaper than a frontier model (est.)'. Reports
     only the RELATIVE saving vs a frontier reference — never a dollar figure,
     since actual billing is plan-dependent (a subscription or pay-as-you-go
     API). Honesty rules (never over-state): assumed/absent pricing OMITS any
     claim; saved-% is floored; at-or-above the reference reads 'costlier';
-    estimated token counts carry '(est.)'; zero tokens → no note. Never raises."""
+    estimated token counts carry '(est.)'; zero tokens → no note. OFF by default — see _savings_enabled. Never raises."""
+    if not _savings_enabled(conf):
+        return ""
     try:
         tin = _as_pos_int(usage.get("prompt_tokens"), 0)
         tout = _as_pos_int(usage.get("completion_tokens"), 0)
@@ -1570,7 +1593,9 @@ def savings_note_by_served(usage_by_model, catalog=None, conf=None):
     reference prices the total. Same honesty rules as savings_note — a
     single serving model delegates to it outright, assumed pricing claims
     no saving, saved-% is floored, negative savings read 'costlier', and
-    it never raises."""
+    it never raises. OFF by default — see _savings_enabled."""
+    if not _savings_enabled(conf):
+        return ""
     try:
         if not usage_by_model:
             return ""
@@ -10309,6 +10334,9 @@ CONFIG_SETTINGS = (
      "how": "<in/out>", "validate": _config_norm_price,
      "current": lambda conf: "/".join(
          _config_fmt_num(x) for x in resolve_reference_price(conf))},
+    {"name": "savings", "env": "AMBIENT_SAVINGS", "default": "off", "how": "on|off",
+     "validate": _config_norm_bool,
+     "current": lambda conf: "on" if _savings_enabled(conf) else "off"},
 )
 _CONFIG_BY_NAME = {s["name"]: s for s in CONFIG_SETTINGS}
 
@@ -11213,6 +11241,7 @@ def cmd_usage(args):
     if args.days <= 0:   # L18: validate the ARG first, before touching the ledger
         usage_exit("--days must be a positive number of days")
     conf = read_config_file()
+    show_savings = _savings_enabled(conf)  # OFF by default: calls+tokens only
     try:
         records, bad = _usage_report.read_records(USAGE_PATH)
     except FileNotFoundError:
@@ -11319,11 +11348,14 @@ def cmd_usage(args):
         # Relative % savings only — NO dollar figures and NO per-token
         # reference prices (founder policy: billing is plan-dependent).
         overall_pct = (int(grand_saved / grand_frontier * 100)
-                       if grand_frontier > 0 and grand_saved > 0 else None)
+                       if show_savings and grand_frontier > 0
+                       and grand_saved > 0 else None)
+        json_models = rows if show_savings else [
+            {**row, "saved_pct": None} for row in rows]
         print(json.dumps({
             "schema_version": 1, # contract field
             "days": args.days,
-            "models": rows,
+            "models": json_models,
             "all_priced": priced_all,
             "saved_pct": overall_pct,
             "approx_ref_records": approx_ref,
@@ -11334,7 +11366,9 @@ def cmd_usage(args):
         return
     print(f"Ambient usage, last {args.days} days:")
     for r, raw in zip(rows, raw_rows):
-        if raw is None:
+        if not show_savings:
+            tail = ""
+        elif raw is None:
             tail = "est n/a"
         elif raw[0] == "partial":
             tail = "(partial — some records unpriced)"
@@ -11352,20 +11386,20 @@ def cmd_usage(args):
             f"  {r['model']:42} {r['calls']:4} calls  in={r['in']:>9,}  "
             f"out={r['out']:>9,}  {tail}"
         )
-    if grand_frontier > 0 and grand_saved > 0:
+    if show_savings and grand_frontier > 0 and grand_saved > 0:
         pct = int(grand_saved / grand_frontier * 100)
         total_line = f"Overall: ~{pct}% cheaper than a frontier-equivalent model"
-    elif grand_frontier > 0 and grand_saved < 0:
+    elif show_savings and grand_frontier > 0 and grand_saved < 0:
         total_line = "Overall: costlier than a frontier-equivalent model"
     else:
         total_line = "Overall usage summary"
-    if not priced_all:
+    if show_savings and not priced_all:
         total_line += " (some models unpriced)"
     print(total_line)
     if est_records:
         print(f"note: {est_records} estimated record(s) — token counts "
               "approximated locally (stream sent no usage object), not exact.")
-    if approx_ref:
+    if show_savings and approx_ref:
         print(f"note: {approx_ref} record(s) predate stored reference "
               "pricing — their frontier figures use the current "
               "AMBIENT_REFERENCE_PRICE (approx).")

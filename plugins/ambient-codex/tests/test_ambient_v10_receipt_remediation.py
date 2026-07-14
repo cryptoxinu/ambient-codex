@@ -112,6 +112,7 @@ class TestH1ReceiptPricesServedModel(unittest.TestCase):
                 "usage": usage}
         err = io.StringIO()
         with patched(amb, _PRICING_CATALOG=fake_catalog(), _REF_CACHE=REF,
+                     _SAVINGS_CACHE=True,
                      complete=lambda *a, **k: ("hi", usage, body)), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
@@ -128,6 +129,7 @@ class TestH1ReceiptPricesServedModel(unittest.TestCase):
                 "usage": usage}
         err = io.StringIO()
         with patched(amb, _PRICING_CATALOG=fake_catalog(), _REF_CACHE=REF,
+                     _SAVINGS_CACHE=True,
                      complete=lambda *a, **k: ("hi", usage, body)), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
@@ -324,7 +326,8 @@ def usage_env(records, catalog=None, offline=False):
         return catalog if catalog is not None else fake_catalog()
 
     with env_var("AMBIENT_REFERENCE_PRICE", None), \
-            patched(amb, USAGE_PATH=up, read_config_file=lambda: {},
+            patched(amb, USAGE_PATH=up,
+                    read_config_file=lambda: {"AMBIENT_SAVINGS": "on"},
                     resolve_api_url=lambda conf: "https://api.ambient.xyz",
                     fetch_models=fetch, _REF_CACHE=None):
         yield

@@ -171,7 +171,7 @@ class TestSavingsNote(unittest.TestCase):
         return amb.savings_note(
             model, usage,
             catalog=fake_catalog() if catalog is None else catalog,
-            conf={"AMBIENT_REFERENCE_PRICE": "3/15"})
+            conf={"AMBIENT_REFERENCE_PRICE": "3/15", "AMBIENT_SAVINGS": "on"})
 
     def test_cost_frontier_and_floored_saved_pct(self):
         with env_var("AMBIENT_REFERENCE_PRICE", None):
@@ -219,7 +219,7 @@ class TestSavingsNote(unittest.TestCase):
         args = argparse.Namespace(allow_partial=False)
         err = io.StringIO()
         with patched(amb, _PRICING_CATALOG=fake_catalog(),
-                     _REF_CACHE=REF), \
+                     _REF_CACHE=REF, _SAVINGS_CACHE=True), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
             amb.render_result(
@@ -306,7 +306,8 @@ def usage_env(records, catalog=None, offline=False):
         return catalog if catalog is not None else fake_catalog()
 
     with env_var("AMBIENT_REFERENCE_PRICE", None), \
-            patched(amb, USAGE_PATH=up, read_config_file=lambda: {},
+            patched(amb, USAGE_PATH=up,
+                    read_config_file=lambda: {"AMBIENT_SAVINGS": "on"},
                     resolve_api_url=lambda conf: "https://api.ambient.xyz",
                     fetch_models=fetch, _REF_CACHE=None):
         yield

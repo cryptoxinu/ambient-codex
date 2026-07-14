@@ -167,6 +167,7 @@ def run_ask(args, complete, cache_dir):
                  read_stdin_if_piped=lambda: "",
                  CACHE_DIR=cache_dir,
                  _PRICING_CATALOG=fake_catalog(),
+                 _SAVINGS_CACHE=True,
                  _REF_CACHE=(3.0, 15.0)), \
             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         amb.cmd_ask(args, KEY, "https://api.ambient.xyz", {})
