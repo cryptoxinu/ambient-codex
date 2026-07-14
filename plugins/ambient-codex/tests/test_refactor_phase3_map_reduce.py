@@ -9,7 +9,8 @@ class MapReducePlanningTests(unittest.TestCase):
         core = importlib.import_module("ambient_codex.map_reduce")
         self.assertEqual(
             core.__all__,
-            ("files_block", "chunk_ranges", "code_map_budget", "map_note", "group_for_budget"),
+            ("files_block", "chunk_ranges", "code_map_budget", "map_note", "group_for_budget",
+             "resolve_parallel", "reduce_response_format"),
         )
 
     def test_input_helpers_preserve_file_boundaries_and_coverage_ranges(self):
@@ -30,3 +31,12 @@ class MapReducePlanningTests(unittest.TestCase):
         note = core.map_note("inspect", "MAP", 3, "<index>")
         self.assertIn("<index> of 3", note)
         self.assertIn("MAP", note)
+
+    def test_parallel_and_reduce_format_policies_are_core_owned(self):
+        core = importlib.import_module("ambient_codex.map_reduce")
+        self.assertEqual(core.resolve_parallel(["1000", "2"], 4), 16)
+        self.assertEqual(core.resolve_parallel(["bad", "2"], 4), 2)
+        profile = type("Profile", (), {"features": []})()
+        self.assertIsNone(core.reduce_response_format(
+            {"type": "json_object"}, profile,
+            response_format_for=lambda *_: {"unexpected": True}))

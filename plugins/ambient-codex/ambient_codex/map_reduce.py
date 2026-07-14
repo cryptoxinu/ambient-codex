@@ -52,5 +52,30 @@ def group_for_budget(texts, budget):
     return groups
 
 
+def resolve_parallel(values, default, minimum=1, maximum=16):
+    """Select the first valid bounded fan-out width from ordered inputs."""
+    for raw in values:
+        if raw is None or raw == "":
+            continue
+        try:
+            return max(minimum, min(maximum, int(raw)))
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def reduce_response_format(response_format, profile, *, response_format_for):
+    """Re-gate a structured response request to the reduce-model capability."""
+    if not response_format:
+        return response_format
+    if response_format.get("type") == "json_schema":
+        schema = (response_format.get("json_schema") or {}).get("schema") or {}
+        return response_format_for(profile, schema)
+    if response_format.get("type") == "json_object":
+        features = profile.features or []
+        return response_format if {"json_mode", "structured_outputs"} & set(features) else None
+    return response_format
+
+
 __all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
-           "group_for_budget")
+           "group_for_budget", "resolve_parallel", "reduce_response_format")

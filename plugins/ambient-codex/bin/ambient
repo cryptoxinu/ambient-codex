@@ -3486,32 +3486,17 @@ def _resolve_parallel(args):
     MAX_PARALLEL_CHUNKS default. Clamped to 1-16 — bounded so a
     typo'd '1000' must not stampede the network. A bad value falls back to
     the next source instead of crashing a paid run."""
-    for raw in (getattr(args, "parallel", None),
-                os.environ.get("AMBIENT_MAX_PARALLEL")):
-        if raw is None or raw == "":
-            continue
-        try:
-            return max(1, min(16, int(raw)))
-        except (TypeError, ValueError):
-            continue
-    return MAX_PARALLEL_CHUNKS
+    return _map_reduce_core.resolve_parallel(
+        (getattr(args, "parallel", None), os.environ.get("AMBIENT_MAX_PARALLEL")),
+        MAX_PARALLEL_CHUNKS)
 
 
 def _reduce_response_format(rf, reduce_profile):
     """Re-gate a response_format request to the REDUCE model's capabilities
     a strict json_schema the map model supports can 400 on a reduce
     model that lacks structured_outputs — downgrade per its own features."""
-    if not rf:
-        return rf
-    if rf.get("type") == "json_schema":
-        schema = (rf.get("json_schema") or {}).get("schema") or {}
-        return response_format_for(reduce_profile, schema)
-    if rf.get("type") == "json_object":
-        feats = reduce_profile.features or []
-        if "json_mode" in feats or "structured_outputs" in feats:
-            return rf
-        return None
-    return rf
+    return _map_reduce_core.reduce_response_format(
+        rf, reduce_profile, response_format_for=response_format_for)
 
 
 # L13: a distinctive sentinel for the per-chunk index — collision-safe, unlike
