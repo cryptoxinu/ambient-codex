@@ -19,13 +19,15 @@ import threading
 _LEDGER_SERIALIZE = threading.Lock()
 
 
-def spool_line(line, usage_path, max_bytes, *, getpid=os.getpid):
+def spool_line(line, usage_path, max_bytes, *, getpid=None):
     """Append one metering line to this process's own spool when the ledger
     lock is unavailable. Only the owning process writes its spool, so no lock
     is needed; a later successful acquire folds it back. Size-capped so a
     permanently wedged lock (for example a crashed Windows owner) cannot grow
-    it without bound."""
-    spool = f"{usage_path}.spool.{getpid()}"
+    it without bound. ``getpid`` defaults to a live ``os.getpid`` lookup at
+    call time to preserve the original late-bound behavior."""
+    pid = os.getpid() if getpid is None else getpid()
+    spool = f"{usage_path}.spool.{pid}"
     try:
         if os.path.exists(spool) and os.path.getsize(spool) > max_bytes:
             return
@@ -36,19 +38,20 @@ def spool_line(line, usage_path, max_bytes, *, getpid=os.getpid):
         pass
 
 
-def merge_spools(usage_path, pid_alive, *, getpid=os.getpid):
+def merge_spools(usage_path, pid_alive, *, getpid=None):
     """Fold spooled metering lines back into the main ledger. The caller MUST
     hold the ledger lock. Our own spool is always safe (only we write it, and
     appends are serialized in-process); a foreign spool is merged only when its
     owner pid is provably dead, since a live or unknowable owner may still be
-    appending to it (its own merge folds it in later)."""
+    appending to it (its own merge folds it in later). ``getpid`` defaults to a
+    live ``os.getpid`` lookup at call time to preserve late-bound behavior."""
     directory = os.path.dirname(usage_path)
     prefix = os.path.basename(usage_path) + ".spool."
     try:
         names = os.listdir(directory)
     except OSError:
         return
-    current = getpid()
+    current = os.getpid() if getpid is None else getpid()
     for name in names:
         if not name.startswith(prefix):
             continue
@@ -88,18 +91,16 @@ def _trim_ledger(usage_path, max_bytes, trim_keep_lines):
 
 
 def append_line(line, *, usage_path, max_bytes, trim_keep_lines, lock_wait_s,
-                private_dir, fs_lock, pid_alive, getpid=os.getpid,
-                serialize=None):
+                private_dir, fs_lock, pid_alive, getpid=None):
     """Persist one metering line under both the in-process trim lock and the
     caller-supplied cross-process file lock. If the file lock cannot be taken
     the line is spooled per-process and merged later, never appended unlocked.
     Best effort: metering never raises into the caller."""
-    lock = _LEDGER_SERIALIZE if serialize is None else serialize
     conf_dir = os.path.dirname(usage_path)
     try:
         private_dir(conf_dir)
-        with lock, fs_lock(os.path.join(conf_dir, ".usage.lock"),
-                           lock_wait_s) as locked:
+        with _LEDGER_SERIALIZE, fs_lock(os.path.join(conf_dir, ".usage.lock"),
+                                        lock_wait_s) as locked:
             if not locked:
                 spool_line(line, usage_path, max_bytes, getpid=getpid)
                 return

@@ -113,6 +113,30 @@ class UsageSpoolTests(unittest.TestCase):
             store.spool_line("MORE\n", str(ledger), 10, getpid=lambda: 4242)
             self.assertEqual(spool.read_text(encoding="utf-8"), "x" * 50)
 
+    def test_default_getpid_is_resolved_lazily_at_call_time(self):
+        # Parity guard: the original persistence called os.getpid() at runtime,
+        # so a monkeypatch of os.getpid must still be honored by the default
+        # (non-injected) path. An early-bound default argument would not be.
+        store = importlib.import_module("ambient_codex.usage_store")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            with mock.patch.object(store.os, "getpid", return_value=313131):
+                store.spool_line("A\n", str(ledger), 5_000_000)
+            self.assertTrue(Path(f"{ledger}.spool.313131").exists())
+
+    def test_default_getpid_is_resolved_lazily_in_merge(self):
+        store = importlib.import_module("ambient_codex.usage_store")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            ledger.write_text("", encoding="utf-8")
+            own = Path(f"{ledger}.spool.424243")
+            own.write_text("OWN\n", encoding="utf-8")
+            # With current pid patched to match the spool, it merges as "own".
+            with mock.patch.object(store.os, "getpid", return_value=424243):
+                store.merge_spools(str(ledger), lambda pid: None)
+            self.assertEqual(ledger.read_text(encoding="utf-8"), "OWN\n")
+            self.assertFalse(own.exists())
+
     def test_spool_swallows_oserror(self):
         store = importlib.import_module("ambient_codex.usage_store")
         with mock.patch.object(store.os, "open", side_effect=OSError("denied")):
