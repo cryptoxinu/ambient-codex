@@ -69,6 +69,7 @@ bugs, verification, commits, or the next action changes.
 | 2D4 | Fleet reservations | REMOVED | `5b08854` | Deleted with the spend cap; concurrency (`_resolve_parallel`) is independent and survives |
 | 3A | HTTP transport + catalog normalization | Complete | local checkpoint | `transport.py`; GET-only retry and facade patch seams preserved; full suite green |
 | 3B-1 | HTTP response error normalization | Complete | `94e16c2` | `response_errors.py`; API categories, redaction, and diagnostics preserved |
+| 3B-2 | Streamed completion transport | Complete | `082c0b1` | `streaming.py`; SSE framing, liveness, progress, typed failures, and facade patch seams preserved |
 | 3C-1 | Model config + catalog coercion | Complete | local checkpoint | `model_config.py`; resolution precedence and readiness parsing preserved |
 | 3C-2 | Model budget primitives | Complete | local checkpoint | `model_budget.py`; structured output and context-safe sizing formulas extracted |
 | 3C-3 | Model profile construction | Complete | local checkpoint | `model_profiles.py`; catalog-driven context/output/chunk profile preserves facade telemetry adapter |
