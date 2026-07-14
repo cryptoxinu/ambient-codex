@@ -875,7 +875,7 @@ def build_banner():
         status = (f"status: no API key yet — run: {LAUNCHER_NAME} setup   "
                   f"(keys at {KEY_CONSOLE_URL})")
     return f"""ambient-codex {__version__} — open frontier models in your terminal,
-from the Ambient decentralized inference network (ambient.xyz): paid per token.
+from the Ambient decentralized inference network (ambient.xyz).
 
 Get started
   ambient-codex setup      store + verify your API key (one time)
@@ -10906,9 +10906,7 @@ def _configure_trust_url(sub):
 def _configure_usage(sub):
     p = sub.add_parser(
         "usage",
-        help="local token/cost summary + savings vs the frontier reference "
-             "(AMBIENT_REFERENCE_PRICE; agent-lane spend is disclosed as "
-             "unmetered)")
+        help="local token summary + optional relative savings (when enabled)")
     p.add_argument("--days", type=int, default=30,
                    help="look-back window in days (default 30)")
     p.add_argument("--json", action="store_true", help="machine-readable summary")
@@ -11177,7 +11175,7 @@ def _configure_chat(sub):
     p = sub.add_parser(
         "chat",
         help="interactive REPL on Ambient — streams each reply with a "
-             "per-turn cost/savings receipt; /model /clear /help /exit",
+             "per-turn token receipt and optional savings; /model /clear /help /exit",
     )
     p.add_argument("-s", "--system",
                    help="system prompt for the whole session")

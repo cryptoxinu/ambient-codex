@@ -25,3 +25,11 @@ class LargeInputFlagTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 64)
         self.assertNotIn("unrecognized arguments: --allow-cost", result.stderr)
+
+    def test_usage_help_has_no_monetary_summary_language(self):
+        result = subprocess.run(
+            [sys.executable, "bin/ambient", "--help"],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        )
+        self.assertIn("optional relative savings", result.stdout)
+        self.assertNotIn("token/cost", result.stdout)
