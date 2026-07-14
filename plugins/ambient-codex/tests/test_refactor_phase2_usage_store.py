@@ -399,7 +399,10 @@ class UsageHardeningTests(unittest.TestCase):
             ledger = conf / "usage.jsonl"
             ledger.write_bytes(b"\xff\xfe not-utf8 junk\n" * 20)
             persist(store, "NEW\n", ledger, max_bytes=10, trim_keep_lines=5)
-            self.assertTrue(ledger.read_bytes().endswith(b"NEW\n"))
+            # read as text so the check is newline-agnostic (Windows appends
+            # "NEW\r\n" in text mode); errors="replace" tolerates the corrupt head.
+            tail = ledger.read_text(encoding="utf-8", errors="replace")
+            self.assertTrue(tail.endswith("NEW\n"))
 
     def test_out_of_range_pid_spool_is_skipped_without_probing_liveness(self):
         store = importlib.import_module("ambient_codex.usage_store")
