@@ -95,4 +95,3 @@ class TransportFacadeTests(unittest.TestCase):
                                    return_value=expected) as normalize:
                 self.assertEqual(facade.fetch_models("https://x", "key"), expected)
             normalize.assert_called_once_with(body)
-

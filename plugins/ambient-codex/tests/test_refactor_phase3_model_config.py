@@ -88,4 +88,3 @@ class ModelConfigFacadeTests(unittest.TestCase):
                 args, {}, "code", None, facade.os.environ,
                 facade.DEFAULT_MODEL, facade.DEFAULT_CODE_MODEL,
             )
-

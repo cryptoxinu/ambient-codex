@@ -25,4 +25,3 @@ class TelemetryTests(unittest.TestCase):
                                              1.0, 8.0, 0.3)
         self.assertAlmostEqual(value, 5.2)
         self.assertEqual(cache["m"], value)
-
