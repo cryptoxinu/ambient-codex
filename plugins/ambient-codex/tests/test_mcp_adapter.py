@@ -495,13 +495,13 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertNotIn("amb_abcdefghijklmnopqrstuvwxyz", message)
         self.assertIn("<redacted>", message)
 
-    def test_set_config_schema_excludes_advanced_spend_cap(self):
+    def test_set_config_schema_exposes_only_native_user_settings(self):
         mcp = load_mcp()
         tool = next(tool for tool in mcp.TOOLS if tool["name"] == "ambient_set_config")
         names = tool["inputSchema"]["properties"]["name"]["enum"]
         self.assertEqual(
             names,
-            ["streaming", "fallback", "reference-price", "savings"])
+            ["streaming", "fallback", "savings"])
 
     def test_setters_validate_before_subprocess(self):
         mcp = load_mcp()
@@ -512,6 +512,8 @@ class TestMcpAdapter(unittest.TestCase):
                 mcp.call_tool("ambient_set_model", {"model": "x", "lane": "bad"})
             with self.assertRaises(mcp.ToolInputError):
                 mcp.call_tool("ambient_set_config", {"name": "spend-cap", "value": "12"})
+            with self.assertRaises(mcp.ToolInputError):
+                mcp.call_tool("ambient_set_config", {"name": "reference-price", "value": "3/15"})
             with self.assertRaises(mcp.ToolInputError):
                 mcp.call_tool("ambient_set_config", {"name": "fallback", "value": "on", "unset": True})
             with self.assertRaises(mcp.ToolInputError):

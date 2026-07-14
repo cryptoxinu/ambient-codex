@@ -603,7 +603,7 @@ def set_config_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     name = require_choice(
         args,
         "name",
-        ("streaming", "fallback", "reference-price", "savings"),
+        ("streaming", "fallback", "savings"),
     )
     unset = optional_bool(args, "unset", False)
     value = optional_string(args, "value", max_chars=128)
@@ -845,7 +845,6 @@ TOOLS = [
                 "enum": [
                     "streaming",
                     "fallback",
-                    "reference-price",
                     "savings",
                 ],
             },
