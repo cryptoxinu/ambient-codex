@@ -45,4 +45,16 @@ def build_envelope(kind, *, model, usage=None, content=None, findings=None,
     return envelope, exit_code
 
 
-__all__ = ("public_usage", "build_envelope")
+def build_error_envelope(kind, category, diagnosis, exit_code):
+    """Build a public error envelope after the facade has redacted text."""
+    return {
+        "schema_version": 1,
+        "kind": kind,
+        "status": "error",
+        "category": category,
+        "diagnosis": diagnosis,
+        "exit_code": exit_code,
+    }
+
+
+__all__ = ("public_usage", "build_envelope", "build_error_envelope")

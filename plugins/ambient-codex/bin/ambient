@@ -3950,14 +3950,8 @@ def emit_json_error(kind, category, diagnosis, api_key="", exit_code=1):
     a PARSEABLE failure on stdout ({"status": "error", …}), never a bare
     stderr line it has to scrape. Same schema_version; exits with exit_code
     (1 for a runtime failure, 64 for a usage error)."""
-    env = {
-        "schema_version": 1,
-        "kind": kind,
-        "status": "error",
-        "category": category,
-        "diagnosis": redact(str(diagnosis), api_key),
-        "exit_code": exit_code,
-    }
+    env = _output_schema.build_error_envelope(
+        kind, category, redact(str(diagnosis), api_key), exit_code)
     # `ambient map --json` is a JSONL stream (one object per line) — its
     # terminal error envelope must stay ONE line like every item envelope,
     # or a line-by-line consumer breaks on the very failure it must parse.

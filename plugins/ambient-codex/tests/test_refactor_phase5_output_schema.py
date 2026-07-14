@@ -9,7 +9,9 @@ class OutputSchemaTests(unittest.TestCase):
         core = importlib.import_module("ambient_codex.output_schema")
         source = {"prompt_tokens": 1, "completion_tokens": 2,
                   "cost": 0.01, "price": 1, "saved_pct": 99}
-        self.assertEqual(core.__all__, ("public_usage", "build_envelope"))
+        self.assertEqual(core.__all__, (
+            "public_usage", "build_envelope", "build_error_envelope",
+        ))
         self.assertEqual(core.public_usage(source),
                          {"prompt_tokens": 1, "completion_tokens": 2})
         self.assertIn("cost", source)
@@ -23,3 +25,11 @@ class OutputSchemaTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(envelope["status"], "partial")
         self.assertNotIn("cost", envelope["usage"])
+
+    def test_error_envelope_uses_the_same_versioned_public_schema(self):
+        core = importlib.import_module("ambient_codex.output_schema")
+        self.assertEqual(
+            core.build_error_envelope("map", "usage", "bad input", 64),
+            {"schema_version": 1, "kind": "map", "status": "error",
+             "category": "usage", "diagnosis": "bad input", "exit_code": 64},
+        )
