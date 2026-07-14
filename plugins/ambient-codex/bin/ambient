@@ -179,6 +179,7 @@ from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
 from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
+from ambient_codex import routing as _routing_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import streaming as _streaming  # noqa: E402
@@ -2028,7 +2029,7 @@ AUTO_MODEL_SPECS = ("auto", "auto:cheapest", "auto:largest")
 
 def is_auto_model(model):
     """True for the explicit `auto` pseudo-model specs (case-insensitive)."""
-    return isinstance(model, str) and model.strip().lower() in AUTO_MODEL_SPECS
+    return _routing_core.is_auto_model(model)
 
 
 def _catalog_out_price(catalog, model_id):
@@ -2074,30 +2075,33 @@ def resolve_auto_model(spec, catalog, conf, input_chars=0, args=None,
         _bail(f"{label} {spec}: no model is serving at this moment — the "
               "network scales up with demand; try again shortly, or check: "
               "ambient-codex models")
-    if variant == "largest":
-        ranked = sorted(
-            candidates,
-            key=lambda m: (-_as_pos_int(m.get("context_length"), 0),
-                           _catalog_out_price(catalog, m["id"]), m["id"]))
-        pick = ranked[0]["id"]
-        why = (f"largest READY context, "
-               f"{_humanize_ctx(_as_pos_int(ranked[0].get('context_length'), 0))}")
-    else:  # bare auto and auto:cheapest — cheapest READY that FITS the input
-        fits = [m for m in candidates
-                if input_chars <= model_profile(catalog,
-                                                m["id"]).single_shot_chars]
-        if not fits:
+    selected = _routing_core.select_auto_model(
+        spec, candidates,
+        is_ready=lambda _model: True,
+        is_hidden=lambda _model: False,
+        context_length=lambda candidate: _as_pos_int(
+            candidate.get("context_length"), 0),
+        output_price=lambda candidate: _catalog_out_price(catalog, candidate["id"]),
+        fits=lambda candidate: input_chars <= model_profile(
+            catalog, candidate["id"]).single_shot_chars,
+    )
+    if selected is None:
+        if variant != "largest":
             names = ", ".join(m["id"] for m in candidates)
             _bail(f"{label} {spec}: no READY model fits this input "
                   f"(~{input_chars:,} chars) in one pass — READY: {names}; "
                   "pick one explicitly with -m (oversize inputs are "
                   "map-reduced), or use -m auto:largest.")
-        ranked = sorted(
-            fits,
-            key=lambda m: (_catalog_out_price(catalog, m["id"]),
-                           -_as_pos_int(m.get("context_length"), 0), m["id"]))
-        pick = ranked[0]["id"]
-        why = "cheapest READY that fits"
+        _bail(f"{label} {spec}: no model is serving at this moment — the "
+              "network scales up with demand; try again shortly, or check: "
+              "ambient-codex models")
+    pick, reason = selected
+    if variant == "largest":
+        chosen = next(candidate for candidate in candidates if candidate["id"] == pick)
+        why = (f"largest READY context, "
+               f"{_humanize_ctx(_as_pos_int(chosen.get('context_length'), 0))}")
+    else:
+        why = reason
     print(f"ambient: {label} {spec} -> {pick} ({why})", file=sys.stderr)
     return pick
 
