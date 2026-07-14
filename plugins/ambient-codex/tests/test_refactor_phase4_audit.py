@@ -9,7 +9,7 @@ class AuditPreparationTests(unittest.TestCase):
         core = importlib.import_module("ambient_codex.audit_core")
         self.assertEqual(core.__all__, (
             "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
-            "single_shot_key", "reduce_findings", "cross_file_suspects",
+            "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -75,3 +75,10 @@ class AuditPreparationTests(unittest.TestCase):
         suspects = core.cross_file_suspects(
             payload, ["app/a.py", "app/b.py", "app/c.py"], cap=1)
         self.assertEqual(suspects, ["app/a.py"])
+
+    def test_audit_object_parser_uses_prose_only_when_json_is_insufficient(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        self.assertEqual(core.parse_audit_object(
+            '{"findings": [{"severity": "LOW"}]}',
+            parse_prose=lambda _: None, has_unparsed=lambda _: False),
+            {"findings": [{"severity": "LOW"}]})

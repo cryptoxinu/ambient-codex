@@ -196,5 +196,21 @@ def cross_file_suspects(final_text, paths, cap=6):
     return suspects[:cap]
 
 
+def parse_audit_object(raw, *, parse_prose, has_unparsed):
+    """Prefer structured findings while preserving prose recovery safeguards."""
+    obj = extract_json(raw) if isinstance(raw, str) else raw
+    if isinstance(raw, str) and obj and isinstance(obj.get("findings"), list):
+        if not obj["findings"]:
+            recovered = parse_prose(raw)
+            if recovered and recovered.get("findings"):
+                return recovered
+            if has_unparsed(raw):
+                return None
+        return obj
+    if obj and isinstance(obj.get("findings"), list):
+        return obj
+    return parse_prose(raw) if isinstance(raw, str) else None
+
+
 __all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
-           "single_shot_key", "reduce_findings", "cross_file_suspects")
+           "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object")

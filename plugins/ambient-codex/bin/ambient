@@ -5426,20 +5426,9 @@ def parse_audit_object(raw):
     path. A finding-shaped but unrecoverable reply returns None so coverage
     remains partial instead of becoming a clean pass.
     """
-    obj = extract_json(raw) if isinstance(raw, str) else raw
-    if isinstance(raw, str) and obj and isinstance(obj.get("findings"), list):
-        if not obj["findings"]:
-            recovered = parse_prose_findings(raw)
-            if recovered and recovered.get("findings"):
-                return recovered
-            if _text_has_unparsed_finding(raw):
-                return None
-        return obj
-    if obj and isinstance(obj.get("findings"), list):
-        return obj
-    if isinstance(raw, str):
-        return parse_prose_findings(raw)
-    return None
+    return _audit_core.parse_audit_object(
+        raw, parse_prose=parse_prose_findings,
+        has_unparsed=_text_has_unparsed_finding)
 
 
 def dedupe_findings(findings):
