@@ -6117,34 +6117,9 @@ def repo_audit_inputs(args, api_key):
 _NON_FILE_LABELS = frozenset({
     "focus", "DIFF (git)", "DIFF / CODE (stdin)", "REPO COVERAGE NOTE",
 })
-_CROSS_FILE_HINT = re.compile(
-    r"cross-file|another chunk|another file|defined (?:in|elsewhere)|"
-    r"needs? cross-file confirmation", re.I)
-
-
 def cross_file_suspects(final_text, paths, cap=6):
-    """Files a chunked pass-1 could not self-verify (5c): any finding that
-    names TWO OR MORE known files (a cross-file claim), or names a file next
-    to explicit cross-file language. Strictly bounded: at most `cap` files,
-    first-mentioned first."""
-    entries = []
-    obj = extract_json(final_text)
-    if obj is not None and isinstance(obj.get("findings"), list):
-        for f in obj["findings"]:
-            if isinstance(f, dict):
-                entries.append(" ".join(str(v) for v in f.values()))
-    else:
-        entries = [ln for ln in (final_text or "").splitlines() if ln.strip()]
-    suspects = []
-    for entry in entries:
-        named = [p for p in paths if p and p in entry]
-        if len(named) >= 2 or (named and _CROSS_FILE_HINT.search(entry)):
-            for p in named:
-                if p not in suspects:
-                    suspects.append(p)
-        if len(suspects) >= cap:
-            break
-    return suspects[:cap]
+    """Facade seam for extracted cross-file confirmation candidate selection."""
+    return _audit_core.cross_file_suspects(final_text, paths, cap)
 
 
 def run_cross_file_pass(final, labeled, model, profile, args, api_key,

@@ -9,7 +9,7 @@ class AuditPreparationTests(unittest.TestCase):
         core = importlib.import_module("ambient_codex.audit_core")
         self.assertEqual(core.__all__, (
             "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
-            "single_shot_key", "reduce_findings",
+            "single_shot_key", "reduce_findings", "cross_file_suspects",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -67,3 +67,11 @@ class AuditPreparationTests(unittest.TestCase):
         self.assertEqual(payload["verdict"], "NEEDS WORK")
         self.assertEqual(payload["_repaired_chunks"], 1)
         self.assertEqual(payload["_unparsed_chunks"], 1)
+
+    def test_cross_file_suspects_is_bounded_and_preserves_path_order(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        payload = '{"findings":[{"file":"app/a.py","line":1,' \
+                  '"title":"app/a.py calls app/b.py"}]}'
+        suspects = core.cross_file_suspects(
+            payload, ["app/a.py", "app/b.py", "app/c.py"], cap=1)
+        self.assertEqual(suspects, ["app/a.py"])

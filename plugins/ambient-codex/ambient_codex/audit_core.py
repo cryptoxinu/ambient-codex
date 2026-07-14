@@ -9,6 +9,9 @@ SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 _SPLIT_ARTIFACT = re.compile(
     r"(?i)\b(?:suspected\s+)?split artifact\b"
     r"|\bfile (?:being )?split across chunks\b")
+_CROSS_FILE_HINT = re.compile(
+    r"cross-file|another chunk|another file|defined (?:in|elsewhere)|"
+    r"needs? cross-file confirmation", re.I)
 
 
 def _finding_signature(finding):
@@ -175,5 +178,23 @@ def reduce_findings(texts, *, parse, dedupe, verdict):
     }
 
 
+def cross_file_suspects(final_text, paths, cap=6):
+    """Return bounded, first-mentioned paths needing cross-file confirmation."""
+    obj = extract_json(final_text)
+    if obj is not None and isinstance(obj.get("findings"), list):
+        entries = [" ".join(str(value) for value in finding.values())
+                   for finding in obj["findings"] if isinstance(finding, dict)]
+    else:
+        entries = [line for line in (final_text or "").splitlines() if line.strip()]
+    suspects = []
+    for entry in entries:
+        named = [path for path in paths if path and path in entry]
+        if len(named) >= 2 or (named and _CROSS_FILE_HINT.search(entry)):
+            suspects.extend(path for path in named if path not in suspects)
+        if len(suspects) >= cap:
+            break
+    return suspects[:cap]
+
+
 __all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
-           "single_shot_key", "reduce_findings")
+           "single_shot_key", "reduce_findings", "cross_file_suspects")
