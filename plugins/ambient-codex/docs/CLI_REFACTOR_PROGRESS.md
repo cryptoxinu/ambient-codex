@@ -87,6 +87,7 @@ bugs, verification, commits, or the next action changes.
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
+| 5A-2 | Public JSON envelope construction | Complete | `394b95a` | `output_schema.py`; partial/result envelopes derived before terminal rendering |
 
 ## Phase 0 checklist
 
