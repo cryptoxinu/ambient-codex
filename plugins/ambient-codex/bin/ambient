@@ -3640,25 +3640,12 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
     gap = _map_reduce_core.coverage_gap(errors, truncated)
 
     def merge(texts):
-        body = "\n\n".join(
-            f"----- PART {k + 1} -----\n{t}" for k, t in enumerate(texts))
-        messages = [
-            {"role": "system", "content": synth_system},
-            {"role": "user", "content": body + gap},
-        ]
-        try:
-            text, _u, resp_body = complete(api_key, api_url, synth_model,
-                                           messages, synth_spec,
-                                           session=session)
-            # The SYNTHESIS tier can truncate too: a length-cut or salvaged
-            # merge is NOT a clean synthesis. Flag it exactly like a truncated
-            # map chunk so the final verdict can never masquerade as complete.
-            ok = not (resp_body.get("finish_reason") == "length"
-                      or bool(resp_body.get("salvaged_partial")))
-            return text, ok
-        except (ChatError, NetworkError):
-            # Never throw away paid work: fall back to the raw concatenation.
-            return body, False
+        return _map_reduce_core.synthesize_parts(
+            texts, system=synth_system, gap=gap, model=synth_model,
+            spec=synth_spec, session=session,
+            complete=lambda mod, messages, request_spec, **kwargs: complete(
+                api_key, api_url, mod, messages, request_spec, **kwargs),
+            recoverable_errors=(ChatError, NetworkError))
 
     texts = [r for _, r in done]
     # Deterministic Python reduce (structured mode): no LLM synthesis, no

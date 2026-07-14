@@ -11,7 +11,8 @@ class MapReducePlanningTests(unittest.TestCase):
             core.__all__,
             ("files_block", "chunk_ranges", "code_map_budget", "map_note", "group_for_budget",
              "resolve_parallel", "reduce_response_format", "coverage_gap",
-             "hierarchical_reduce", "partial_reason", "collect_fanout", "run_chunk"),
+             "hierarchical_reduce", "partial_reason", "collect_fanout", "run_chunk",
+             "synthesize_parts"),
         )
 
     def test_input_helpers_preserve_file_boundaries_and_coverage_ranges(self):
@@ -128,6 +129,23 @@ class MapReducePlanningTests(unittest.TestCase):
         self.assertEqual(output, ("answer", True, False))
         self.assertEqual(len(calls), 2)
         self.assertEqual(writes, [])
+
+    def test_synthesis_marks_partial_or_preserves_raw_parts_on_recoverable_failure(self):
+        core = importlib.import_module("ambient_codex.map_reduce")
+        text, complete = core.synthesize_parts(
+            ["one", "two"], system="merge", gap=" GAP", model="reduce",
+            spec=object(), session=object(),
+            complete=lambda *_args, **_kwargs: ("merged", {}, {"finish_reason": "length"}),
+            recoverable_errors=(RuntimeError,))
+        self.assertEqual(text, "merged")
+        self.assertFalse(complete)
+        raw, complete = core.synthesize_parts(
+            ["one", "two"], system="merge", gap=" GAP", model="reduce",
+            spec=object(), session=object(),
+            complete=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("down")),
+            recoverable_errors=(RuntimeError,))
+        self.assertEqual(raw, "----- PART 1 -----\none\n\n----- PART 2 -----\ntwo")
+        self.assertFalse(complete)
 
 
 class _ChatError(Exception):

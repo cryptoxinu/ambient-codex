@@ -216,7 +216,23 @@ def run_chunk(index, *, chunks, map_note, index_marker, model, spec, session,
     raise AssertionError("chunk retry loop exhausted unexpectedly")
 
 
+def synthesize_parts(texts, *, system, gap, model, spec, session, complete,
+                     recoverable_errors):
+    """Synthesize ordered chunk reports, retaining raw paid-for work on failure."""
+    body = "\n\n".join(
+        f"----- PART {index + 1} -----\n{text}" for index, text in enumerate(texts))
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": body + gap}]
+    try:
+        text, _usage, response = complete(model, messages, spec, session=session)
+        complete_response = not (response.get("finish_reason") == "length"
+                                 or bool(response.get("salvaged_partial")))
+        return text, complete_response
+    except recoverable_errors:
+        return body, False
+
+
 __all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
            "group_for_budget", "resolve_parallel", "reduce_response_format",
            "coverage_gap", "hierarchical_reduce", "partial_reason", "collect_fanout",
-           "run_chunk")
+           "run_chunk", "synthesize_parts")
