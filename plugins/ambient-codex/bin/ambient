@@ -177,6 +177,7 @@ from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
+from ambient_codex import map_workflow as _map_workflow  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
@@ -5176,53 +5177,13 @@ def cmd_map(args, api_key, api_url, conf):
     cancel_event = threading.Event()
 
     def work(item_id, text, key, item_args):
-        if cancel_event.is_set():
-            raise ChatError("cancelled",
-                            "map cancelled before this item started")
-        messages = [{"role": "system", "content": prompt},
-                    {"role": "user", "content": text}]
-        for attempt in range(3):
-            try:
-                with gate:
-                    # Re-check after acquiring the slot: an item that raced
-                    # in after an abort must bill NOTHING.
-                    if cancel_event.is_set():
-                        raise ChatError(
-                            "cancelled",
-                            "map cancelled while waiting for a slot")
-                    try:
-                        out, _u, body = complete(
-                            api_key, api_url, model, messages, item_args,
-                            session=session)
-                    except NetworkError:
-                        # Fatal for every sibling — flip cancel BEFORE this
-                        # gate slot is released, so a waiting retry worker
-                        # that grabs the freed slot can't start a billed
-                        # call before cancellation is visible (race-free).
-                        cancel_event.set()
-                        raise
-                    except ChatError as err:
-                        if err.category in ("key", "funds"):
-                            cancel_event.set()  # same zero-race fail-fast
-                        raise
-                partial = (bool(body.get("salvaged_partial"))
-                           or body.get("finish_reason") == "length")
-                # Only a clean result from the REQUESTED model is cached —
-                # a fallback model's answer under this key would poison a
-                # later run (same rule as run_map_reduce).
-                served = body.get("_served_model", model)
-                if use_cache and not partial and served == model:
-                    _cache_put(key, out)
-                return out, partial
-            except ChatError as err:
-                if err.category == "rate" and attempt < 2 \
-                        and not cancel_event.is_set():
-                    ra = getattr(err, "retry_after", None)
-                    time.sleep(_retry_delay(3 * (attempt + 1),
-                                            {"Retry-After": ra} if ra
-                                            else None))
-                    continue
-                raise
+        return _map_workflow.run_map_item(
+            item_id=item_id, text=text, key=key, item_args=item_args,
+            prompt=prompt, api_key=api_key, api_url=api_url, model=model,
+            session=session, gate=gate, cancel_event=cancel_event,
+            complete=complete, cache_put=_cache_put, retry_delay=_retry_delay,
+            sleep=time.sleep, chat_error=ChatError, network_error=NetworkError,
+            use_cache=use_cache)
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=width)
     aborted = False
