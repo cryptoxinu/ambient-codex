@@ -63,7 +63,8 @@ bugs, verification, commits, or the next action changes.
 | 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
 | 2D2B | Usage summary records/report | Complete | pending push | Reader extracted; Codex-audited |
 | 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | `34b5958`+`ed4f314` | Extracted to `usage_pricing.py`; Codex-audited; CI green |
-| 2D3b | Cost + savings notes (`usage_cost`, `reference_cost`, `savings_note*`) | Pending | — | Survives; needs assumed-price + ref-resolution wiring |
+| 2D3b-1 | Cost math (`usage_cost`, `reference_cost`) | Complete | `7f6c5f1` | Extended `usage_pricing.py`; injected assumed-prices + coercer; CI green |
+| 2D3b-2 | Savings notes (`savings_note*`) | Deferred | — | Receipt composition w/ 5 deps + `_savings_enabled` gate; move with the display/facade-reduction phase |
 | 2D3c | Spend gate (`_gate_amount`, `_config_norm_spend`) | REMOVED | `5b08854` | Feature DELETED per founder 2026-07-14 — nothing to extract |
 | 2D4 | Fleet reservations | REMOVED | `5b08854` | Deleted with the spend cap; concurrency (`_resolve_parallel`) is independent and survives |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -1379,10 +1380,24 @@ for a behavior-preserving extraction. Tracked for a dedicated hardening pass:
   (invalid-UTF-8) ledger still tracebacks `ambient usage` (the writer only ever
   emits UTF-8) — added to the deferred-hardening list.
 
-## Exact resume point
+## Exact resume point (updated 2026-07-14)
 
-Phase 2D2B is COMPLETE and CI-green. Next: **Phase 2D3 — pricing and spend
-gates** (`usage_cost`, `resolve_reference_price`, `model_pricing`, and the
-spend-gate logic). Extract the pricing/reference math + spend-gate decisions the
-facade still owns; keep the fleet reservation ledger for 2D4. Write pricing /
-reference / gate contracts RED-first before implementation.
+SHIPPED: **v1.10.0 released** (`f9ef3fc`, tag `v1.10.0`) — first public release.
+Done since 2D2B: 2D3a pricing primitives; savings-display-off-by-default HARD
+RULE (Codex-audited, HIGH `--json` cost leak fixed); the ENTIRE spend-cap /
+gate / fleet-reservation subsystem DELETED (so 2D3c + 2D4 are gone); 2D3b-1 cost
+math extracted. All CI-green incl Windows.
+
+NEXT: **Phase 3 — transport, models, map/reduce** (the biggest remaining facade
+bloat). A mapping agent is producing the bounded sub-checkpoint plan (3A
+transport primitives → 3B HTTP/stream → 3C catalog → 3D routing → 3E telemetry
+→ 3F chunk-packing → 3G orchestration). Execute each RED-first, ≤5 files, full
+gate + CI. Then Phase 4 (audit/generation), Phase 5 (integrations + facade
+reduction, incl. deferred `savings_note*`). AUDIT NOTE: behavior-preserving
+mechanical extractions get full test+CI per checkpoint + a comprehensive Codex
+audit at each Phase boundary (batched, for cost/time); behavior CHANGES get a
+per-change frozen-tree Codex audit (as savings + spend-cap did).
+
+T5 backup cleanup: NO-OP — only the bundle+tarball safety net exists at
+`/Users/z/ambient-codex-backups/pre-refactor-8104930/` (KEEP); no redundant
+working copy exists to delete.
