@@ -3590,64 +3590,19 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
         return cancel_event is not None and cancel_event.is_set()
 
     def work(i):
-        if cancelled():
-            # The caller is unwinding — starting this chunk would bill work
-            # whose result gets discarded anyway.
-            raise ChatError("cancelled",
-                            "fan-out cancelled before this chunk started")
-        system = map_note.replace(_CHUNK_IDX_TOKEN, str(i + 1))
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": chunks[i]},
-        ]
-        # content-addressed cache — a re-run after a Ctrl-C / failed synthesis
-        # / PARTIAL exit re-bills only the MISSING chunks, not the whole fan-out.
-        # _cache_salt keeps each --best-of sample's chunks in its
-        # own cache lane so samples stay independent AND resumable.
-        key = _cache_key(model, system, chunks[i], spec.max_tokens,
-                         spec.temperature, spec.response_format,
-                         salt=spec._cache_salt)
-        if use_cache:
-            cached = _cache_get(key, cache_ttl)
-            if cached is not None:
-                with cache_hits_lock:
-                    cache_hits[0] += 1
-                return cached, False
-        # Ride out transient rate-limits during a fan-out instead of turning a
-        # brief 429 burst into a permanent coverage gap. The gate (when shared
-        # by a consensus caller) is held ONLY around the network call itself.
-        hold = gate if gate is not None else contextlib.nullcontext()
-        for attempt in range(3):
-            try:
-                with hold:
-                    if cancelled():
-                        raise ChatError(
-                            "cancelled",
-                            "fan-out cancelled while waiting for a slot")
-                    text, _usage, body = complete(
-                        api_key, api_url, model, messages, spec,
-                        session=session)
-                # A length-truncated chunk is INCOMPLETE coverage — flag it and
-                # never cache it as a full result.
-                partial = (bool(body.get("salvaged_partial"))
-                           or body.get("finish_reason") == "length")
-                # If the network fell back to a DIFFERENT model, do not cache its
-                # answer under the requested model's key — a later run of the
-                # requested model would be served the wrong model's result.
-                served = body.get("_served_model", model)
-                if use_cache and not partial and served == model:
-                    _cache_put(key, text)
-                return text, partial
-            except ChatError as err:
-                # A retry is new billed work too — don't start one mid-cancel.
-                if err.category == "rate" and attempt < 2 and not cancelled():
-                    # Honor a server Retry-After if present, else jittered backoff
-                    # so parallel workers don't retry in lockstep.
-                    ra = getattr(err, "retry_after", None)
-                    hdrs = {"Retry-After": ra} if ra else None
-                    time.sleep(_retry_delay(3 * (attempt + 1), hdrs))
-                    continue
-                raise
+        text, partial, cached = _map_reduce_core.run_chunk(
+            i, chunks=chunks, map_note=map_note, index_marker=_CHUNK_IDX_TOKEN,
+            model=model, spec=spec, session=session, cancel_event=cancel_event,
+            gate=gate, cache_key=_cache_key,
+            cache_get=_cache_get, cache_put=_cache_put, cache_ttl=cache_ttl,
+            complete=lambda mod, messages, request_spec, **kwargs: complete(
+                api_key, api_url, mod, messages, request_spec, **kwargs),
+            chat_error=ChatError, retry_delay=_retry_delay, sleep=time.sleep,
+            use_cache=use_cache)
+        if cached:
+            with cache_hits_lock:
+                cache_hits[0] += 1
+        return text, partial
 
     try:
         results, errors, missed_ranges = _map_reduce_core.collect_fanout(

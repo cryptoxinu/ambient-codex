@@ -173,6 +173,50 @@ def collect_fanout(chunks, *, work, width, cancel_event, chunk_ranges,
     return results, errors, missed_ranges
 
 
+class _NoopContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+def run_chunk(index, *, chunks, map_note, index_marker, model, spec, session,
+              cancel_event, gate, cache_key, cache_get, cache_put, cache_ttl,
+              complete, chat_error, retry_delay, sleep, use_cache):
+    """Run one cached map chunk with cooperative cancellation and rate retry."""
+    if cancel_event.is_set():
+        raise chat_error("cancelled", "fan-out cancelled before this chunk started")
+    system = map_note.replace(index_marker, str(index + 1))
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": chunks[index]}]
+    key = cache_key(model, system, chunks[index], spec.max_tokens, spec.temperature,
+                    spec.response_format, salt=spec._cache_salt)
+    cached = cache_get(key, cache_ttl) if use_cache else None
+    if cached is not None:
+        return cached, False, True
+    hold = gate if gate is not None else _NoopContext()
+    for attempt in range(3):
+        try:
+            with hold:
+                if cancel_event.is_set():
+                    raise chat_error("cancelled", "fan-out cancelled while waiting for a slot")
+                text, _usage, body = complete(model, messages, spec, session=session)
+            partial = bool(body.get("salvaged_partial")) or body.get("finish_reason") == "length"
+            if use_cache and not partial and body.get("_served_model", model) == model:
+                cache_put(key, text)
+            return text, partial, False
+        except chat_error as error:
+            if error.category == "rate" and attempt < 2 and not cancel_event.is_set():
+                retry_after = getattr(error, "retry_after", None)
+                sleep(retry_delay(3 * (attempt + 1),
+                                  {"Retry-After": retry_after} if retry_after else None))
+                continue
+            raise
+    raise AssertionError("chunk retry loop exhausted unexpectedly")
+
+
 __all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
            "group_for_budget", "resolve_parallel", "reduce_response_format",
-           "coverage_gap", "hierarchical_reduce", "partial_reason", "collect_fanout")
+           "coverage_gap", "hierarchical_reduce", "partial_reason", "collect_fanout",
+           "run_chunk")
