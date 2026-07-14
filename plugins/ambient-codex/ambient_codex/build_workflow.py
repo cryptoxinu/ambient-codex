@@ -25,4 +25,63 @@ def resume_identity(*, runtime_version, task, model, reduce_model, context_paths
     return hashlib.sha256(encoded).hexdigest()
 
 
-__all__ = ("state_path", "resume_identity")
+def _normalized_plan(state, root, max_plan, safe_relpath):
+    """Copy and firewall the bounded plan from untrusted resume state."""
+    plan = []
+    for item in state["plan"][:max_plan]:
+        if not isinstance(item, dict):
+            return None
+        copied = dict(item)
+        copied["path"] = safe_relpath(str(copied.get("path", "")), root)
+        plan.append(copied)
+    return plan
+
+
+def _normalized_done(state, plan_paths, root, max_file_bytes, safe_relpath):
+    """Return verified completed files that remain inside the bounded plan."""
+    done = {}
+    for path, record in state["done"].items():
+        rel = safe_relpath(str(path), root)
+        if rel not in plan_paths:
+            continue
+        if not (isinstance(record, dict) and isinstance(record.get("content"), str)):
+            return None
+        content = record["content"]
+        if max_file_bytes is not None and len(content.encode()) > max_file_bytes:
+            continue
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        if record.get("sha256") != digest:
+            return None
+        done[rel] = {"content": content, "sha256": digest}
+    return done
+
+
+def normalize_resume_state(state, *, task_sha, root, max_plan, max_file_bytes,
+                           safe_relpath):
+    """Validate parsed untrusted resume state without mutating its caller.
+
+    ``safe_relpath`` is injected so the path firewall stays owned by the facade
+    while this module remains pure and directly unit-testable.  Its ValueError
+    is intentionally propagated so the boundary can emit the established warning.
+    """
+    if not (isinstance(state, dict) and state.get("version") == 1
+            and state.get("task_sha") == task_sha
+            and isinstance(state.get("plan"), list)
+            and isinstance(state.get("done"), dict)):
+        return None
+    plan = _normalized_plan(state, root, max_plan, safe_relpath)
+    if plan is None:
+        return None
+    done = _normalized_done(state, {item["path"] for item in plan}, root,
+                            max_file_bytes, safe_relpath)
+    if done is None:
+        return None
+    failed = state.get("failed")
+    return dict(state, plan=plan, done=done,
+                failed=[dict(item) for item in failed
+                        if isinstance(item, dict) and isinstance(item.get("path"), str)
+                        and isinstance(item.get("reason"), str)]
+                if isinstance(failed, list) else [])
+
+
+__all__ = ("state_path", "resume_identity", "normalize_resume_state")

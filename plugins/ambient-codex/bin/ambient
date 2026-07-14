@@ -8111,52 +8111,14 @@ def _load_build_state(root, task_sha, max_plan=512, max_file_bytes=None):
             st = json.loads(raw)
     except (OSError, json.JSONDecodeError):
         return None
-    if not (isinstance(st, dict) and st.get("version") == 1
-            and st.get("task_sha") == task_sha
-            and isinstance(st.get("plan"), list)
-            and isinstance(st.get("done"), dict)):
-        return None
     try:
-        plan = []
-        for item in st["plan"][:max_plan]:
-            if not isinstance(item, dict):
-                return None
-            item = dict(item)
-            item["path"] = safe_relpath(str(item.get("path", "")), root)
-            plan.append(item)
-        plan_paths = {item["path"] for item in plan}
-        done = {}
-        for k, rec in st["done"].items():
-            rel = safe_relpath(str(k), root)
-            # A resumed `done` file MUST be a completed item of the (capped)
-            # plan — else a poisoned state with a disjoint done set could apply
-            # files beyond --max-files / unplanned paths.
-            if rel not in plan_paths:
-                continue
-            if not (isinstance(rec, dict)
-                    and isinstance(rec.get("content"), str)):
-                return None
-            if max_file_bytes is not None and \
-                    len(rec["content"].encode()) > max_file_bytes:
-                continue                # respect --max-file-bytes on resumed files
-            digest = hashlib.sha256(rec["content"].encode()).hexdigest()
-            if rec.get("sha256") != digest:
-                return None  # tampered or torn — start fresh
-            done[rel] = {"content": rec["content"], "sha256": digest}
+        return _build_workflow.normalize_resume_state(
+            st, task_sha=task_sha, root=root, max_plan=max_plan,
+            max_file_bytes=max_file_bytes, safe_relpath=safe_relpath)
     except ValueError:
         print("ambient: previous build state contained unsafe paths — "
               "ignoring it and starting fresh", file=sys.stderr)
         return None
-    st["plan"], st["done"] = plan, done
-    # M22/L6: `failed` items are dereferenced later (f["path"], f.get("reason"))
-    # — a torn/poisoned non-dict entry crashed the next build. Keep only
-    # well-formed records; drop the rest rather than crash.
-    failed = st.get("failed")
-    st["failed"] = ([f for f in failed
-                     if isinstance(f, dict) and isinstance(f.get("path"), str)
-                     and isinstance(f.get("reason"), str)]
-                    if isinstance(failed, list) else [])
-    return st
 
 
 def cmd_build(args, api_key, api_url, conf):

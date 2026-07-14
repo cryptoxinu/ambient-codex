@@ -87,6 +87,9 @@ bugs, verification, commits, or the next action changes.
 | 4A-4 | Audit finding consolidation | Complete | `6527adf` | `audit_core.py`; identity, split-artifact filtering, deduplication, and conservative severity verdicts extracted |
 | 4A-5 | Cross-file confirmation candidate selection | Complete | `a19af95` | `audit_core.py`; bounded, ordered candidate selection extracted with facade seam |
 | 4A-6 | Audit object + cross-file merge policy | Complete | `c04adf1`→`6748c14`→`785174e` | `audit_core.py`; JSON/prose selection, bounded file inputs, and incomplete coverage merge extracted |
+| 4B-1 | Interactive chat history policy | Complete | `f3b816d` | `chat_workflow.py`; immutable, recent-first prompt-budget trimming extracted |
+| 4B-2 | Build resume identity + state path | Complete | `1a10931`→`743948a` | `build_workflow.py`; version-sensitive deterministic identity and scoped path extracted |
+| 4B-3 | Build resume-state validation | Complete | local checkpoint | `build_workflow.py`; immutable bounded plan/done validation delegates through the existing facade path firewall |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
