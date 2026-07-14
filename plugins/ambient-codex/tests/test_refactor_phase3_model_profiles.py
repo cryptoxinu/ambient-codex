@@ -34,4 +34,3 @@ class ModelProfileCoreTests(unittest.TestCase):
         self.assertEqual(profile.context_length, 200_000)
         self.assertLessEqual(profile.output_budget, profile.max_output_length)
         self.assertLessEqual(profile.chunk_chars, profile.single_shot_chars)
-

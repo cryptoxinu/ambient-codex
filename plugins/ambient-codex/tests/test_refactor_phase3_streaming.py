@@ -54,4 +54,3 @@ class StreamingTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["content"], "hello")
-

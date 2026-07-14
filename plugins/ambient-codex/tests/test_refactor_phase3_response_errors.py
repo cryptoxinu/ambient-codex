@@ -14,4 +14,3 @@ class ResponseErrorTests(unittest.TestCase):
         self.assertEqual(core.error_message({"error": {"message": ["bad"]}}),
                          '{"message": ["bad"]}')
         self.assertEqual(core.error_message({"error": {"message": "bad"}}), "bad")
-
