@@ -4,7 +4,7 @@
 Commands:
   setup                First-run: paste + verify your API key, store securely
                        (--force rotates, --remove offboards)
-  models               List models — READY first, price/context, defaults marked
+  models               List models — READY first, context/capabilities, defaults marked
   use       [model]    Pick the sticky default model (interactive menu if no arg)
   curate    [verb]     Choose which models the menus surface (hide/show/only/note)
   ask       [prompt]   One-shot completion (prompt arg, stdin, or both via '-':
@@ -6195,7 +6195,7 @@ def _guttered_size(full, size):
 def repo_audit_inputs(args, api_key):
     """Build audit inputs for `audit --repo [DIR]` (5b): walk, apply the
     ABS_MAX_CHARS ceiling to the POST-GUTTER size (refuse unless
-    --allow-cost/--allow-partial; then trim to the files that fit and
+    --allow-large-input/--allow-partial; then trim to the files that fit and
     surface the rest as an EXPLICIT coverage gap), read + gutter, relabel
     repo-relative. Source files above the bounded per-file ceiling are also
     surfaced as a coverage gap. Returns (labeled, meta)."""
@@ -6234,7 +6234,7 @@ def repo_audit_inputs(args, api_key):
                 f"repo totals ~{total:,}+ chars with line-number gutters — "
                 f"over the {ABS_MAX_CHARS:,}-char input ceiling. "
                 "Audit a subdirectory (--repo DIR/sub), or "
-                "pass --allow-cost or --allow-partial to audit the files "
+                "pass --allow-large-input or --allow-partial to audit the files "
                 "that fit, with the rest reported as an explicit coverage "
                 "gap.",
                 api_key=api_key)
@@ -10680,8 +10680,12 @@ def add_common_flags(parser):
              "instead of the default loud non-zero exit",
     )
     parser.add_argument(
-        "--allow-cost", action="store_true",
+        "--allow-large-input", dest="allow_cost", action="store_true",
         help="audit an oversized repo anyway — proceed past the built-in input-size ceiling, keeping the files that fit",
+    )
+    parser.add_argument(
+        "--allow-cost", dest="allow_cost", action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--yes", "-y", action="store_true",

@@ -315,7 +315,7 @@ User-facing status wording is intentionally simple: a model is "serving" or it
 "isn't serving right now and spins up on demand".
 
 A job blocked by the raw input-size guard can still be run deliberately with
-`--allow-cost`; explicit `--max-tokens` remains subject to the model's actual
+`--allow-large-input`; explicit `--max-tokens` remains subject to the model's actual
 output and context limits.
 
 ## Maintenance Roadmap
