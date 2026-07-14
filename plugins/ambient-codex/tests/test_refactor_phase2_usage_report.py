@@ -1,0 +1,137 @@
+"""Phase 2D2B contracts for bounded usage-ledger record reads."""
+
+import importlib
+import importlib.machinery
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+from unittest import mock
+
+
+ROOT = Path(__file__).resolve().parent.parent
+BIN = ROOT / "bin" / "ambient"
+MOVED_NAMES = ("read_records", "filter_recent")
+
+
+def load_facade(home):
+    prior = {name: os.environ.get(name) for name in ("HOME", "USERPROFILE")}
+    os.environ.update({"HOME": str(home), "USERPROFILE": str(home)})
+    try:
+        loader = importlib.machinery.SourceFileLoader("ambient_phase2d2b", str(BIN))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        return module
+    finally:
+        for name, value in prior.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+class UsageReportOwnershipTests(unittest.TestCase):
+    def test_module_owns_exact_exports(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        self.assertEqual(report.__all__, MOVED_NAMES)
+
+    def test_import_is_side_effect_free_in_fresh_home(self):
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            env = dict(os.environ)
+            env.update({
+                "HOME": str(home),
+                "USERPROFILE": str(home),
+                "PYTHONPATH": str(ROOT),
+            })
+            proc = subprocess.run(
+                [sys.executable, "-c", "import ambient_codex.usage_report"],
+                cwd=str(home), env=env, capture_output=True, text=True,
+                timeout=60, check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(list(home.iterdir()), [])
+
+
+class ReadRecordsTests(unittest.TestCase):
+    def test_keeps_dicts_and_counts_blank_bad_and_nonobject(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            ledger.write_text(
+                '{"model":"a","in":1}\n'   # valid dict
+                "\n"                          # blank -> skipped, not counted
+                "   \n"                       # whitespace -> skipped
+                "not json\n"                  # unparseable -> bad
+                "42\n"                         # non-object -> bad
+                '"x"\n'                        # non-object -> bad
+                '{"model":"b"}\n',            # valid dict
+                encoding="utf-8",
+            )
+            records, bad = report.read_records(str(ledger))
+            self.assertEqual(records, [{"model": "a", "in": 1}, {"model": "b"}])
+            self.assertEqual(bad, 3)
+
+    def test_missing_file_raises_filenotfound(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(FileNotFoundError):
+                report.read_records(str(Path(td) / "nope.jsonl"))
+
+    def test_unreadable_kind_raises_oserror(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        with tempfile.TemporaryDirectory() as td:
+            # a directory in place of the ledger -> OSError family on open
+            with self.assertRaises(OSError):
+                report.read_records(td)
+
+    def test_empty_ledger_is_empty_with_zero_bad(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            ledger.write_text("", encoding="utf-8")
+            self.assertEqual(report.read_records(str(ledger)), ([], 0))
+
+
+class FilterRecentTests(unittest.TestCase):
+    def test_keeps_records_at_or_after_cutoff(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        records = [{"ts": 100}, {"ts": 200}, {"ts": 50}, {"ts": "bad"}]
+        recent = report.filter_recent(
+            records, 100, lambda r: r["ts"] if isinstance(r["ts"], int) else 0)
+        self.assertEqual(recent, [{"ts": 100}, {"ts": 200}])
+
+
+class UsageReportFacadeTests(unittest.TestCase):
+    def test_cmd_usage_delegates_read_and_handles_missing_ledger(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            with mock.patch.object(
+                    facade._usage_report, "read_records",
+                    side_effect=FileNotFoundError()):
+                with self.assertRaises(SystemExit) as ctx:
+                    facade.cmd_usage(types.SimpleNamespace(days=7))
+            self.assertIn("no usage recorded yet", str(ctx.exception))
+
+    def test_cmd_usage_reports_bad_lines_from_reader(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            with mock.patch.object(
+                    facade._usage_report, "read_records",
+                    return_value=([], 4)):
+                # no recent records -> exits, but the bad count is reported first
+                with mock.patch("sys.stderr") as err:
+                    with self.assertRaises(SystemExit):
+                        facade.cmd_usage(types.SimpleNamespace(days=7))
+            printed = "".join(
+                str(c.args[0]) for c in err.write.call_args_list if c.args)
+            self.assertIn("skipped 4 corrupt", printed)
+
+
+if __name__ == "__main__":
+    unittest.main()

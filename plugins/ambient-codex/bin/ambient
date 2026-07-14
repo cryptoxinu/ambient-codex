@@ -182,6 +182,7 @@ from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import usage_store as _usage_store  # noqa: E402
+from ambient_codex import usage_report as _usage_report  # noqa: E402
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -11238,25 +11239,8 @@ def cmd_usage(args):
     if args.days <= 0:   # L18: validate the ARG first, before touching the ledger
         usage_exit("--days must be a positive number of days")
     conf = read_config_file()
-    records = []
-    bad = 0
     try:
-        with open(USAGE_PATH, encoding="utf-8") as fh:
-            for line in fh:
-                if not line.strip():
-                    continue
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    bad += 1
-                    continue
-                # A well-formed non-object line (e.g. `42`, `"x"`, `[...]`)
-                # parses cleanly but has no .get — treat it as corrupt too,
-                # rather than crashing the summary with AttributeError.
-                if not isinstance(rec, dict):
-                    bad += 1
-                    continue
-                records.append(rec)
+        records, bad = _usage_report.read_records(USAGE_PATH)
     except FileNotFoundError:
         sys.exit("ambient: no usage recorded yet")
     except OSError as err:
@@ -11264,7 +11248,8 @@ def cmd_usage(args):
     if bad:
         print(f"ambient: skipped {bad} corrupt usage line(s)", file=sys.stderr)
     cutoff = time.time() - args.days * 86400
-    recent = [r for r in records if _as_pos_int(r.get("ts"), 0) >= cutoff]
+    recent = _usage_report.filter_recent(
+        records, cutoff, lambda r: _as_pos_int(r.get("ts"), 0))
     if not recent:
         sys.exit(f"ambient: no usage in the last {args.days} days")
     pricing = {}

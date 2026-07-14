@@ -61,7 +61,7 @@ bugs, verification, commits, or the next action changes.
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
 | 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
-| 2D2B | Usage summary records/report | Pending | — | — |
+| 2D2B | Usage summary records/report | Complete | pending push | Reader extracted; Codex-audited |
 | 2D3 | Pricing and spend gates | Pending | — | — |
 | 2D4 | Fleet reservations and concurrency | Pending | — | — |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
@@ -1352,10 +1352,25 @@ for a behavior-preserving extraction. Tracked for a dedicated hardening pass:
 - `fchmod` on the open FD + heal-before-merge; guaranteed FD close on `fdopen`
   failure; timestamp/sequence-aware recovery ordering.
 
+## Phase 2D2B verification
+
+- New `ambient_codex/usage_report.py` owns `read_records(usage_path)` (JSONL →
+  well-formed dict records + bad-line count; blank lines skipped; OS error
+  family raised to the caller) and `filter_recent(records, cutoff, ts_of)`.
+- `cmd_usage` now delegates its read + recency filter to the module and keeps
+  its own `sys.exit` messages, the "skipped N corrupt" report, and ALL pricing /
+  reference / savings math (that stays for 2D3). `observed_cpt` was deliberately
+  left untouched (telemetry read; its own concern), scoping 2D2B to the report.
+- 9 RED-first contracts (exports, import purity, parse/skip/bad-count,
+  FileNotFound + OSError propagation, empty ledger, recency filter, facade
+  delegation on missing-ledger + bad-line reporting).
+- Gates: full guarded suite + `ruff check .` clean; validators pass; no-Node MCP
+  14 tools; cmd_usage-touching suites (v8/v9/v10) green; CI 18 jobs green.
+
 ## Exact resume point
 
-Phase 2D2A is COMPLETE and CI-green. Next: **Phase 2D2B — usage summary
-records/report** (`observed_cpt` at `bin/ambient:1157` reads the ledger;
-`cmd_usage` at `bin/ambient:11235` composes the report). Extract bounded ledger
-record reads + report composition ONLY; pricing/reference math stays for 2D3.
-Write ownership/parse/report contracts RED-first before implementation.
+Phase 2D2B is COMPLETE and CI-green. Next: **Phase 2D3 — pricing and spend
+gates** (`usage_cost`, `resolve_reference_price`, `model_pricing`, and the
+spend-gate logic). Extract the pricing/reference math + spend-gate decisions the
+facade still owns; keep the fleet reservation ledger for 2D4. Write pricing /
+reference / gate contracts RED-first before implementation.
