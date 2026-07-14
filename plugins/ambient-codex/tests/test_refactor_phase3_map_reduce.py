@@ -19,4 +19,3 @@ class MapReducePlanningTests(unittest.TestCase):
         note = core.map_note("inspect", "MAP", 3, "<index>")
         self.assertIn("<index> of 3", note)
         self.assertIn("MAP", note)
-
