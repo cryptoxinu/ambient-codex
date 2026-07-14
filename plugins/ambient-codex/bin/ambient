@@ -173,6 +173,7 @@ from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
+from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
@@ -3522,11 +3523,8 @@ def _map_note(map_system, code_map, n_chunks):
     in per call). Factored out so the best-of audit miss-plan can
     precompute the SAME salted cache keys the live fan-out will use — key
     parity by construction, never by copy-paste."""
-    return (map_system
-            + (f"\n\n{code_map}" if code_map else "")
-            + f"\n\n(You are seeing chunk {_CHUNK_IDX_TOKEN} of {n_chunks} of a "
-            "larger input. File boundaries may be split across chunks — flag "
-            "suspected split artifacts as such instead of guessing.)")
+    return _map_reduce_core.map_note(
+        map_system, code_map, n_chunks, _CHUNK_IDX_TOKEN)
 
 
 def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
@@ -3786,15 +3784,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
     # Budget-aware hierarchical reduce: pack partials into groups that each fit
     # the reduce budget (by CHARS, not by count), collapsing tier by tier.
     while len(texts) > 1 and sum(len(t) for t in texts) > effective_budget:
-        groups, cur, cur_len = [], [], 0
-        for t in texts:
-            if cur and cur_len + len(t) > effective_budget:
-                groups.append(cur)
-                cur, cur_len = [], 0
-            cur.append(t)
-            cur_len += len(t)
-        if cur:
-            groups.append(cur)
+        groups = _map_reduce_core.group_for_budget(texts, effective_budget)
         if all(len(g) == 1 for g in groups):
             break  # can't reduce further (each partial already huge)
         new_texts = []
