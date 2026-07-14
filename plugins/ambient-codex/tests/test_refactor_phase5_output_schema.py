@@ -13,4 +13,3 @@ class OutputSchemaTests(unittest.TestCase):
         self.assertEqual(core.public_usage(source),
                          {"prompt_tokens": 1, "completion_tokens": 2})
         self.assertIn("cost", source)
-
