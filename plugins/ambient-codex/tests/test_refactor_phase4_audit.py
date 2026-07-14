@@ -8,7 +8,8 @@ class AuditPreparationTests(unittest.TestCase):
     def test_module_owns_audit_prep_and_single_shot_key(self):
         core = importlib.import_module("ambient_codex.audit_core")
         self.assertEqual(core.__all__, (
-            "extract_json", "prepare_sample", "single_shot_key", "reduce_findings",
+            "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
+            "single_shot_key", "reduce_findings",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -17,6 +18,19 @@ class AuditPreparationTests(unittest.TestCase):
                          {"findings": []})
         repaired = core.extract_json('{"findings": []')
         self.assertTrue(repaired["_repaired"])
+
+    def test_dedupe_keeps_higher_severity_and_richer_scenario(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        findings = core.dedupe_findings([
+            {"severity": "LOW", "file": "src/a.py", "line": 10,
+             "title": "missing validation", "scenario": "short"},
+            {"severity": "HIGH", "file": "src/a.py", "line": 11,
+             "title": "missing validation here", "scenario": "much richer scenario"},
+        ])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["severity"], "HIGH")
+        self.assertEqual(findings[0]["scenario"], "much richer scenario")
+        self.assertEqual(core.verdict_from(findings, False), "FIX FIRST")
 
     def test_single_shot_key_uses_a_complete_file_block_and_sample_salt(self):
         core = importlib.import_module("ambient_codex.audit_core")

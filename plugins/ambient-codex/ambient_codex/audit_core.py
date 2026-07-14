@@ -5,6 +5,71 @@ import json
 import re
 
 
+SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+_SPLIT_ARTIFACT = re.compile(
+    r"(?i)\b(?:suspected\s+)?split artifact\b"
+    r"|\bfile (?:being )?split across chunks\b")
+
+
+def _finding_signature(finding):
+    path = str(finding.get("file", "")).strip().replace("\\", "/").lstrip("./")
+    try:
+        line = int(finding.get("line") or 0)
+    except (TypeError, ValueError):
+        line = 0
+    words = re.sub(r"\W+", " ", str(finding.get("title", ""))).lower().split()
+    return path, line, tuple(words[:4])
+
+
+def _titles_match(first, second):
+    length = min(len(first), len(second), 4)
+    return (not first and not second) if length == 0 else first[:length] == second[:length]
+
+
+def _is_split_artifact(finding):
+    if not isinstance(finding, dict):
+        return False
+    text = " ".join(str(finding.get(key, ""))
+                    for key in ("title", "defect", "scenario", "fix"))
+    return bool(_SPLIT_ARTIFACT.search(text))
+
+
+def dedupe_findings(findings):
+    """Conservatively merge duplicate chunk findings without losing context."""
+    kept = []
+    for finding in findings:
+        if not isinstance(finding, dict) or _is_split_artifact(finding):
+            continue
+        path, line, title = _finding_signature(finding)
+        slot = next((entry for entry in kept
+                     if entry[0][0] == path and _titles_match(entry[0][2], title)
+                     and abs(entry[0][1] - line) <= 3), None)
+        if slot is None:
+            kept.append(((path, line, title), finding))
+            continue
+        previous = slot[1]
+        best = (finding if SEVERITY_ORDER.get(finding.get("severity"), 9)
+                < SEVERITY_ORDER.get(previous.get("severity"), 9) else previous)
+        richest = max(previous, finding,
+                      key=lambda value: len(str(value.get("scenario", ""))))
+        if len(str(richest.get("scenario", ""))) > len(str(best.get("scenario", ""))):
+            best = {**best, "scenario": richest.get("scenario", "")}
+        kept[kept.index(slot)] = (slot[0], best)
+    return sorted((finding for _, finding in kept),
+                  key=lambda finding: SEVERITY_ORDER.get(finding.get("severity"), 9))
+
+
+def verdict_from(findings, partial):
+    """Derive a conservative audit verdict from structured findings."""
+    severities = {finding.get("severity") for finding in findings
+                  if isinstance(finding, dict)}
+    if partial:
+        return "NEEDS WORK"
+    if {"CRITICAL", "HIGH"} & severities:
+        return "FIX FIRST"
+    return "NEEDS WORK" if {"MEDIUM", "LOW"} & severities else "SHIP"
+
+
 def extract_json(text):
     """Best-effort object extraction that marks only safe truncation repairs."""
     if not text:
@@ -110,4 +175,5 @@ def reduce_findings(texts, *, parse, dedupe, verdict):
     }
 
 
-__all__ = ("extract_json", "prepare_sample", "single_shot_key", "reduce_findings")
+__all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
+           "single_shot_key", "reduce_findings")

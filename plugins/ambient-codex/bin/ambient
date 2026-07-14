@@ -5450,101 +5450,17 @@ def extract_json(text):
     return _audit_core.extract_json(text)
 
 
-SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+SEVERITY_ORDER = _audit_core.SEVERITY_ORDER
 
 
-def _finding_sig(f):
-    """(normalized-relative-path, line, title words) — the identity used to
-    match the same bug reported by different chunks/models. Keyed on the full
-    path, NOT the basename: src/utils.py and tests/utils.py are distinct files
-    and must not collapse into one finding (which silently drops the other).
-    Path case is PRESERVED (L23): case-folding merged case-distinct files on a
-    case-sensitive filesystem and dropped a real finding — a duplicate on a
-    case-insensitive FS is the safer failure than lost coverage."""
-    path = str(f.get("file", "")).strip().replace("\\", "/").lstrip("./")
-    try:
-        line = int(f.get("line") or 0)
-    except (TypeError, ValueError):
-        line = 0
-    words = re.sub(r"\W+", " ", str(f.get("title", ""))).lower().split()
-    return path, line, tuple(words[:4])
+def _finding_sig(finding):
+    """Compatibility seam for consensus finding identity."""
+    return _audit_core._finding_signature(finding)
 
 
-def _titles_match(a, b):
-    """Same bug if the shorter title is a word-prefix of the longer, compared
-    over at most 4 significant words: 'SQL injection' matches 'SQL injection
-    here', but 'missing null check' does not match 'missing rate limit'.
-    (A looser token-overlap heuristic was tried for F05b's cosmetic best-of
-    duplicates but reverted — Codex showed it false-merges 'SQL injection in
-    search query' with '…in login query', and DROPPING a distinct finding is
-    far worse than showing a duplicate.)"""
-    n = min(len(a), len(b), 4)
-    if n == 0:
-        return not a and not b
-    return a[:n] == b[:n]
-
-
-_SPLIT_ARTIFACT_RE = re.compile(
-    r"(?i)\b(?:suspected\s+)?split artifact\b"
-    r"|\bfile (?:being )?split across chunks\b")
-
-
-def _is_split_artifact_finding(finding):
-    if not isinstance(finding, dict):
-        return False
-    text = " ".join(
-        str(finding.get(key, ""))
-        for key in ("title", "defect", "scenario", "fix")
-    )
-    return bool(_SPLIT_ARTIFACT_RE.search(text))
-
-
-def dedupe_findings(findings):
-    """Deterministically dedupe findings across chunks (A5): same file, title
-    prefix, and line within ±3 = the same bug. True proximity (not //3 buckets,
-    which missed duplicates straddling a bucket edge and false-merged
-    neighbors). Keep the highest severity + longest scenario."""
-    kept = []  # [(sig, finding)]
-    for f in findings:
-        if not isinstance(f, dict):
-            continue
-        if _is_split_artifact_finding(f):
-            continue
-        path, line, title = _finding_sig(f)
-        slot = None
-        for entry in kept:
-            (kp, kl, kt), _ = entry
-            if kp == path and _titles_match(kt, title) and abs(kl - line) <= 3:
-                slot = entry
-                break
-        if slot is None:
-            kept.append(((path, line, title), f))
-            continue
-        prev = slot[1]
-        best = f if (SEVERITY_ORDER.get(f.get("severity"), 9) <
-                     SEVERITY_ORDER.get(prev.get("severity"), 9)) else prev
-        # M36: keep the richest scenario from EITHER report. The old code only
-        # grafted f's scenario onto `best`, so escalating the severity to `f`
-        # (best=f) silently discarded prev's longer scenario.
-        richest = max(prev, f, key=lambda x: len(str(x.get("scenario", ""))))
-        if len(str(richest.get("scenario", ""))) > \
-                len(str(best.get("scenario", ""))):
-            best = {**best, "scenario": richest.get("scenario", "")}
-        kept[kept.index(slot)] = (slot[0], best)
-    result = [f for _, f in kept]
-    result.sort(key=lambda f: SEVERITY_ORDER.get(f.get("severity"), 9))
-    return result
-
-
-def _verdict_from(findings, partial):
-    sevs = {f.get("severity") for f in findings if isinstance(f, dict)}
-    if partial:
-        return "NEEDS WORK"
-    if "CRITICAL" in sevs or "HIGH" in sevs:
-        return "FIX FIRST"
-    if "MEDIUM" in sevs or "LOW" in sevs:
-        return "NEEDS WORK"
-    return "SHIP"
+def _titles_match(first, second):
+    """Compatibility seam for consensus duplicate matching."""
+    return _audit_core._titles_match(first, second)
 
 
 def parse_audit_object(raw):
@@ -5569,6 +5485,16 @@ def parse_audit_object(raw):
     if isinstance(raw, str):
         return parse_prose_findings(raw)
     return None
+
+
+def dedupe_findings(findings):
+    """Facade seam for extracted deterministic finding consolidation."""
+    return _audit_core.dedupe_findings(findings)
+
+
+def _verdict_from(findings, partial):
+    """Facade seam for extracted conservative audit verdict derivation."""
+    return _audit_core.verdict_from(findings, partial)
 
 
 def findings_reducer(texts):
