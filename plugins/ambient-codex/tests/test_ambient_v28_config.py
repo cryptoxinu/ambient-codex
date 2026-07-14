@@ -95,18 +95,6 @@ class RoundTripTests(_ConfigCase):
         self.assertEqual(self.conf().get("AMBIENT_PROGRESS"), "off")
         self.assertFalse(amb._progress_from_env_or_conf(self.conf()))
 
-    def test_spend_cap(self):
-        self.config("set", "spend-cap", "12")
-        self.assertEqual(amb._ceiling(self.conf()), (12.0, True))
-
-    def test_spend_cap_lenient_dollar_and_comma(self):
-        self.config("set", "spend-cap", "$1,234")
-        self.assertEqual(amb._ceiling(self.conf()), (1234.0, True))
-
-    def test_fleet_budget_off(self):
-        self.config("set", "fleet-budget", "off")
-        self.assertFalse(amb._fleet_enabled(self.conf()))
-
     def test_fallback_on(self):
         self.config("set", "fallback", "on")
         self.assertEqual(self.conf().get("AMBIENT_FALLBACK"), "on")
@@ -139,10 +127,6 @@ class ValidationRejectTests(_ConfigCase):
             self.config(*a)
         self.assertEqual(cm.exception.code, 64)
         self.assertFalse(os.path.exists(self._cfg), "a rejected set must not write")
-
-    def test_spend_cap_bad(self):
-        for v in ("abc", "-1", "0", "nan", "inf"):
-            self._rejects("set", "spend-cap", v)
 
     def test_reference_price_bad(self):
         for v in ("abc", "0", "1/2/3", "-3/15"):
@@ -265,7 +249,7 @@ class ArgvSecretGuardTests(_ConfigCase):
         return str(cm.exception.code or "")
 
     def test_positional_secret_token_refused(self):
-        msg = self._guard(["ambient", "config", "set", "spend-cap",
+        msg = self._guard(["ambient", "config", "set", "streaming",
                            "sk-live-SECRETSECRET012345"])
         self.assertNotIn("SECRETSECRET012345", msg)
         self.assertIn("shell history", msg)
@@ -290,11 +274,11 @@ class ArgvSecretGuardTests(_ConfigCase):
 
 class UnsetTests(_ConfigCase):
     def test_unset_removes_key_and_restores_default(self):
-        self.config("set", "spend-cap", "12")
-        self.assertEqual(amb._ceiling(self.conf()), (12.0, True))
-        out, _ = self.config("unset", "spend-cap")
-        self.assertNotIn("AMBIENT_MAX_SPEND", self.conf())
-        self.assertEqual(amb._ceiling(self.conf()), (5.0, False))
+        self.config("set", "streaming", "off")
+        self.assertEqual(self.conf().get("AMBIENT_PROGRESS"), "off")
+        out, _ = self.config("unset", "streaming")
+        self.assertNotIn("AMBIENT_PROGRESS", self.conf())
+        self.assertTrue(amb._progress_from_env_or_conf(self.conf()))
         self.assertIn("back to default", out)
 
 
@@ -302,7 +286,7 @@ class StatusRenderTests(_ConfigCase):
     def test_status_shows_settings_and_pointers(self):
         out, _ = self.config()   # bare = status
         for token in ("Ambient settings", "API key", "streaming", "fallback",
-                      "spend-cap", "reference-price", "ambient-codex use", "ambient-codex mode",
+                      "reference-price", "ambient-codex use", "ambient-codex mode",
                       "ambient-codex curate"):
             self.assertIn(token, out, token)
 
@@ -338,8 +322,8 @@ class ParserWiringTests(_ConfigCase):
         self.assertEqual(p.parse_args(["config"]).verb, "status")
         a = p.parse_args(["config", "set", "streaming", "off"])
         self.assertEqual((a.verb, a.name, a.value), ("set", "streaming", "off"))
-        a = p.parse_args(["config", "unset", "spend-cap"])
-        self.assertEqual((a.verb, a.name), ("unset", "spend-cap"))
+        a = p.parse_args(["config", "unset", "reference-price"])
+        self.assertEqual((a.verb, a.name), ("unset", "reference-price"))
 
     def test_bad_verb_rejected(self):
         with self.assertRaises(SystemExit):
@@ -369,8 +353,8 @@ class NoClobberTests(_ConfigCase):
 
     def test_unset_only_removes_its_own_key(self):
         amb.save_config_values({"AMBIENT_DELEGATE": "on"})
-        self.config("set", "spend-cap", "9")
-        self.config("unset", "spend-cap")
+        self.config("set", "streaming", "off")
+        self.config("unset", "streaming")
         self.assertEqual(self.conf().get("AMBIENT_DELEGATE"), "on")
 
 

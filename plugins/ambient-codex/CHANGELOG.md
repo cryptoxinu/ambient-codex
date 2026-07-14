@@ -13,6 +13,17 @@ All notable changes to `ambient-codex`.
   enabled, only the relative percentage shows, on receipts and in
   `ambient-codex usage`; with it off, `usage` reports calls and tokens only.
 
+### Removed the dollar spend cap
+
+- The per-invocation and aggregate dollar spend cap (`AMBIENT_MAX_SPEND`, the
+  `spend-cap` / `fleet-budget` settings, and the `reservations.jsonl` fleet
+  reservation system) has been removed. It refused runs based on an estimated
+  dollar cost and surfaced a dollar figure in the settings table; since billing
+  is plan-dependent, that was noise. Runs are no longer refused on estimated
+  cost, and no dollar value appears in settings. Parallel fan-out (`--parallel`
+  / `AMBIENT_MAX_PARALLEL`) and the raw input-size guard (`--allow-cost`) are
+  unchanged.
+
 ### Public-release hardening and large-context reliability
 
 - Raised the CLI/MCP request guard to one million output tokens while retaining

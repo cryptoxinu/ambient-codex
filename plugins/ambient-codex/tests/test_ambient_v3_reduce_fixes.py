@@ -317,57 +317,7 @@ class TestH2SynthesisSizedToReduceModel(unittest.TestCase):
 
 
 class TestM1SplitCostFormula(unittest.TestCase):
-    """The split gate must not double-count synthesis input."""
-
-    def _gated(self, catalog, model, reduce_model, chars, n, args,
-               **gate_kw):
-        got = {}
-
-        def rec(expected, a, conf, bound=None):
-            got["expected"], got["bound"] = expected, bound
-
-        with patched(amb, _gate_amount=rec), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(catalog, model, reduce_model, chars, n, args,
-                             {}, **gate_kw)
-        return got
-
-    def test_split_gate_matches_explicit_formula(self):
-        catalog = fix_catalog()
-        args = mr_args(max_tokens=8000)
-        got = self._gated(catalog, "map/big", "strong/reduce", 100_000, 4,
-                          args)
-        in_tok = 100_000 / amb.CHARS_PER_TOKEN
-        eo = min(8000, amb.ANSWER_TOKENS_RESERVE)
-        # map input 1.0x at map prices + synth input 0.3x at reduce prices
-        # + each lane's own output calls at its own price.
-        expected = (in_tok * 1.0 * 0.2 + in_tok * 0.3 * 1.0
-                    + 4 * eo * 0.8 + 4 * eo * 4.0) / 1e6
-        bound = (in_tok * 1.0 * 0.2 + in_tok * 0.3 * 1.0
-                 + 4 * 8000 * 0.8 + 4 * 8000 * 4.0) / 1e6
-        self.assertAlmostEqual(got["expected"], expected, places=9)
-        self.assertAlmostEqual(got["bound"], bound, places=9)
-        # …and it is strictly below the old double-counted figure.
-        em, bm, _ = amb.estimate_cost(catalog, "map/big", 100_000, 4, 8000)
-        er, br, _ = amb.estimate_cost(catalog, "strong/reduce", 30_000, 4,
-                                      8000)
-        self.assertLess(got["expected"], em + er)
-
-    def test_same_model_byte_identical_to_classic_gate(self):
-        catalog = fix_catalog()
-        args = mr_args(max_tokens=8000)
-        for rm in (None, "map/big"):
-            got = self._gated(catalog, "map/big", rm, 100_000, 4, args)
-            classic = {}
-
-            def rec(expected, a, conf, bound=None, _c=classic):
-                _c["expected"], _c["bound"] = expected, bound
-
-            with patched(amb, _gate_amount=rec), \
-                    contextlib.redirect_stderr(io.StringIO()):
-                amb.cost_gate(catalog, "map/big", 100_000, 8, args, {})
-            self.assertEqual(got["expected"], classic["expected"])
-            self.assertEqual(got["bound"], classic["bound"])
+    """The split estimate helper must not double-count synthesis input."""
 
     def test_estimate_helper_same_model_identical_to_estimate_cost(self):
         catalog = fix_catalog()
@@ -375,75 +325,6 @@ class TestM1SplitCostFormula(unittest.TestCase):
                                      100_000, 4, 8000, extra_calls=1)
         classic = amb.estimate_cost(catalog, "map/big", 100_000, 9, 8000)
         self.assertEqual(split, classic)
-
-
-class TestM3DeterministicReducerPricesMapOnly(unittest.TestCase):
-    """reducer=findings_reducer means NO synthesis LLM call — the gate must
-    price only the map lane, and the reduce model must not matter."""
-
-    def test_gate_prices_map_lane_only(self):
-        catalog = fix_catalog()
-        args = mr_args(max_tokens=8000)
-        got = {}
-
-        def rec(expected, a, conf, bound=None):
-            got["expected"], got["bound"] = expected, bound
-
-        with patched(amb, _gate_amount=rec), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(catalog, "map/big", "strong/reduce", 100_000,
-                             4, args, {}, synthesis=False)
-        in_tok = 100_000 / amb.CHARS_PER_TOKEN
-        eo = min(8000, amb.ANSWER_TOKENS_RESERVE)
-        expected = (in_tok * 0.2 + 4 * eo * 0.8) / 1e6
-        bound = (in_tok * 0.2 + 4 * 8000 * 0.8) / 1e6
-        self.assertAlmostEqual(got["expected"], expected, places=9)
-        self.assertAlmostEqual(got["bound"], bound, places=9)
-
-    def test_reduce_model_plays_no_role_in_structured_price(self):
-        catalog = fix_catalog()
-        args = mr_args(max_tokens=8000)
-        seen = []
-
-        def rec(expected, a, conf, bound=None):
-            seen.append((expected, bound))
-
-        with patched(amb, _gate_amount=rec), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(catalog, "map/big", "strong/reduce", 100_000,
-                             4, args, {}, synthesis=False)
-            amb.cost_gate_mr(catalog, "map/big", None, 100_000,
-                             4, args, {}, synthesis=False)
-        self.assertEqual(seen[0], seen[1])
-
-    def test_structured_audit_gates_without_synthesis(self):
-        # Command-level: the structured audit lane passes synthesis=False.
-        catalog = fix_catalog()
-        src = os.path.join(tempfile.mkdtemp(), "big.py")
-        with open(src, "w", encoding="utf-8") as fh:
-            fh.write("x = 1\n" * 20_000)  # ~120k chars > cheap/reason single
-        recorded = []
-        real = amb.estimate_cost_mr
-
-        def spy(*a, **k):
-            recorded.append((a, k))
-            return real(*a, **k)
-
-        def fake_mr(*a, **k):
-            return ('{"findings": []}', False, "")
-
-        args = audit_args(src, format="json", model="cheap/reason",
-                          reduce_model="strong/reduce")
-        with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     estimate_cost_mr=spy, run_map_reduce=fake_mr,
-                     _gate_amount=lambda *a, **k: None,
-                     log_usage=lambda *a, **k: None), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cmd_audit(args, "key-abcdef123456", "https://x", {})
-        self.assertTrue(recorded)
-        a, k = recorded[-1]
-        self.assertFalse(k.get("synthesis", True))  # deterministic reducer
 
 
 class TestM2DryRunParity(unittest.TestCase):
@@ -456,7 +337,7 @@ class TestM2DryRunParity(unittest.TestCase):
             fh.write("x = 1\n" * 20_000)  # ~120k chars
         return src
 
-    def test_audit_dry_run_split_matches_live_gate(self):
+    def test_audit_dry_run_split_previews_via_estimate_helper(self):
         catalog = fix_catalog()
         src = self._big_src()
         recorded = []
@@ -478,26 +359,6 @@ class TestM2DryRunParity(unittest.TestCase):
         self.assertIn("map=cheap/reason", text)
         self.assertIn("reduce=strong/reduce", text)
         self.assertEqual(len(recorded), 1)
-        dry_a, dry_k = recorded[0]
-
-        # The LIVE gate must compute the same figure from the same inputs.
-        gated = {}
-
-        def rec(expected, a, conf, bound=None):
-            gated["expected"], gated["bound"] = expected, bound
-
-        live_args = audit_args(src, model="cheap/reason",
-                               reduce_model="strong/reduce")
-        with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     _gate_amount=rec,
-                     run_map_reduce=lambda *a, **k: ("ok", False, ""),
-                     log_usage=lambda *a, **k: None), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cmd_audit(live_args, "key-abcdef123456", "https://x", {})
-        dry_expected, dry_bound, _ = real(*dry_a, **dry_k)
-        self.assertAlmostEqual(gated["expected"], dry_expected, places=9)
-        self.assertAlmostEqual(gated["bound"], dry_bound, places=9)
 
     def test_audit_dry_run_structured_prices_map_lane_only(self):
         catalog = fix_catalog()

@@ -39,9 +39,7 @@ Commands:
 Inputs beyond a model's single-shot budget are auto map-reduced (parallel
 chunk calls + merge) up to the bounded 20M-character input guard. Repository
 audits include source files up to that guard and report any larger source or
-aggregate-overflow exclusion as PARTIAL coverage. Spend is gated: set
-AMBIENT_MAX_SPEND to cap it, large jobs confirm on a TTY (--yes skips;
---allow-cost overrides the ceiling).
+aggregate-overflow exclusion as PARTIAL coverage.
 
 Exit codes: 0 ok · 1 diagnosed error · 2 PARTIAL result · 3 no key configured
             64 usage error · 130 interrupted
@@ -53,7 +51,7 @@ Model resolution: -m flag > AMBIENT_MODEL_MAP phase entry > AMBIENT_MODEL /
                   > built-in default. `-m auto[:cheapest|:largest]` (or
                   `ambient use auto`) delegates the pick to the live catalog
                   — resolved per call, always printed. AMBIENT_MODEL_MAP
-                  (like AMBIENT_MAX_PARALLEL / AMBIENT_MAX_SPEND, env or
+                  (like AMBIENT_MAX_PARALLEL, env or
                   config) routes phases: "map=ID,reduce=ID,chat=ID,code=ID";
                   --reduce-model overrides its reduce entry per run.
 An explicit concrete -m model is NEVER silently swapped (SACRED) — routing
@@ -62,7 +60,6 @@ is advisory, auto is explicit delegation, --fallback stays opt-in.
 
 import argparse
 import ast
-import atexit
 import collections
 import concurrent.futures
 import contextlib
@@ -1121,9 +1118,9 @@ def safe_catalog(api_url, api_key):
         return []
 
 
-# Above every price observed in the live catalog — used when pricing is
-# unknown so the spend gate can NEVER fail open (cost_gate used to
-# skip the ceiling exactly when the catalog was unreachable).
+# Above every price observed in the live catalog — used as the worst-case
+# price when a model's real pricing is unknown, so cost estimates never
+# under-count.
 ASSUMED_MAX_INPUT_PRICE = 2.0    # per Mtok
 ASSUMED_MAX_OUTPUT_PRICE = 8.0   # per Mtok
 
@@ -1630,28 +1627,11 @@ def savings_note_by_served(usage_by_model, catalog=None, conf=None):
         return ""
 
 
-# --- Fleet spend budget ----------------------------------------
-# AMBIENT_MAX_SPEND used to gate each invocation in ISOLATION, so the
-# documented 10-wide fan-out (SKILL.md) could spend up to 10x the ceiling.
-# These helpers make it a true AGGREGATE ceiling: every gated invocation
-# writes a reservation to ~/.config/ambient-codex/reservations.jsonl under a
-# cross-process lock; siblings see the running total and refuse past the
-# ceiling. Stale reservations (dead pid; or past AMBIENT_RESERVATION_TTL when
-# liveness is unknowable — a provably-ALIVE holder is never TTL-pruned) are
-# pruned so a crashed process never wedges the fleet budget. The whole
-# mechanism is FAIL-OPEN: any failure of the machinery itself degrades to the
-# existing per-invocation gate with a one-line warning — it must never block
-# or crash a legitimate call. Opt out with AMBIENT_FLEET_BUDGET=off.
-
-# Default reservation lifetime. Deliberately generous (1h): on POSIX a
-# provably-ALIVE holder is never TTL-pruned, but on Windows pid
-# liveness is unknowable, so a single long job that never re-gates relies on
-# this TTL not expiring under it — accepted best-effort (see _load_reservations).
-RESERVATION_TTL_S = 3600.0    # default lifetime of a spend reservation
-_BUDGET_LOCK_WAIT_S = 5.0     # bounded wait for the reservations lock
-_LEDGER_LOCK_WAIT_S = 2.0     # bounded wait for the usage-ledger lock (4b)
-_FLEET_RES_IDS = []           # reservations THIS process holds (released at exit)
-_FLEET_ATEXIT_ARMED = False
+# --- Cross-process file lock (usage ledger) --------------------
+# The usage ledger appends under a fail-open cross-process lock so a crash
+# mid-write never leaves a torn store; a bounded wait keeps it from ever
+# blocking a legitimate call.
+_LEDGER_LOCK_WAIT_S = 2.0     # bounded wait for the usage-ledger lock
 
 
 def _lock_owner_dead(lock_path):
@@ -1753,29 +1733,6 @@ def _fs_lock(lock_path, wait_s):
             pass
 
 
-def _fleet_enabled(conf):
-    """Fleet (aggregate) budget is ON by default; AMBIENT_FLEET_BUDGET=off
-    (or 0/false/no) restores the old per-invocation-only gate."""
-    raw = (os.environ.get("AMBIENT_FLEET_BUDGET")
-           or conf.get("AMBIENT_FLEET_BUDGET") or "on")
-    return str(raw).strip().lower() not in ("off", "0", "false", "no")
-
-
-def _reservation_ttl(conf):
-    """Seconds before an un-released reservation is presumed abandoned
-    (AMBIENT_RESERVATION_TTL, default 900) — the backstop that keeps a
-    crashed/undetectable process from wedging the fleet budget forever."""
-    raw = (os.environ.get("AMBIENT_RESERVATION_TTL")
-           or conf.get("AMBIENT_RESERVATION_TTL") or "")
-    try:
-        ttl = float(raw)
-        if ttl > 0:
-            return ttl
-    except (TypeError, ValueError):
-        pass
-    return RESERVATION_TTL_S
-
-
 def _pid_alive(pid):
     """True/False when liveness is determinable, None when it isn't. POSIX
     only: os.kill(pid, 0) probes without signaling there, but on Windows
@@ -1796,307 +1753,6 @@ def _pid_alive(pid):
         return None
     except OSError:
         return None
-
-
-def _reservations_path():
-    return os.path.join(os.path.dirname(USAGE_PATH), "reservations.jsonl")
-
-
-def _load_reservations(path, ttl, now):
-    """Parse + prune the reservations store. Returns (records, saw_corrupt).
-    Pruning is LIVENESS-FIRST: a provably-ALIVE pid is KEPT no
-    matter how old its record is — a slow long call (map-reduce, high
-    --timeout, stalled TTY prompt) can still spend, so pruning it would let
-    a sibling breach the aggregate ceiling. A definitively-dead pid is
-    reclaimed immediately; the TTL is the backstop ONLY where liveness is
-    unknowable (Windows, PermissionError). Accepted best-effort on Windows:
-    a single job that outlives the TTL without re-gating may still be
-    pruned — the generous default (RESERVATION_TTL_S, 1h) makes that rare.
-    Corrupt lines are dropped (the next write resets the file); an
-    unreadable file raises OSError for the caller's fail-open path."""
-    records, saw_corrupt = [], False
-    try:
-        with open(path, encoding="utf-8") as fh:
-            lines = fh.readlines()
-    except FileNotFoundError:
-        return [], False
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            raw = json.loads(line)
-            pid = int(raw["pid"])
-            ts = float(raw["ts"])
-            amount = float(raw["amount"])
-            rid = str(raw["id"])
-        except (KeyError, TypeError, ValueError):
-            saw_corrupt = True
-            continue
-        if not (0 <= amount < float("inf")) or not (0 < ts < float("inf")):
-            saw_corrupt = True  # NaN / negative / absurd — treat as corrupt
-            continue
-        alive = _pid_alive(pid)
-        if alive is False:
-            continue  # definitively dead process — reclaim immediately
-        if alive is not True and now - ts > ttl:
-            continue  # unknowable liveness AND expired — presumed abandoned
-        records.append({"pid": pid, "ts": ts, "amount": amount, "id": rid})
-    return records, saw_corrupt
-
-
-def _write_reservations(path, records):
-    """Atomic rewrite (mkstemp + replace, 0600) — a crash mid-write must
-    never leave siblings a torn store."""
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".res-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            for r in records:
-                fh.write(json.dumps(r) + "\n")
-        os.replace(tmp, path)
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def _fleet_warn(reason):
-    print(
-        f"ambient: fleet budget check skipped ({reason}) — "
-        "falling back to the per-invocation spend gate",
-        file=sys.stderr,
-    )
-
-
-def _fleet_release_all():
-    """Drop every reservation this process holds — called on EVERY exit path
-    (atexit covers sys.exit/normal return; a hard kill is covered by the
-    dead-pid/TTL prune). Idempotent, best-effort, never raises.
-    IDs are cleared ONLY after the rewrite that removes them lands — a
-    lock/write failure keeps them so a later release (or atexit) can retry,
-    with the dead-pid/TTL prune as the ultimate backstop."""
-    if not _FLEET_RES_IDS:
-        return
-    try:
-        conf_dir = os.path.dirname(USAGE_PATH)
-        path = _reservations_path()
-        with _fs_lock(os.path.join(conf_dir, ".reservations.lock"),
-                      _BUDGET_LOCK_WAIT_S) as locked:
-            if not locked:
-                return  # ids kept — retried later; prune is the backstop
-            ids = set(_FLEET_RES_IDS)
-            records, _ = _load_reservations(path, float("inf"), time.time())
-            keep = [r for r in records if r["id"] not in ids]
-            _write_reservations(path, keep)
-            # the atomic replace landed: every held id is verifiably gone
-            # (removed by this rewrite, or already pruned by a sibling)
-            _FLEET_RES_IDS[:] = []
-    except Exception:  # noqa: BLE001 — release must never mask the real exit
-        pass
-
-
-def _fleet_reserve(expected, ceiling, args, conf):
-    """The aggregate gate: under the cross-process lock, prune stale
-    reservations, refuse when live sibling reservations + this call would
-    blow the ceiling, else record this call's reservation (released on every
-    exit path). A re-gate by the SAME process (multi-gate job: map then
-    reduce) REFRESHES its existing reservation — fresh ts, amount = max of
-    the concurrent gates — instead of double-counting. Any
-    machinery failure fails OPEN to the per-invocation gate with a one-line
-    warning — but ONLY on the allow path: once the numbers say over-budget,
-    the refusal always fires."""
-    global _FLEET_ATEXIT_ARMED
-    if not _fleet_enabled(conf) or expected <= 0:
-        return
-    allow = getattr(args, "allow_cost", False)
-    try:
-        conf_dir = os.path.dirname(USAGE_PATH)
-        _private_dir(conf_dir)
-        path = _reservations_path()
-        now = time.time()
-        ttl = _reservation_ttl(conf)
-        with _fs_lock(os.path.join(conf_dir, ".reservations.lock"),
-                      _BUDGET_LOCK_WAIT_S) as locked:
-            if not locked:
-                _fleet_warn("budget store is locked by another process")
-                return
-            try:
-                records, saw_corrupt = _load_reservations(path, ttl, now)
-            except OSError as err:
-                _fleet_warn(f"reservations store unreadable: {err}")
-                return
-            if saw_corrupt:
-                _fleet_warn("corrupt reservations entries dropped")
-            # split off reservations THIS process already holds: they are
-            # refreshed/merged below, never counted as sibling spend
-            own_ids = set(_FLEET_RES_IDS)
-            own = [r for r in records if r["id"] in own_ids]
-            siblings = [r for r in records if r["id"] not in own_ids]
-            active_total = sum(r["amount"] for r in siblings)
-            amount = max([expected] + [r["amount"] for r in own])
-            if active_total + amount > ceiling and not allow:
-                # H2: the DECISION comes first and always refuses.
-                # Persisting the prune is best-effort — its failure must
-                # never turn this refusal into an allow.
-                try:
-                    _write_reservations(path, records)  # persist the prune
-                except Exception:  # noqa: BLE001 — best-effort only
-                    pass
-                _, user_set = _ceiling(conf)
-                _fail_exit(
-                    args, _argv_command(), "cost",
-                    (f"this run, plus the spend already reserved by "
-                     f"{len(siblings)} running ambient call(s), exceeds your "
-                     "configured AMBIENT_MAX_SPEND fleet ceiling — pass "
-                     "--allow-cost, raise AMBIENT_MAX_SPEND, or set "
-                     "AMBIENT_FLEET_BUDGET=off to proceed.") if user_set else
-                    (f"this run, plus the spend already reserved by "
-                     f"{len(siblings)} running ambient call(s), would exceed "
-                     "the shared spend budget — pass --allow-cost, raise "
-                     "AMBIENT_MAX_SPEND, or set AMBIENT_FLEET_BUDGET=off to "
-                     "proceed."))
-            rid = own[0]["id"] if own else \
-                f"{os.getpid()}-{time.time_ns()}-{os.urandom(4).hex()}"
-            siblings.append({"pid": os.getpid(), "ts": now,
-                             "amount": amount, "id": rid})
-            _write_reservations(path, siblings)
-            _FLEET_RES_IDS[:] = [rid]  # the one record that now backs us
-        if not _FLEET_ATEXIT_ARMED:
-            atexit.register(_fleet_release_all)
-            _FLEET_ATEXIT_ARMED = True
-    except SystemExit:
-        raise  # the refusal above — a real gate decision, not machinery
-    except Exception as err:  # noqa: BLE001 — fail-open by contract
-        _fleet_warn(f"{err.__class__.__name__}: {err}")
-
-
-def cost_gate(catalog, model, input_chars, n_calls, args, conf,
-              per_call_chars=None, per_call_tokens=None):
-    """Show a cost estimate before a large spend; enforce a ceiling; confirm on
-    a TTY. Makes runaway spend impossible to trigger accidentally — including
-    when pricing is unknown (assumed worst-case pricing, never fail-open).
-    FALLBACK-AWARE:
-    with --fallback live the batch reserves the PER-CALL SUM-OF-MAXIMA
-    Σ_i max(requested_i, fallback-candidate_i), so ANY mixture of workers
-    succeeding on the requested model or swapping to a pricier alt is fully
-    reserved UP FRONT — parity when fallback is off or no candidate is
-    pricier. Lanes with UNEVEN per-call inputs (map's items) pass
-    `per_call_chars`/`per_call_tokens` so each call's candidate and budget
-    come from its OWN real size (see estimate_cost_fb)."""
-    expected, bound, assumed = estimate_cost_fb(
-        catalog, model, input_chars, n_calls, args.max_tokens, args, conf,
-        per_call_chars=per_call_chars, per_call_tokens=per_call_tokens)
-    # No routine dollar figure is printed — billing is plan-dependent, so the
-    # gate stays silent unless it actually has to refuse.
-    _gate_amount(expected, args, conf, bound=bound)
-
-
-def _ceiling(conf):
-    """(effective ceiling, user_set): the spend cap and whether the USER set it.
-    Default is a silent safety cap. NO dollar figure is ever surfaced (founder
-    policy: billing is plan-dependent, so any dollar number misleads); user_set
-    only changes whether a refusal names AMBIENT_MAX_SPEND as the user's own."""
-    raw = os.environ.get("AMBIENT_MAX_SPEND") or conf.get("AMBIENT_MAX_SPEND")
-    try:
-        return (float(raw) if raw else 5.0), bool(raw)
-    except ValueError:
-        return 5.0, False
-
-
-def _gate_amount(expected, args, conf, bound=None):
-    """Enforce the spend ceiling on the expected figure, plus a worst-case guard
-    at 3x. The ceiling is a SILENT safety cap; NO dollar figure is ever printed
-    (founder policy) — a refusal names AMBIENT_MAX_SPEND but never a computed
-    cost. The bound over-states 10-30x, so the ceiling binds EXPECTED spend."""
-    ceiling, user_set = _ceiling(conf)
-    allow = getattr(args, "allow_cost", False)
-    if expected > ceiling and not allow:
-        _fail_exit(
-            args, _argv_command(), "cost",
-            ("this run exceeds your configured spend ceiling "
-             "(AMBIENT_MAX_SPEND) — pass --allow-cost, or raise it, to "
-             "proceed.") if user_set else
-            ("this run would be unusually large — pass --allow-cost to "
-             "proceed, or set AMBIENT_MAX_SPEND to set your own ceiling."))
-    if bound is not None and bound > ceiling * 3 and not allow:
-        _fail_exit(
-            args, _argv_command(), "cost",
-            ("the worst-case spend for this run exceeds 3x your configured "
-             "AMBIENT_MAX_SPEND ceiling — pass --allow-cost, or raise "
-             "AMBIENT_MAX_SPEND, to proceed.") if user_set else
-            ("the worst-case spend for this run is unusually large — pass "
-             "--allow-cost to proceed, or set AMBIENT_MAX_SPEND."))
-    # the same ceiling, enforced as an AGGREGATE across every
-    # concurrently-running ambient process (SKILL.md fleet contract) — a
-    # 10-wide fan-out shares ONE budget instead of multiplying it by 10.
-    # ALWAYS record the reservation, even under --allow-cost: _fleet_reserve
-    # skips only the REFUSAL on the allow path (still persisting the spend), so
-    # concurrent siblings still see this run's spend. Guarding this with
-    # `if not allow` let an --allow-cost run silently defeat the aggregate cap.
-    _fleet_reserve(expected, ceiling, args, conf)
-    if (expected > 0.50 and sys.stdin.isatty()
-            and not getattr(args, "yes", False)):
-        # Prompt on STDERR, not stdout, so a captured --json stream stays clean.
-        sys.stderr.write("This is a larger-than-usual run — proceed? [y/N] ")
-        sys.stderr.flush()
-        try:
-            ans = input().strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            ans = ""
-        if ans not in ("y", "yes"):
-            _fail_exit(args, _argv_command(), "cancelled", "cancelled")
-
-
-def cost_gate_soft(catalog, model, input_chars, n_calls, args, conf):
-    """Non-fatal twin of cost_gate for OPTIONAL extra passes (the repo deep
-    pass): same estimate / ceiling / fleet-reservation / TTY
-    semantics, but a refusal returns False instead of exiting — the caller
-    SKIPS the optional call and the already-paid pass-1 result must survive
-    untouched. Anything the underlying gate would print to STDOUT on refusal
-    (the --json error envelope) is captured and DISCARDED: a skipped
-    optional pass is not a run failure and must not fail or corrupt the
-    main result's envelope."""
-    buf = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buf):
-            cost_gate(catalog, model, input_chars, n_calls, args, conf)
-    except SystemExit:
-        return False  # ceiling / fleet / TTY-decline refusal — skip, not fail
-    leaked = buf.getvalue()
-    if leaked:
-        sys.stdout.write(leaked)  # allow path never prints to stdout today
-    return True
-
-
-def _single_call_gate(catalog, model, input_chars, args, conf):
-    """cost-gate + FLEET-RESERVE one direct complete() call.
-    The single-call lanes (normal ask, code's final generation, single-shot
-    audit) used to spend without any reservation, so a fan-out fleet could
-    sit at the AMBIENT_MAX_SPEND ceiling while single calls kept slipping
-    through — the ceiling was not whole-system. Prices the call from the
-    RESOLVED output budget (every caller runs apply_output_budget at the
-    cmd_* boundary first; an unresolved spec is resolved here through the
-    same _resolve_output_budget core) plus the ACTUAL input chars, and
-    routes through _gate_amount — inheriting the ceiling, the 3x worst-case
-    bound, the aggregate fleet reservation, the TTY confirm, and
-    the --allow-cost bypass, exactly like the sibling fan-out gates.
-    PARITY: silent on the allow path — no estimate line, no prompt on a
-    non-TTY — so a normal small ask/code/audit call behaves exactly as
-    before; it is just fleet-accounted now."""
-    spec = RequestSpec.from_args(args)
-    max_tokens = spec.max_tokens
-    if max_tokens is None:  # defensive: caller skipped apply_output_budget
-        max_tokens = spec.with_output_budget(
-            model_profile(catalog, model), input_chars).max_tokens
-    # Fallback-aware, exactly like the batch gates: with --fallback live this
-    # single call may be re-served by a pricier candidate, so the reserve must
-    # cover the swap (estimate_cost_fb = base + max(0, alt - requested)). Byte-
-    # identical to estimate_cost when fallback is off / no pricier candidate.
-    expected, bound, _assumed = estimate_cost_fb(
-        catalog, model, input_chars, 1, max_tokens, args, conf)
-    _gate_amount(expected, spec, conf, bound=bound)
 
 
 def _lane_pricing(catalog, model):
@@ -2214,8 +1870,8 @@ def estimate_cost_fb(catalog, model, input_chars, n_calls, max_tokens,
     # secondary --fallback uplift is skipped) and warn, rather than mis-reserve.
     if (per_call_chars is not None and len(per_call_chars) != n_calls) or \
             (per_call_tokens is not None and len(per_call_tokens) != n_calls):
-        _fleet_warn("per-call pricing vector length mismatch — reserving the "
-                    "base estimate without the fallback uplift")
+        print("ambient: per-call pricing vector length mismatch — using the "
+              "base estimate without the fallback uplift", file=sys.stderr)
         return exp, bnd, asm
     sizes = (list(per_call_chars) if per_call_chars is not None
              else [input_chars / n_calls] * n_calls)
@@ -2419,56 +2075,6 @@ def estimate_cost_mr(catalog, model, reduce_model, input_chars, n_chunks,
     expected = (input_cost + map_calls * map_expected_out * mp[1]
                 + red_calls * reduce_expected_out * rp[1]) / 1e6
     return expected, bound, asm_m or asm_r
-
-
-def cost_gate_mr(catalog, model, reduce_model, input_chars, n_chunks, args,
-                 conf, extra_calls=0, synthesis=True, per_call_chars=None):
-    """Cost gate for a map-reduce run whose REDUCE model may differ from the
-    map model (--reduce-model / AMBIENT_MODEL_MAP): map chunks are
-    priced at the map model, synthesis calls at the reduce model. Same
-    ceiling / worst-case / TTY-confirm semantics as cost_gate; identical to
-    it when the models match, so existing estimates don't shift.
-    synthesis=False (deterministic reducer, e.g. the structured-audit
-    findings merge) prices ONLY the map lane — there is no synthesis LLM
-    call to bill. `per_call_chars` (final spend-safety HIGH) is
-    each MAP chunk's REAL billed size — callers holding the packed chunk
-    list thread it so a live --fallback swap is reserved at each chunk's
-    OWN candidate, exactly like cmd_map's uneven items. SAME-MODEL runs
-    still delegate to cost_gate for the byte-identical classic figure —
-    UNLESS fallback is live and the per-chunk fallback-aware estimate found
-    real swap exposure: the delegated path priced the swap on a UNIFORM
-    input/(n_chunks*2+extra) pseudo-call, so a big real chunk's pricier
-    large-context candidate (which the live map worker WILL swap to —
-    fan-out workers carry gate_fallback=False and never re-gate) was never
-    reserved. Off / SACRED / no-pricier-candidate keeps the delegated
-    figures AND stderr byte-for-byte."""
-    rmodel = reduce_model or model
-    if synthesis and rmodel == model:
-        fb_est = None
-        if _fallback_enabled(RequestSpec.from_args(args), conf):
-            fb_est = estimate_cost_mr_fb(
-                catalog, model, reduce_model, input_chars, n_chunks,
-                args.max_tokens, args, conf, extra_calls=extra_calls,
-                synthesis=synthesis, per_call_chars=per_call_chars)
-            if fb_est == estimate_cost_mr(
-                    catalog, model, rmodel, input_chars, n_chunks,
-                    args.max_tokens, extra_calls=extra_calls,
-                    synthesis=synthesis):
-                fb_est = None  # no per-chunk swap exposure — classic path
-        if fb_est is None:
-            cost_gate(catalog, model, input_chars,
-                      n_chunks * 2 + extra_calls, args, conf)
-            return
-        expected, bound, assumed = fb_est
-    else:
-        expected, bound, assumed = estimate_cost_mr_fb(
-            catalog, model, reduce_model, input_chars, n_chunks,
-            args.max_tokens, args, conf, extra_calls=extra_calls,
-            synthesis=synthesis, per_call_chars=per_call_chars)
-    detail = (f"map={model}, deterministic merge — no synthesis call"
-              if not synthesis else f"map={model}, reduce={rmodel}")
-    print(f"ambient: {detail}", file=sys.stderr)
-    _gate_amount(expected, args, conf, bound=bound)
 
 
 def pick_fallback_model(catalog, current, min_context=0, conf=None):
@@ -2956,7 +2562,7 @@ def _resolve_output_budget(max_tokens, profile, input_chars=None):
 def apply_output_budget(args, profile, input_chars=None):
     """Resolve args.max_tokens from the profile unless the user set it
     explicitly, and stash the escalation ceiling for complete(). Runs before
-    cost_gate in every command, so estimates reflect the real budget. The
+    any pricing estimate in every command, so estimates reflect the real budget. The
     cmd_*-boundary (mutable argparse.Namespace) twin of
     RequestSpec.with_output_budget — both delegate to _resolve_output_budget."""
     args.max_tokens, args._auto_budget = _resolve_output_budget(
@@ -3811,32 +3417,6 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
                                 alt_rf = {"type": "json_object"}
                             else:
                                 alt_rf = None
-                        # the up-front gate priced the
-                        # REQUESTED model — an opt-in fallback to a pricier
-                        # alt would otherwise spend UNRESERVED dollars.
-                        # Re-price this attempt at the ALT model (actual
-                        # input chars, the alt's resolved budget) and route
-                        # it through the same ceiling + fleet reservation
-                        # BEFORE any swap; --allow-cost bypasses like every
-                        # spend gate. SACRED is untouched: _no_fallback
-                        # blocked the swap long before this, and --fallback
-                        # is the user's own opt-in.
-                        # SINGLE-CALL lanes only
-                        # (gate_fallback). Fan-out workers reserved the swap
-                        # exposure UP FRONT via the fallback-aware batch
-                        # gate — re-gating here would max-refresh (not add
-                        # to) the same-process fleet reservation, leaving N
-                        # concurrent alt swaps under-reserved, and a refusal
-                        # would SystemExit inside a pool thread.
-                        if not spec.allow_cost and spec.gate_fallback:
-                            fb_expected, fb_bound, _fb_assumed = \
-                                estimate_cost(
-                                    catalog, alt,
-                                    sum(len(m.get("content") or "")
-                                        for m in messages),
-                                    1, alt_tokens)
-                            _gate_amount(fb_expected, spec, fb_conf,
-                                         bound=fb_bound)
                         state = dataclasses.replace(
                             state, model=alt,
                             spec=dataclasses.replace(
@@ -5449,11 +5029,6 @@ def cmd_ask(args, api_key, api_url, conf):
         chunk_eff = max(MIN_REASONING_CHUNK,
                         int(chunk / density_factor(doc)))
         packed = pack_chunks([("input", doc)], chunk_eff)
-        # Each REAL chunk's size — a live --fallback map worker swaps on its
-        # own chunk, so the gate must reserve that chunk's own candidate,
-        # never the uniform average (final spend-safety HIGH).
-        cost_gate_mr(catalog, model, reduce_model, len(doc), len(packed),
-                     args, conf, per_call_chars=[len(c) for c in packed])
         final, partial, reason = run_map_reduce(
             api_key, api_url, model,
             f"{base}\nQUESTION: {q}\nFrom the given chunk, extract everything "
@@ -5512,11 +5087,6 @@ def cmd_ask(args, api_key, api_url, conf):
             sys.stdout.flush()
         streamed_parts.append(piece)
 
-    # the single-shot ask is real spend — gate + fleet-reserve
-    # it up front like every fan-out lane (silent pass when under ceiling).
-    _single_call_gate(catalog, model,
-                      sum(len(m.get("content") or "") for m in messages),
-                      args, conf)
     try:
         content, usage, body = complete(
             api_key, api_url, model, messages, args,
@@ -5692,11 +5262,6 @@ def _best_of_chat(api_key, api_url, model, messages, args, k, catalog, conf,
               + (f" ({k - n} cached, not re-billed)" if k - n else "")
               + f" on {model} at temperature {spec.temperature}",
               file=sys.stderr)
-        # ONE up-front gate for the whole K-sample batch: the same input is
-        # sent once PER SAMPLE, so both input chars and n_calls scale by the
-        # number of cache misses (cached samples bill nothing).
-        cost_gate(catalog, model,
-                  (len(system_text) + len(user_text)) * n, n, spec, conf)
         width = min(_resolve_parallel(spec), n)
         gate = threading.Semaphore(width)
         cancel_event = threading.Event()
@@ -5919,7 +5484,6 @@ def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
     prompt = f"{question}\n\n{doc}".strip() if doc else question
     want_json = spec.json
     explicit_max = spec.max_tokens is not None
-    expected_sum = bound_sum = 0.0
     parts, profiles = [], {}
     for m in models:
         note_if_hidden(m, conf, source="--consensus")
@@ -5933,16 +5497,9 @@ def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
                 f"input too large for --consensus on '{m}' (consensus asks "
                 "are single-shot) — shrink the input, or drop --consensus "
                 "and let the normal ask lane split it")
-        budget = spec.max_tokens if explicit_max else p.output_budget
-        exp, bnd, _asm = estimate_cost(catalog, m, len(prompt), 1, budget)
-        expected_sum += exp
-        bound_sum += bnd
         parts.append(m.split('/')[-1])
     print(f"ambient: consensus ask across {len(parts)} models "
           f"({', '.join(parts)})", file=sys.stderr)
-    # ONE summed gate for the whole model set — ceiling + fleet reservation
-    # + TTY confirmation, before the first call.
-    _gate_amount(expected_sum, spec, conf, bound=bound_sum)
     messages = ([{"role": "system", "content": spec.system}]
                 if spec.system else []) \
         + [{"role": "user", "content": prompt}]
@@ -6246,9 +5803,8 @@ def cmd_map(args, api_key, api_url, conf):
         # item is added, re-billing already-cached work; it also over-budgeted
         # small items. The per-item copy also keeps complete()'s budget
         # escalation from mutating a sibling's args mid-flight.
-        # Cache is resolved BEFORE the gate (after the budget — the key
-        # includes max_tokens): a resumed / fully-cached re-run makes zero
-        # calls and must never be re-priced or refused by AMBIENT_MAX_SPEND.
+        # Cache is resolved after the budget — the key includes max_tokens —
+        # so a resumed / fully-cached re-run makes zero calls.
         for item_id, text, eff in runnable:
             item_args = argparse.Namespace(**vars(args))
             # FAN-OUT worker: the batch gate below reserves any --fallback
@@ -6266,34 +5822,10 @@ def cmd_map(args, api_key, api_url, conf):
             else:
                 to_run.append((item_id, text, key, item_args))
     if to_run:
-        total_chars = (sum(len(t) for _, t, _, _ in to_run)
-                       + len(prompt) * len(to_run))
         print(f"ambient-codex map: {len(items)} item(s), {len(to_run)} to run"
               + (f" ({len(cached_hits)} cached)" if cached_hits else "")
               + (f" ({fails} refused up front)" if fails else "")
               + f" — one {model} call per item", file=sys.stderr)
-        # ONE batch cost gate BEFORE any network call: total input chars,
-        # one call per CACHE MISS. Respects AMBIENT_MAX_SPEND /
-        # --allow-cost / the 3x worst-case bound — a 500-item run must show
-        # its full price up front, not discover it item by item. Budgets are
-        # PER-ITEM now, so gate at the per-call MEAN budget on a private
-        # copy: estimate_cost is linear in max_tokens, so the batch figure
-        # equals the SUM of the per-item estimates.
-        budgets = [ia.max_tokens for _, _, _, ia in to_run]
-        gate_args = argparse.Namespace(**vars(args))
-        gate_args.max_tokens = -(-sum(budgets) // len(budgets))  # ceil mean
-        # The fallback-aware reserve needs each ITEM's real size + budget:
-        # items are arbitrary sizes, and a big item live-switches to a
-        # large-context (possibly pricier) candidate that an average-input
-        # pick would miss. Whether the batch is
-        # auto-budgeted also decides the ALT's own resend budget —
-        # thread the per-item data on the gate's private args copy (the
-        # gate signature stays stable for its many callers).
-        gate_args._auto_budget = not explicit_budget
-        gate_args._fb_per_call_chars = [len(prompt) + len(t)
-                                        for _, t, _, _ in to_run]
-        gate_args._fb_per_call_tokens = budgets
-        cost_gate(catalog, model, total_chars, len(to_run), gate_args, conf)
     for item_id, category, diagnosis in pre_errors:
         _emit_map_result(args, api_key, item_id,
                          category=category, diagnosis=diagnosis)
@@ -7400,16 +6932,6 @@ def run_cross_file_pass(final, labeled, model, profile, args, api_key,
     if not picked:
         return final
     summary = final[:summary_cap]
-    # The extra pass is REAL extra spend — gate it like any other call
-    # (ceiling + fleet reservation) before anything is billed. The gate is
-    # NON-FATAL here: pass-1 already ran and was paid for, so a
-    # ceiling/fleet refusal SKIPS this optional pass and renders pass-1
-    # unchanged — it must never discard the result or emit an error envelope.
-    if not cost_gate_soft(catalog, model, used + len(summary), 1, spec, conf):
-        print("ambient: cross-file confirmation pass skipped — the spend "
-              "gate refused the optional extra call; pass-1 findings stand "
-              "unchanged", file=sys.stderr)
-        return final
     print(f"ambient: cross-file confirmation — ONE bounded pass over "
           f"{len(picked)} suspect file(s), {used:,} chars (--no-deep skips)",
           file=sys.stderr)
@@ -7823,9 +7345,9 @@ def _audit_split_estimate(catalog, model, reduce_model, labeled, total,
     shared by --dry-run and the --repo upfront plan, mirroring exactly what
     the live path will gate: single-shot when it fits, else the same
     pack_chunks split with the structured (deterministic-merge) discount.
-    `fb_args`/`fb_conf`: the chunked lane's live
-    gate (cost_gate_mr) is fallback-aware, so the plan prices the same
-    max(requested, candidate) figure — plan == gate by construction. The
+    `fb_args`/`fb_conf`: the chunked lane's live run
+    is fallback-aware, so the plan prices the same
+    max(requested, candidate) figure — plan == live spend by construction. The
     single-shot lane keeps the requested-only price on purpose: it gates
     per call in complete() (main thread), exactly like the live path."""
     single, chunk = profile.single_shot_chars, profile.chunk_chars
@@ -8240,9 +7762,9 @@ def cmd_audit(args, api_key, api_url, conf):
                   "(deterministic merge — no synthesis)")
             print(f"  format:       {args.format}")
             return
-        # Mirror the live path's chunking AND its gate (M2): the shared
-        # split helper prices map/reduce lanes exactly like cost_gate_mr
-        # will on the real run — incl. the deterministic structured merge
+        # Mirror the live path's chunking (M2): the shared split helper
+        # prices map/reduce lanes exactly like the live run
+        # will — incl. the deterministic structured merge
         # that makes NO synthesis call.
         if best_of_k:
             # The plan prices the FULL K-sample work; the live gate then
@@ -8306,14 +7828,10 @@ def cmd_audit(args, api_key, api_url, conf):
         # The SAME shared per-model estimate the --repo plan printed
         # (_consensus_estimate), so plan and gate can never disagree
         # each model priced on its own chunking, map-only.
-        expected_sum, bound_sum, parts, _per_chunks, _assumed = \
+        _expected_sum, _bound_sum, parts, _per_chunks, _assumed = \
             _consensus_estimate(catalog, models, labeled, total, explicit_mt)
         print(f"ambient: consensus across {len(parts)} models "
               f"({', '.join(parts)})", file=sys.stderr)
-        # Pass the summed worst-case bound so the 3x-ceiling guard fires for
-        # consensus too (a multi-model fan-out at large --max-tokens can be far
-        # over the ceiling even when the 'expected' figure is under it).
-        _gate_amount(expected_sum, args, conf, bound=bound_sum)
         agg = []
         failed = []
         # each model derives its OWN profile budget — args.max_tokens was
@@ -8508,29 +8026,11 @@ def cmd_audit(args, api_key, api_url, conf):
         miss_calls_total = sum(c for c, _, _, _ in miss_plans)
         cached_samples = sum(1 for c, _, _, _ in miss_plans if c == 0)
         if miss_calls_total:
-            expected_sum = bound_sum = 0.0
-            for n_calls_m, in_chars_m, mt_m, sizes_m in miss_plans:
-                if not n_calls_m:
-                    continue
-                # price each sample at ITS resolved budget
-                # (the same a.max_tokens the live run sends) — never the
-                # profile default, which under-priced a larger explicit
-                # --max-tokens and weakened the 3x worst-case guard.
-                # Fallback-aware: samples may
-                # --fallback to a pricier alt — reserved at each billed
-                # chunk's REAL size and OWN candidate (final HIGH), never
-                # the sample's uniform average.
-                exp_m, bnd_m, _asm = estimate_cost_fb(
-                    catalog, model, in_chars_m, n_calls_m, mt_m, args, conf,
-                    per_call_chars=sizes_m or None)
-                expected_sum += exp_m
-                bound_sum += bnd_m
             print(f"ambient: best-of {best_of_k} audit on {model} at "
                   f"temperature {args.temperature}"
                   + (f" — {cached_samples}/{best_of_k} sample(s) fully "
                      "cached, not re-billed" if cached_samples else ""),
                   file=sys.stderr)
-            _gate_amount(expected_sum, args, conf, bound=bound_sum)
         else:
             print(f"ambient: best-of {best_of_k} audit — every sample is "
                   "cached (nothing to gate or re-bill)", file=sys.stderr)
@@ -8716,18 +8216,10 @@ def cmd_audit(args, api_key, api_url, conf):
                           None, model)
 
     if eff_total <= single:
-        # a single audit pass of ANY size is real spend — gate
-        # + fleet-reserve it unconditionally (the old >150k-chars-only
-        # cost_gate exception let every smaller single-shot audit spend
-        # outside the aggregate AMBIENT_MAX_SPEND ceiling). Silent pass when
-        # under ceiling — same UX as before for the common small audit.
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": files_block(labeled)},
         ]
-        _single_call_gate(catalog, model,
-                          sum(len(m.get("content") or "") for m in messages),
-                          args, conf)
         try:
             content, _usage, body = complete(api_key, api_url, model, messages,
                                              args, session=session)
@@ -8753,13 +8245,6 @@ def cmd_audit(args, api_key, api_url, conf):
     #. A deterministic reducer (structured findings merge) makes
     # NO synthesis LLM call — price only the map lane.
     code_map = build_code_map(labeled, budget=code_map_budget(single))
-    # Each map call really bills its OWN chunk + the repo map — thread the
-    # per-chunk sizes so a live --fallback swap is reserved at each chunk's
-    # own candidate, never the uniform average (final spend-safety HIGH).
-    cost_gate_mr(catalog, model, reduce_model,
-                 total + len(code_map) * len(packed), len(packed), args,
-                 conf, synthesis=reducer is None,
-                 per_call_chars=[len(c) + len(code_map) for c in packed])
     final, partial, reason = run_map_reduce(
         api_key, api_url, model, sys_prompt,
         packed, args, AUDIT_SYNTH_PROMPT, single, reducer=reducer,
@@ -8850,9 +8335,6 @@ def cmd_code(args, api_key, api_url, conf):
         packed = pack_chunks([("task", task)],
                              max(MIN_REASONING_CHUNK,
                                  int(chunk / density_factor(task))))
-        cost_gate_mr(catalog, model, reduce_model, len(task), len(packed),
-                     args, conf, extra_calls=1,
-                     per_call_chars=[len(c) for c in packed])
         task, t_partial, t_reason = run_map_reduce(
             api_key, api_url, model,
             "From the given chunk of a long task brief, extract every "
@@ -8890,10 +8372,6 @@ def cmd_code(args, api_key, api_url, conf):
             packed = pack_chunks(chunks,
                                  max(MIN_REASONING_CHUNK,
                                      int(chunk / density_factor(context))))
-            # +1 call for the final generation pass after distillation.
-            cost_gate_mr(catalog, model, reduce_model, len(context),
-                         len(packed), args, conf, extra_calls=1,
-                         per_call_chars=[len(c) for c in packed])
             context, partial, reason = run_map_reduce(
                 api_key, api_url, model,
                 f"TASK: {task}\nFrom the given chunk of context files, extract "
@@ -8939,12 +8417,6 @@ def cmd_code(args, api_key, api_url, conf):
         _best_of_chat(api_key, api_url, model, messages, args, best_of_k,
                       catalog, conf, kind="code", session=session)
         return
-    # the final generation call is real spend — gate +
-    # fleet-reserve it up front like every fan-out lane (silent pass when
-    # under ceiling; any distillation passes above ran their own gates).
-    _single_call_gate(catalog, model,
-                      sum(len(m.get("content") or "") for m in messages),
-                      args, conf)
     chat(api_key, api_url, model, messages, args, kind="code",
          session=session)
 
@@ -9120,15 +8592,6 @@ def cmd_chat(args, api_key, api_url, conf):
             max_tokens=args.max_tokens if explicit_max else None)
         input_chars = sum(len(m.get("content") or "") for m in messages)
         turn_spec = turn_spec.with_output_budget(profile, input_chars)
-        # Every turn is cost-gated + fleet-reserved like any other call
-        # (ceiling, aggregate fleet budget, >0.50 TTY confirm) — quietly:
-        # no per-turn estimate line, but a refusal prints its diagnosis.
-        expected, bound, _asm = estimate_cost(
-            catalog, model, input_chars, 1, turn_spec.max_tokens)
-        try:
-            _gate_amount(expected, turn_spec, conf, bound=bound)
-        except SystemExit:
-            continue  # refused/declined turn — nothing sent, REPL survives
         streamed = []
         _sr = _StreamRedactor(api_key)   # M43: per-turn boundary-safe redaction
 
@@ -9628,7 +9091,7 @@ def cmd_build(args, api_key, api_url, conf):
         GEN_OVERHEAD = 2000
         if needs_distill:
             # The distillation lane is priced by the SAME split helper the
-            # live cost_gate_mr below uses (M2) — same chunk count, same +1
+            # live distillation run below uses (M2) — same chunk count, same +1
             # generation call. The remaining generation calls each re-send the
             # distilled context (capped at ~single//2) + task + overhead.
             gen_ctx = min(len(context), single // 2)
@@ -9673,10 +9136,6 @@ def cmd_build(args, api_key, api_url, conf):
     if needs_distill:
         print("ambient: context exceeds half this model's window — "
               "distilling it first", file=sys.stderr)
-        # `packed` was computed offline above (reused here — no recompute).
-        cost_gate_mr(catalog, model, reduce_model, len(context), len(packed),
-                     args, conf, extra_calls=1,
-                     per_call_chars=[len(c) for c in packed])
         context, c_partial, c_reason = run_map_reduce(
             api_key, api_url, model,
             f"TASK: {task}\nFrom the given chunk of context files, extract "
@@ -9742,10 +9201,6 @@ def cmd_build(args, api_key, api_url, conf):
         # (json_schema -> json_object -> prompt-only) rather than re-sending the
         # same doomed request the model already ignored.
         attempts = build_plan_rf_ladder(model, profile)
-        # Gate the whole planning ladder so AMBIENT_MAX_SPEND remains a true
-        # ceiling if the model needs output-format downgrades.
-        cost_gate(catalog, model, len(task) + len(context), len(attempts),
-                  args, conf)
         for attempt, attempt_rf in enumerate(attempts, 1):
             pa, extra = _ns_with(
                 attempt_rf, "" if (attempt_rf and attempt_rf.get("type") == "json_schema")
@@ -9902,28 +9357,6 @@ def cmd_build(args, api_key, api_url, conf):
     #.
     max_gen_calls = 3 * max(1, len(todo)) + 4
     gen_calls = 0
-    if batches:
-        prompt_chars = len(task) + len(context) + len(plan_overview) + 2000
-        # Fallback-aware (): under --fallback a generation call
-        # may be re-served by a pricier candidate, so the up-front reserve must
-        # cover that exposure across the batch/retry-cap set (byte-identical to
-        # estimate_cost when fallback is off / SACRED / no costlier candidate).
-        # Each generation call re-sends the FULL prompt (~prompt_chars), so
-        # input_chars counts prompt_chars for EVERY call (n_gen), the candidate
-        # is sized per-call at prompt_chars (NOT the input/n_calls average that
-        # would pick a cheaper small-context alt), and the base + per-call uplift
-        # together are the true per-call sum-of-maxima. Byte-identical to
-        # estimate_cost when fallback is off / SACRED / no costlier candidate.
-        n_gen = len(batches) + 2
-        expected, _b1, assumed = estimate_cost_fb(
-            catalog, model, prompt_chars * n_gen,
-            n_gen, args.max_tokens, args, conf,
-            per_call_chars=[prompt_chars] * n_gen)
-        _e2, bound, _a2 = estimate_cost_fb(
-            catalog, model, prompt_chars * max_gen_calls,
-            max_gen_calls, args.max_tokens, args, conf,
-            per_call_chars=[prompt_chars] * max_gen_calls)
-        _gate_amount(expected, args, conf, bound=bound)
     # Generation is a stream of per-file JSON objects, not one JSON object. A
     # response_format schema would force the old wrapper shape and make
     # truncation recovery unsafe, so generation stays prompt-only.
@@ -10306,18 +9739,6 @@ def _config_norm_bool(raw):
     raise ValueError("expected on or off")
 
 
-def _config_norm_spend(raw):
-    """A positive spend ceiling; lenient about a leading $ and thousands commas."""
-    cleaned = str(raw).strip().lstrip("$").replace(",", "")
-    try:
-        n = float(cleaned)
-    except ValueError:
-        raise ValueError("expected a positive number") from None
-    if not (0 < n < float("inf")):   # rejects 0, negatives, NaN, inf
-        raise ValueError("expected a positive number")
-    return cleaned
-
-
 def _config_norm_price(raw):
     """A frontier reference price ('in/out' pair like 3/15, or one blended figure)."""
     if parse_reference_price(str(raw).strip()) is None:
@@ -10338,12 +9759,6 @@ CONFIG_SETTINGS = (
      "current": lambda conf: "on" if str(
          os.environ.get("AMBIENT_FALLBACK") or conf.get("AMBIENT_FALLBACK") or ""
      ).strip().lower() in ("1", "on", "true") else "off"},
-    {"name": "fleet-budget", "env": "AMBIENT_FLEET_BUDGET", "default": "on",
-     "how": "on|off", "validate": _config_norm_bool,
-     "current": lambda conf: "on" if _fleet_enabled(conf) else "off"},
-    {"name": "spend-cap", "env": "AMBIENT_MAX_SPEND", "default": "5", "how": "<number>",
-     "validate": _config_norm_spend,
-     "current": lambda conf: _config_fmt_num(_ceiling(conf)[0])},
     {"name": "reference-price", "env": "AMBIENT_REFERENCE_PRICE", "default": "3/15",
      "how": "<in/out>", "validate": _config_norm_price,
      "current": lambda conf: "/".join(
@@ -10491,7 +9906,6 @@ CONTROL_ACTIONS = tuple(
         "setup --remove",
         "control setting streaming on|off",
         "control setting fallback on|off",
-        "control setting fleet-budget on|off",
         "control setting reference-price IN/OUT",
         "control setting savings on|off",
         "ask PROMPT",
@@ -10506,7 +9920,7 @@ CONTROL_ACTIONS = tuple(
     )
 )
 
-CONTROL_SETTING_NAMES = ("streaming", "fallback", "fleet-budget",
+CONTROL_SETTING_NAMES = ("streaming", "fallback",
                          "reference-price", "savings")
 
 CONTROL_MODE_OPTIONS = (
@@ -10530,7 +9944,7 @@ CONTROL_CHAT_ACTIONS = (
     ("change chat model", "choose the chat/audit model lane only"),
     ("change code model", "choose the code/build/agent model lane only"),
     ("change mode", "choose off / delegate / takeover"),
-    ("change settings", "edit streaming, fallback, fleet-budget, and reference-price"),
+    ("change settings", "edit streaming, fallback, and reference-price"),
     ("audit this diff", "audit the current git diff"),
     ("audit this repo", "run a repository audit"),
     ("build <task>", "draft a file set with Codex review"),
@@ -10764,12 +10178,6 @@ def _control_model(args):
 def _control_setting(args):
     name = (getattr(args, "name", None) or "").strip().lower()
     if name not in CONTROL_SETTING_NAMES:
-        if name == "spend-cap":
-            usage_exit(
-                "spend-cap is an advanced local budget guardrail, not a normal "
-                f"Codex control setting. Use `{LAUNCHER_NAME} config set "
-                "spend-cap VALUE` only if you explicitly need a pay-per-token "
-                "ceiling.")
         usage_exit(
             f"unknown control setting '{_config_redact(name)}'. Valid: "
             f"{_control_setting_names()}. Advanced settings live under "
@@ -11727,11 +11135,10 @@ def cmd_agent(args, api_key, api_url, conf):
         file=sys.stderr,
     )
     # Spend honesty at LAUNCH, not just in `ambient usage`: this lane hands
-    # the key to opencode, so nothing flows through local metering or the
-    # fleet ceiling.
+    # the key to opencode, so nothing flows through local metering.
     print(
         "ambient: this agentic lane is billed by Ambient directly — its "
-        "spend is NOT covered by local metering or AMBIENT_MAX_SPEND.",
+        "spend is NOT covered by local metering.",
         file=sys.stderr,
     )
     # The key is passed to opencode via its process environment — the standard
@@ -11843,11 +11250,11 @@ def add_common_flags(parser):
     )
     parser.add_argument(
         "--allow-cost", action="store_true",
-        help="proceed even if the estimated spend exceeds your AMBIENT_MAX_SPEND ceiling",
+        help="audit an oversized repo anyway — proceed past the built-in input-size ceiling, keeping the files that fit",
     )
     parser.add_argument(
         "--yes", "-y", action="store_true",
-        help="skip the interactive cost confirmation on large jobs",
+        help="skip interactive confirmation prompts",
     )
     parser.add_argument(
         "--no-cache", action="store_true",

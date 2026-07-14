@@ -501,7 +501,7 @@ class TestMcpAdapter(unittest.TestCase):
         names = tool["inputSchema"]["properties"]["name"]["enum"]
         self.assertEqual(
             names,
-            ["streaming", "fallback", "fleet-budget", "reference-price", "savings"])
+            ["streaming", "fallback", "reference-price", "savings"])
 
     def test_setters_validate_before_subprocess(self):
         mcp = load_mcp()

@@ -338,15 +338,13 @@ class BestOfAuditCacheTests(unittest.TestCase):
         rec1 = CompleteRecorder(answers=[body])
         args = audit_args(paths=[self.src], best_of=3, format="json",
                           no_cache=False)
-        out1, _e, gate1 = self._run(args, rec1)
+        out1, _e, _gate1 = self._run(args, rec1)
         self.assertEqual(len(rec1.calls), 3)
-        self.assertEqual(len(gate1.calls), 1)
         rec2 = CompleteRecorder(answers=["never used"])
-        out2, err2, gate2 = self._run(
+        out2, err2, _gate2 = self._run(
             audit_args(paths=[self.src], best_of=3, format="json",
                        no_cache=False), rec2)
         self.assertEqual(len(rec2.calls), 0)          # fully resumed
-        self.assertEqual(len(gate2.calls), 0)         # nothing to gate
         env = json.loads(out2)
         self.assertEqual(env["findings"][0]["corroboration"]["count"], 3)
 
@@ -358,21 +356,19 @@ class BestOfAuditCacheTests(unittest.TestCase):
         self.assertEqual(len(rec1.calls), 2)
         # K=3 reuses salted lanes 0 and 1 — only sample 2 is a miss.
         rec2 = CompleteRecorder(answers=[body])
-        _o, err2, gate2 = self._run(
+        _o, err2, _gate2 = self._run(
             audit_args(paths=[self.src], best_of=3, format="json",
                        no_cache=False), rec2)
         self.assertEqual(len(rec2.calls), 1)          # one missing sample
-        self.assertEqual(len(gate2.calls), 1)         # gated the miss only
         self.assertIn("cached", err2)                 # disclosed the resume
 
-    def test_no_cache_still_gates_everything(self):
+    def test_no_cache_runs_every_sample_fresh(self):
         body = json.dumps({"findings": []})
         rec = CompleteRecorder(answers=[body])
-        _o, _e, gate = self._run(
+        _o, _e, _gate = self._run(
             audit_args(paths=[self.src], best_of=2, format="json",
                        no_cache=True), rec)
         self.assertEqual(len(rec.calls), 2)
-        self.assertEqual(len(gate.calls), 1)
 
 
 # ----------------------------------------------- H4: SACRED choice vs fallback
@@ -549,20 +545,13 @@ class ChatRemediationTests(unittest.TestCase):
         prof = amb.model_profile(fake_catalog(), "cheap/model")
         big = "x" * (prof.single_shot_chars + 10)
         rec = CompleteRecorder(answers=["ok"])
-        gate = GateRecorder()
-        _o, err, script, gate = self._run(
-            [big, "still alive", "/exit"], rec, gate=gate)
+        _o, err, script, _gate = self._run(
+            [big, "still alive", "/exit"], rec)
         self.assertEqual(len(rec.calls), 1)           # only the small turn
         self.assertEqual(rec.calls[0]["messages"][-1]["content"],
                          "still alive")
-        self.assertEqual(len(gate.calls), 1)          # big turn never gated
         self.assertIn("too large", err)
         self.assertEqual(script.lines, [])            # REPL consumed /exit
-
-    def test_gate_amount_runs_on_every_turn(self):
-        rec = CompleteRecorder(answers=["one", "two"])
-        _o, _e, _s, gate = self._run(["first", "second", "/exit"], rec)
-        self.assertEqual(len(gate.calls), 2)          # per-turn cost gate
 
 
 # -------------------------------------------- unified failed_samples shape

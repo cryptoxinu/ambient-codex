@@ -218,7 +218,6 @@ class TestConsensusFailFast(unittest.TestCase):
         with patched(amb,
                      safe_catalog=lambda *a, **k: _fake_catalog(
                          "fake/model-a", "fake/model-b", "fake/model-c"),
-                     _gate_amount=lambda *a, **k: None,
                      run_one_audit=fake_audit), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -265,7 +264,6 @@ class TestConsensusFailFast(unittest.TestCase):
         with patched(amb,
                      safe_catalog=lambda *a, **k: _fake_catalog(
                          "fake/model-a", "fake/model-b"),
-                     _gate_amount=lambda *a, **k: None,
                      run_one_audit=fake_audit), \
                 patched(amb.os, _exit=fake_exit), \
                 contextlib.redirect_stdout(io.StringIO()), \
@@ -295,7 +293,6 @@ class TestConsensusFailFast(unittest.TestCase):
         with patched(amb,
                      safe_catalog=lambda *a, **k: _fake_catalog(
                          "fake/model-a", "fake/model-b"),
-                     _gate_amount=lambda *a, **k: None,
                      run_one_audit=fake_audit), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -321,7 +318,6 @@ class TestConsensusPerModelBudget(unittest.TestCase):
         with patched(amb,
                      safe_catalog=lambda *a, **k: _fake_catalog(
                          "fake/model-a", "fake/model-b"),
-                     _gate_amount=lambda *a, **k: None,
                      run_one_audit=fake_audit), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -406,7 +402,6 @@ class TestJsonFailFromHandlers(unittest.TestCase):
                         max_file_bytes=200_000)
         buf = io.StringIO()
         with patched(amb, safe_catalog=self._catalog(),
-                     cost_gate=lambda *a, **k: None,
                      complete=self._boom("funds")), \
                 contextlib.redirect_stdout(buf), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -572,7 +567,6 @@ class TestTotalJsonFailureContract(unittest.TestCase):
                      safe_catalog=lambda *a, **k: _fake_catalog("fake/model-a"),
                      model_profile=lambda *a, **k: _tiny_profile(),
                      apply_output_budget=lambda *a, **k: None,
-                     cost_gate=lambda *a, **k: None,
                      run_map_reduce=lambda *a, **k: ("part", True, "2 chunks failed")), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -620,7 +614,6 @@ class TestTotalJsonFailureContract(unittest.TestCase):
                      safe_catalog=lambda *a, **k: _fake_catalog("fake/model-a"),
                      model_profile=lambda *a, **k: _tiny_profile(),
                      apply_output_budget=lambda *a, **k: None,
-                     cost_gate=lambda *a, **k: None,
                      run_map_reduce=lambda *a, **k: ("part", True, "1 chunk failed")), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -692,20 +685,6 @@ class TestTotalJsonFailureContract(unittest.TestCase):
             "ambient [internal]: unexpected error (ValueError: wires crossed). "
             "Nothing was harmed. Run 'ambient-codex doctor' to check the basics; set "
             "AMBIENT_DEBUG=1 to see full details."))
-
-    def test_spend_ceiling_emits_envelope_under_json_argv(self):
-        out = io.StringIO()
-        args = _base_ns(allow_cost=False)
-        with patched(amb.sys, argv=["ambient", "code", "x", "--json"]), \
-                patched(amb.os, environ={**os.environ,
-                                         "AMBIENT_MAX_SPEND": "1"}), \
-                contextlib.redirect_stdout(out), \
-                contextlib.redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit) as cm:
-                amb._gate_amount(50.0, args, {})
-        self.assertEqual(cm.exception.code, 1)
-        env = self._envelope(out.getvalue(), "code", "cost", 1)
-        self.assertIn("spend", env["diagnosis"])
 
 
 if __name__ == "__main__":

@@ -21,7 +21,6 @@ No network, no live API, no writes outside tempdirs.
 """
 import argparse
 import contextlib
-import io
 import importlib.machinery
 import importlib.util
 import os
@@ -172,37 +171,6 @@ class TestSpendEdgeCase(unittest.TestCase):
         self.assertGreaterEqual(fb[1] + 1e-9, live_maps_bnd + synth_req_bnd)
         self.assertGreater(fb[0], old[0])
 
-    def test_gate_refuses_up_front_below_the_true_cost(self):
-        """cost_gate_mr must refuse at a 0.30 ceiling: the old averaged
-        figure (~0.045) sailed under it while the live run could legally
-        spend ~0.77+ on map fallbacks alone."""
-        cat = edge_case_catalog()
-
-        def gate(fallback):
-            with env_var("AMBIENT_FALLBACK", None), \
-                    env_var("AMBIENT_MAX_SPEND", "0.30"), \
-                    env_var("AMBIENT_FLEET_BUDGET", "off"), \
-                    contextlib.redirect_stdout(io.StringIO()), \
-                    contextlib.redirect_stderr(io.StringIO()):
-                amb.cost_gate_mr(cat, "req/pro", None, INPUT, N,
-                                 ns(fallback=fallback, max_tokens=MT), {},
-                                 per_call_chars=CHUNKS)
-
-        with self.assertRaises(SystemExit):
-            gate(fallback=True)
-        gate(fallback=False)  # control: no fallback exposure — pennies, runs
-
-    def test_gate_allows_with_a_ceiling_above_the_true_reserve(self):
-        cat = edge_case_catalog()
-        with env_var("AMBIENT_FALLBACK", None), \
-                env_var("AMBIENT_MAX_SPEND", "50"), \
-                env_var("AMBIENT_FLEET_BUDGET", "off"), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(cat, "req/pro", None, INPUT, N,
-                             ns(fallback=True, max_tokens=MT), {},
-                             per_call_chars=CHUNKS)
-
 
 # --------------------------------------------------------------------------
 # (b) domination: NO mixture of map/synthesis fallbacks exceeds the reserve
@@ -319,37 +287,6 @@ class TestSameModelParity(unittest.TestCase):
                     a, {})
                 self.assertEqual(uniform, base)
 
-    def test_gate_stderr_byte_identical_off_cheaper_sacred(self):
-        """The same-model cost_gate_mr must keep delegating to cost_gate —
-        same figures, same printed line — whenever fallback is off / SACRED
-        / the candidate is no costlier."""
-        cat = cheaper_alt_catalog()
-        total = sum(self.SIZES)
-
-        def mr_stderr(**kw):
-            err = io.StringIO()
-            with env_var("AMBIENT_FALLBACK", None), \
-                    env_var("AMBIENT_MAX_SPEND", None), \
-                    env_var("AMBIENT_FLEET_BUDGET", "off"), \
-                    contextlib.redirect_stderr(err):
-                amb.cost_gate_mr(cat, "mid/model", None, total,
-                                 len(self.SIZES), ns(max_tokens=MT, **kw),
-                                 {}, per_call_chars=self.SIZES)
-            return err.getvalue()
-
-        classic = io.StringIO()
-        with env_var("AMBIENT_FALLBACK", None), \
-                env_var("AMBIENT_MAX_SPEND", None), \
-                env_var("AMBIENT_FLEET_BUDGET", "off"), \
-                contextlib.redirect_stderr(classic):
-            amb.cost_gate(cat, "mid/model", total, len(self.SIZES) * 2,
-                          ns(max_tokens=MT, fallback=False), {})
-
-        off = mr_stderr(fallback=False)
-        self.assertEqual(off, classic.getvalue())
-        self.assertEqual(mr_stderr(fallback=True), off)
-        self.assertEqual(mr_stderr(fallback=True, _no_fallback=True), off)
-
     def test_deterministic_merge_lane_parity_is_preserved(self):
         """synthesis=False (map-only consensus/structured pricing) stays
         byte-identical when fallback is off or the candidate is cheaper."""
@@ -371,74 +308,6 @@ class TestSameModelParity(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestCallSiteWiring(unittest.TestCase):
-    def _spy(self, record):
-        def spy(catalog, model, reduce_model, input_chars, n_chunks, args,
-                conf, extra_calls=0, synthesis=True, per_call_chars=None):
-            record.append({"input_chars": input_chars, "n_chunks": n_chunks,
-                           "per_call_chars": per_call_chars,
-                           "synthesis": synthesis})
-            raise SystemExit(0)  # stop before any (fake) network call
-        return spy
-
-    def test_ask_split_threads_real_chunk_sizes(self):
-        record = []
-        args = argparse.Namespace(
-            prompt=["y" * 700_000], system=None, model="map/big",
-            max_tokens=None, temperature=0.1, timeout=30, raw=True,
-            fallback=False, allow_partial=True, allow_cost=True, yes=True,
-            no_cache=True, cache_ttl=None, parallel=None,
-            allow_secrets=False, json=False, reduce_model=None)
-        cat = [_mdl("map/big", 262_144, 65_536, True, 0.2, 0.8)]
-        with patched(amb, safe_catalog=lambda *a, **k: cat,
-                     cost_gate_mr=self._spy(record),
-                     log_usage=lambda *a, **k: None), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                amb.cmd_ask(args, KEY, "https://x", {})
-        self.assertEqual(len(record), 1)
-        got = record[0]
-        sizes = got["per_call_chars"]
-        self.assertIsInstance(sizes, list)
-        self.assertEqual(len(sizes), got["n_chunks"])
-        self.assertTrue(all(s > 0 for s in sizes))
-        # the REAL chunks jointly carry the whole doc (small header slack)
-        self.assertGreaterEqual(sum(sizes), got["input_chars"] * 0.95)
-        self.assertLessEqual(sum(sizes), got["input_chars"] * 1.2)
-
-    def test_audit_chunked_threads_chunk_plus_code_map_sizes(self):
-        record = []
-        cat = [_mdl("reduce/tiny", 16_000, 8_000, True, 0.1, 0.4)]
-        with tempfile.TemporaryDirectory() as d:
-            p = os.path.join(d, "big.py")
-            with open(p, "w", encoding="utf-8") as fh:
-                fh.write("def f():\n    pass\n" * 12_000)
-            args = argparse.Namespace(
-                paths=[p], staged=False, diff=None, focus=None,
-                allow_secrets=False, format="prose", dry_run=False,
-                consensus=None, model="reduce/tiny", max_tokens=None,
-                temperature=0.1, timeout=30, raw=False, fallback=False,
-                allow_partial=True, allow_cost=True, yes=True,
-                no_cache=True, cache_ttl=None, parallel=None,
-                reduce_model=None, json=False, repo=None, deep=None,
-                best_of=None, install_hook=None, uninstall_hook=None,
-                force=False)
-            with patched(amb, safe_catalog=lambda *a, **k: cat,
-                         cost_gate_mr=self._spy(record),
-                         log_usage=lambda *a, **k: None), \
-                    contextlib.redirect_stdout(io.StringIO()), \
-                    contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit):
-                    amb.cmd_audit(args, KEY, "https://x", {})
-        self.assertEqual(len(record), 1)
-        got = record[0]
-        sizes = got["per_call_chars"]
-        self.assertIsInstance(sizes, list)
-        self.assertEqual(len(sizes), got["n_chunks"])
-        # each size carries its chunk + the repo map the gate's input counts
-        self.assertGreaterEqual(sum(sizes), got["input_chars"] * 0.95)
-        self.assertLessEqual(sum(sizes), got["input_chars"] * 1.2)
-
     def test_best_of_miss_plans_carry_per_call_sizes(self):
         """_best_of_audit_misses must expose each billed chunk's REAL size
         so the best-of gate prices per-chunk candidates, not an average."""

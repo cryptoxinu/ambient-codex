@@ -462,24 +462,6 @@ class TestSpendGate(unittest.TestCase):
         self.assertGreater(e, 0)
         self.assertEqual(b, e)
 
-    def test_ceiling_blocks_expected(self):
-        with self.assertRaises(SystemExit) as cm:
-            amb._gate_amount(9.0, ns(allow_cost=False), {})
-        self.assertIn("ceiling", str(cm.exception))
-
-    def test_worst_case_guard_blocks_3x(self):
-        with self.assertRaises(SystemExit) as cm:
-            amb._gate_amount(0.4, ns(allow_cost=False), {}, bound=16.0)
-        self.assertIn("worst-case", str(cm.exception).lower())
-
-    def test_bad_ceiling_string_defaults_to_5(self):
-        with self.assertRaises(SystemExit):
-            amb._gate_amount(6.0, ns(allow_cost=False),
-                             {"AMBIENT_MAX_SPEND": "lots"})
-
-    def test_allow_cost_overrides(self):
-        amb._gate_amount(9.0, ns(allow_cost=True), {}, bound=99.0)  # no exit
-
 
 class TestExitCodes(unittest.TestCase):
     def test_render_result_partial_exits_2(self):

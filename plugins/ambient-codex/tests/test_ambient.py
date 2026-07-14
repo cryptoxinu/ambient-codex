@@ -382,9 +382,8 @@ class TestConsensusFailure(unittest.TestCase):
                    {"id": "moonshotai/kimi-k2.7-code", "context_length": 262144,
                     "max_output_length": 262144,
                     "supported_features": ["reasoning"], "is_ready": True}]
-        orig = (amb.safe_catalog, amb.cost_gate, amb.run_one_audit)
+        orig = (amb.safe_catalog, amb.run_one_audit)
         amb.safe_catalog = lambda *a, **k: catalog
-        amb.cost_gate = lambda *a, **k: None
         amb.run_one_audit = lambda *a, **k: ([], False)   # every model fails
         args = argparse.Namespace(
             paths=[src], staged=False, diff=None, focus=None, allow_secrets=False,
@@ -399,7 +398,7 @@ class TestConsensusFailure(unittest.TestCase):
                 amb.cmd_audit(args, "key", "https://x", {})
             self.assertEqual(cm.exception.code, 2)
         finally:
-            (amb.safe_catalog, amb.cost_gate, amb.run_one_audit) = orig
+            (amb.safe_catalog, amb.run_one_audit) = orig
 
 
 class TestRetryAfter(unittest.TestCase):

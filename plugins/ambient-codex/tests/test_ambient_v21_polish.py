@@ -3,9 +3,9 @@
 Pins the two NEW behaviors this batch introduced:
 
 1. `ambient agent` spend disclosure at LAUNCH (S1 MED): the opencode lane is
-   billed by Ambient directly and bypasses local metering AND the
-   AMBIENT_MAX_SPEND fleet ceiling — that must be said on stderr BEFORE the
-   process hands off to opencode, not only at the end of `ambient usage`.
+   billed by Ambient directly and bypasses local metering — that must be said
+   on stderr BEFORE the process hands off to opencode, not only at the end of
+   `ambient usage`.
 
 2. hooks/session-start.sh launcher self-heal scoping (S2 LOW): the hook heals
    $HOME/.local/bin/ambient ONLY — and only when it is a SYMLINK that is
@@ -39,7 +39,7 @@ HOOK = os.path.join(ROOT, "hooks", "session-start.sh")
 KEY = "sk-test-key-abcdef1234567890"
 
 DISCLOSURE = ("billed by Ambient directly — its spend is NOT covered by "
-              "local metering or AMBIENT_MAX_SPEND")
+              "local metering")
 
 
 def load_module():

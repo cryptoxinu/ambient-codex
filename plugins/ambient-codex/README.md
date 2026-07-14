@@ -40,9 +40,8 @@ The two can be installed side by side.
 **Each install holds its own API key.** Ambient Codex never reads another install's
 keychain item or config file, not even to offer a convenience, so you run
 `ambient-codex setup` and enter a key for this install. Everything else — model lanes,
-delegate/takeover mode, curation, settings, usage history, fleet reservations — is
-per-install too. The advanced local spend cap is also per-install when a
-pay-per-token user explicitly enables it through lower-level config.
+delegate/takeover mode, curation, settings, and usage history — is
+per-install too.
 
 `AMBIENT_CODEX_HOME` relocates this install's state root. It refuses to point at
 another Ambient install's directory, or at any directory already holding an Ambient
@@ -315,15 +314,9 @@ or MCP tools.
 User-facing status wording is intentionally simple: a model is "serving" or it
 "isn't serving right now and spins up on demand".
 
-Fleet-wide spend reservations are on by default so parallel Ambient calls share
-one budget ceiling. Disable them with `AMBIENT_FLEET_BUDGET=off` or
-bundled `control setting fleet-budget off`. `AMBIENT_RESERVATION_TTL` controls stale
-reservation pruning on platforms where process liveness cannot be proven.
-Reasoning models reserve their full possible completion budget for this gate,
-because internal reasoning can consume most of it. Known direct-answer models use
-a smaller expected-answer reserve. A job rejected by the ceiling can still be run
-deliberately with `--allow-cost`; explicit `--max-tokens` remains subject to the
-model's actual output and context limits.
+A job blocked by the raw input-size guard can still be run deliberately with
+`--allow-cost`; explicit `--max-tokens` remains subject to the model's actual
+output and context limits.
 
 ## Maintenance Roadmap
 

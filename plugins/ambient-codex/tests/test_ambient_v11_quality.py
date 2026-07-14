@@ -190,9 +190,6 @@ class BestOfAskTests(unittest.TestCase):
         rec = CompleteRecorder(answers=["yes.", "yes.", "no."])
         out, err, gate = run_ask(ask_args(best_of=3), rec, self.cache)
         self.assertEqual(len(rec.calls), 3)          # K independent samples
-        self.assertEqual(len(gate.calls), 1)          # ONE up-front gate
-        # gate covered all K calls
-        self.assertEqual(gate.calls[0][0][3], 3)      # n_calls arg of cost_gate
         # 3 distinct salted cache entries
         entries = [e for e in os.listdir(self.cache) if e.endswith(".json")]
         self.assertEqual(len(entries), 3)
@@ -281,7 +278,6 @@ class BestOfAuditTests(unittest.TestCase):
             audit_args(paths=[self.src], best_of=3, format="json"), stub)
         env = json.loads(out)
         self.assertEqual(env["best_of"], 3)
-        self.assertEqual(len(gate.calls), 1)          # ONE up-front gate for K
         findings = env["findings"]
         self.assertEqual(findings[0]["corroboration"]["count"], 2)
         self.assertIn("race", findings[0]["title"])
@@ -335,7 +331,6 @@ class AskConsensusTests(unittest.TestCase):
             ask_args(consensus="cheap/model,other/model"), rec)
         models = {c["model"] for c in rec.calls}
         self.assertEqual(models, {"cheap/model", "other/model"})
-        self.assertEqual(len(gate.calls), 1)          # one summed up-front gate
         self.assertIn("cheap/model", out)
         self.assertIn("other/model", out)
         self.assertIn("greement", out + err)          # agreement note emitted

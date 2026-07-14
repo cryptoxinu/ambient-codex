@@ -312,7 +312,6 @@ class TestAuditRepo(unittest.TestCase):
         catalog = repo_catalog()
         root = self._mr_repo()
         mr_calls = []
-        gated = []
 
         def fake_mr(api_key, api_url, model, map_system, chunks, args,
                     *a, **k):
@@ -328,9 +327,7 @@ class TestAuditRepo(unittest.TestCase):
         err = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(), run_map_reduce=fake_mr,
-                     complete=boom,
-                     _gate_amount=lambda expected, *a, **k:
-                         gated.append(expected)), \
+                     complete=boom), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -339,7 +336,6 @@ class TestAuditRepo(unittest.TestCase):
         self.assertIn("3 files", text)          # binary/lockfile/vendored out
         self.assertIn("chunk", text)            # strategy shown (no dollar cost)
         self.assertEqual(len(mr_calls), 1)
-        self.assertTrue(gated)                   # cost gate fired
         call = mr_calls[0]
         self.assertEqual(call["kwargs"].get("reduce_model"), "strong/reduce")
         self.assertEqual(call["args"].parallel, 5)
@@ -507,7 +503,6 @@ class TestDeepCrossFilePass(unittest.TestCase):
         catalog = repo_catalog()
         root = self._repo()
         completes = []
-        gates = []
 
         def fake_complete(api_key, api_url, model, messages, args, **kw):
             completes.append(messages)
@@ -516,22 +511,16 @@ class TestDeepCrossFilePass(unittest.TestCase):
                  "title": "confirmed arity bug", "scenario": "confirmed"}],
                 "verdict": "FIX FIRST"}), {}, {"finish_reason": "stop"})
 
-        def spy_gate(catalog_, model_, input_chars, n_calls, args_, conf_):
-            gates.append((input_chars, n_calls))
-
         args = audit_args(repo=root, format="json")  # deep defaults ON
         out = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(),
                      run_map_reduce=lambda *a, **k: self._pass1(),
-                     complete=fake_complete, cost_gate=spy_gate,
-                     _gate_amount=lambda *a, **k: None), \
+                     complete=fake_complete), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             amb.cmd_audit(args, KEY, "https://x", {})
         self.assertEqual(len(completes), 1)      # AT MOST one extra pass
-        self.assertEqual(len(gates), 1)          # and it was gated
-        self.assertEqual(gates[0][1], 1)         # one call
         lines = out.getvalue().strip().splitlines()
         env = json.loads("\n".join(lines[1:]))   # after the plan line
         titles = {f["title"] for f in env["findings"]}

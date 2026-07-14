@@ -183,52 +183,6 @@ def no_workers():
 # --------------------------------------------------------------------------
 
 class TestFix1UpfrontFallbackReserve(unittest.TestCase):
-    def test_pricier_fallback_batch_refused_up_front_at_fleet_ceiling(self):
-        """8 calls under --fallback with a 40/M candidate: the BATCH gate
-        must price the swap and refuse against a near-ceiling sibling —
-        before any network call could exist."""
-        cat = fb_catalog(alt_out=40.0)
-        with fleet_dir() as d:
-            seed(d, [rec(4.90)])
-            with env_var("AMBIENT_MAX_SPEND", "5"), \
-                    contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit) as cm:
-                amb.cost_gate(cat, "cheap/asker", 4000, 8,
-                              ns(fallback=True), {})
-            msg = str(cm.exception)
-            self.assertIn("already reserved", msg)
-            self.assertNotIn("$", msg)                   # zero dollar figures
-
-    def test_same_batch_passes_without_fallback(self):
-        """Control for the refusal above: the requested model alone is
-        pennies — without --fallback the identical batch must pass."""
-        cat = fb_catalog(alt_out=40.0)
-        with fleet_dir() as d:
-            seed(d, [rec(4.90)])
-            with env_var("AMBIENT_MAX_SPEND", "5"), \
-                    contextlib.redirect_stderr(io.StringIO()):
-                amb.cost_gate(cat, "cheap/asker", 4000, 8,
-                              ns(fallback=False), {})
-            amb._fleet_release_all()
-
-    def test_reservation_covers_all_n_alt_calls_not_just_one(self):
-        """The HIGH itself: the fleet record must hold the FULL N-call alt
-        exposure (aggregate), not a max-refresh of one alt call."""
-        cat = fb_catalog(alt_out=40.0)
-        n_calls = 8
-        with fleet_dir() as d:
-            with contextlib.redirect_stderr(io.StringIO()):
-                amb.cost_gate(cat, "cheap/asker", 4000, n_calls,
-                              ns(fallback=True), {})
-            recs = store(d)
-            self.assertEqual(len(recs), 1)
-            exp_alt = amb.estimate_cost(cat, "alt/other", 4000, n_calls,
-                                        8000)[0]
-            one_alt = amb.estimate_cost(cat, "alt/other", 4000, 1, 8000)[0]
-            self.assertAlmostEqual(recs[0]["amount"], exp_alt, places=9)
-            self.assertGreater(recs[0]["amount"], one_alt * (n_calls - 1))
-            amb._fleet_release_all()
-
     def test_parity_cheaper_candidate_is_byte_identical(self):
         """A cheaper-or-equal candidate (the usual fit-then-cheapest pick)
         must leave the estimate EXACTLY unchanged — and so the gate line."""
@@ -245,19 +199,6 @@ class TestFix1UpfrontFallbackReserve(unittest.TestCase):
                                            8000, ns(fallback=False), {})
         self.assertEqual(with_fb, base)
         self.assertEqual(without, base)
-
-        def gate_stderr(fallback):
-            err = io.StringIO()
-            with env_var("AMBIENT_FALLBACK", None), \
-                    env_var("AMBIENT_MAX_SPEND", None), \
-                    contextlib.redirect_stderr(err):
-                amb.cost_gate(cat, "mid/model", 50_000, 6,
-                              ns(fallback=fallback), {})
-            return err.getvalue()
-
-        self.assertEqual(gate_stderr(True), gate_stderr(False),
-                         "the printed gate estimate must be byte-identical "
-                         "when the candidate is cheaper")
 
     def test_sacred_no_fallback_keeps_the_estimate_unchanged(self):
         """_no_fallback lanes (consensus members) can never swap — a pricier
@@ -305,27 +246,6 @@ class TestFix1UpfrontFallbackReserve(unittest.TestCase):
         self.assertEqual(again[:2], plain[:2])
         self.assertGreater(fb[0], plain[0])
 
-    def test_best_of_chat_batch_refused_before_any_network_call(self):
-        """End-to-end fan-out lane: a --fallback best-of batch against a
-        near-ceiling fleet must be refused by the UP-FRONT gate — zero
-        payloads ever reach the wire."""
-        cat = fb_catalog(alt_out=40.0)
-        fake, calls = stream_seq(ok_body("never"))
-        messages = [{"role": "user", "content": "q" * 2000}]
-        with fleet_dir() as d:
-            seed(d, [rec(4.90)])
-            with env_var("AMBIENT_MAX_SPEND", "5"), \
-                    patched(amb, stream_completion=fake,
-                            read_config_file=lambda: {}), \
-                    contextlib.redirect_stdout(io.StringIO()), \
-                    contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit):
-                amb._best_of_chat("k", "u", "cheap/asker", messages,
-                                  ns(fallback=True, temperature=0.7), 2,
-                                  cat, {}, kind="ask")
-            self.assertEqual(calls, [],
-                             "the batch must be refused BEFORE any spend")
-
 
 # --------------------------------------------------------------------------
 # FIX 2 — no per-worker fallback gate inside fan-out lanes
@@ -367,15 +287,6 @@ class TestFix2WorkerGateRouting(unittest.TestCase):
         self.assertEqual(gate_calls, [],
                          "a fan-out worker must NEVER re-gate the swap — "
                          "the batch reserved it up front")
-
-    def test_single_call_lane_still_gates_the_fallback_per_call(self):
-        gate_calls = []
-        content, calls = self._swap(gate_calls)  # default gate_fallback
-        self.assertEqual(content, "j")
-        self.assertEqual(calls[1]["model"], "alt/other")
-        self.assertEqual(len(gate_calls), 1,
-                         "single-call lanes keep the re-gate")
-        self.assertGreater(gate_calls[0], 0.0)
 
     def test_fanout_worker_swap_never_systemexits_at_the_ceiling(self):
         """The MED scenario: a near-ceiling fleet + a pricier swap inside a

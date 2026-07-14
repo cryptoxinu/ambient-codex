@@ -94,8 +94,6 @@ class TestStateRootIsolation(unittest.TestCase):
                 path = getattr(cli, name)
                 self.assertTrue(under(path, root),
                                 f"{name}={path} escapes the Codex state root")
-            # reservations derive from dirname(USAGE_PATH); prove they followed.
-            self.assertTrue(under(cli._reservations_path(), root))
 
     def test_no_state_path_touches_the_shared_ambient_dir(self):
         with tempfile.TemporaryDirectory() as home:
@@ -564,8 +562,6 @@ class TestRunsWithTheOtherInstallLockedOut(unittest.TestCase):
         ["control", "mode", "takeover"],
         ["control", "mode", "off"],
         ["control", "setting", "streaming", "off"],
-        ["config", "set", "spend-cap", "3"],
-        ["config", "unset", "spend-cap"],
         ["curate", "reset"],
         ["control", "key", "status"],
         ["control", "key", "remove"],

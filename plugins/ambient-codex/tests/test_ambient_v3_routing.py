@@ -251,7 +251,7 @@ class TestSacredExplicitModel(unittest.TestCase):
 
 class TestReduceModel(unittest.TestCase):
     """3c: --reduce-model routes the SYNTHESIS call to a different explicit
-    model; the up-front gate prices both."""
+    model."""
 
     def setUp(self):
         self._logu = amb.log_usage
@@ -291,54 +291,6 @@ class TestReduceModel(unittest.TestCase):
             amb.run_map_reduce("k", "u", "cheap/map", "map",
                                ["c1", "c2"], mr_args(), "SYNTH", 8000)
         self.assertEqual(set(calls), {"cheap/map"})
-
-    def test_cost_gate_prices_map_and_reduce_models(self):
-        cat = routing_catalog()
-        gated = {}
-
-        def fake_gate(expected, args, conf, bound=None):
-            gated["expected"] = expected
-            gated["bound"] = bound
-
-        args = mr_args()
-        with patched(amb, _gate_amount=fake_gate), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(cat, "cheap/ready", "big/ready", 100_000, 4,
-                             args, {})
-        # Explicit split formula (the old sum of two 1.3x
-        # single-model estimates double-counted the synthesis re-read):
-        # map input 1.0x at map prices + synth input 0.3x at reduce prices
-        # + each lane's own output calls at its own price.
-        in_tok = 100_000 / amb.CHARS_PER_TOKEN
-        map_eo = amb._expected_output_tokens(
-            cat, "cheap/ready", args.max_tokens
-        )
-        reduce_eo = amb._expected_output_tokens(
-            cat, "big/ready", args.max_tokens
-        )
-        mp = amb.model_pricing(cat, "cheap/ready")
-        rp = amb.model_pricing(cat, "big/ready")
-        input_cost = in_tok * 1.0 * mp[0] + in_tok * 0.3 * rp[0]
-        expected = (input_cost + 4 * map_eo * mp[1]
-                    + 4 * reduce_eo * rp[1]) / 1e6
-        bound = (input_cost + 4 * args.max_tokens * mp[1]
-                 + 4 * args.max_tokens * rp[1]) / 1e6
-        self.assertAlmostEqual(gated["expected"], expected, places=9)
-        self.assertAlmostEqual(gated["bound"], bound, places=9)
-
-    def test_cost_gate_same_model_matches_classic_gate(self):
-        cat = routing_catalog()
-        seen = []
-
-        def fake_gate(expected, args, conf, bound=None):
-            seen.append((expected, bound))
-
-        args = mr_args()
-        with patched(amb, _gate_amount=fake_gate), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cost_gate_mr(cat, "cheap/ready", None, 100_000, 4, args, {})
-            amb.cost_gate(cat, "cheap/ready", 100_000, 8, args, {})
-        self.assertEqual(seen[0], seen[1])
 
     def test_reduce_model_flag_exists_on_task_subparsers(self):
         p = argparse.ArgumentParser()

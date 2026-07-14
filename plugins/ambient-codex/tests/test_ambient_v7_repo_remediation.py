@@ -4,14 +4,11 @@
   400k-char pathological C line or a 100k all-spaces line must never hang
   build_code_map() (which runs on EVERY audit input); lines longer than
   SIG_SCAN_LINE_MAX are never regex-scanned at all.
-- H1: a spend-gate refusal at the OPTIONAL deep cross-file pass must never
-  discard the already-paid pass-1 result or emit an error envelope — the
-  pass is skipped with a stderr note and pass-1 renders unchanged.
 - H2: an intermediate symlinked directory pointing outside --repo root must
   be rejected (realpath containment), even when the leaf is a regular file.
 - H3: the ABS_MAX_CHARS ceiling bounds the POST-GUTTER size (what is
   actually sent), not the raw byte sizes.
-- the plan/gate input estimate includes the repo map injected into
+- the plan input estimate includes the repo map injected into
   every chunk (map size x chunk count).
 - --repo --consensus explicitly SKIPS the deep pass and says so;
   --deep/--no-deep are documented no-ops there.
@@ -244,97 +241,6 @@ class TestC1SignatureRegexSafety(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# H1 — deep-pass gate must never discard pass-1
-# --------------------------------------------------------------------------
-
-class TestH1DeepGateNonFatal(unittest.TestCase):
-    def _repo(self):
-        return make_repo({
-            "src/a.py": "x = 1\n" * 8000,
-            "src/b.py": "y = 2\n" * 8000,
-            "src/c.py": "z = 3\n" * 8000,
-        })
-
-    def _pass1(self):
-        return (json.dumps({"findings": [CROSS_FILE_FINDING],
-                            "verdict": "FIX FIRST",
-                            "_unparsed_chunks": 0, "_repaired_chunks": 0}),
-                False, "")
-
-    def test_gate_refusal_keeps_pass1_and_emits_no_error_envelope(self):
-        catalog = repo_catalog()
-        root = self._repo()
-
-        def refusing_gate(*a, **k):
-            # Exactly what a real ceiling/fleet refusal does under --json:
-            # prints an error envelope to stdout, then SystemExit.
-            amb.emit_json_error("audit", "cost", "fleet ceiling hit", KEY)
-
-        def boom(*a, **k):
-            raise AssertionError("complete() must not run after a refusal")
-
-        args = audit_args(repo=root, format="json")  # deep defaults ON
-        out, err = io.StringIO(), io.StringIO()
-        with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     subprocess=no_git(),
-                     run_map_reduce=lambda *a, **k: self._pass1(),
-                     complete=boom, cost_gate=refusing_gate,
-                     _gate_amount=lambda *a, **k: None), \
-                contextlib.redirect_stdout(out), \
-                contextlib.redirect_stderr(err):
-            amb.cmd_audit(args, KEY, "https://x", {})  # must NOT SystemExit
-        lines = out.getvalue().strip().splitlines()
-        # plan line + ONE audit envelope; no {"status": "error"} anywhere
-        env = json.loads("\n".join(lines[1:]))
-        self.assertNotEqual(env.get("status"), "error")
-        self.assertEqual(env["findings"][0]["title"],
-                         "cross-file arity mismatch")
-        self.assertNotIn('"status": "error"', out.getvalue())
-        self.assertIn("skip", err.getvalue().lower())
-
-    def test_prose_gate_refusal_keeps_pass1(self):
-        catalog = repo_catalog()
-        root = self._repo()
-
-        def refusing_gate(*a, **k):
-            amb._fail_exit(None, "audit", "cost", "over the fleet ceiling")
-
-        args = audit_args(repo=root, format="prose")
-        out, err = io.StringIO(), io.StringIO()
-        pass1 = ("pass-1 prose findings: src/a.py vs src/b.py — cross-file "
-                 "arity mismatch (defined in src/b.py)", False, "")
-        with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     subprocess=no_git(),
-                     run_map_reduce=lambda *a, **k: pass1,
-                     complete=lambda *a, **k: (_ for _ in ()).throw(
-                         AssertionError("no deep call after refusal")),
-                     cost_gate=refusing_gate,
-                     cost_gate_mr=lambda *a, **k: None,  # pass-1 gate allows
-                     _gate_amount=lambda *a, **k: None), \
-                contextlib.redirect_stdout(out), \
-                contextlib.redirect_stderr(err):
-            amb.cmd_audit(args, KEY, "https://x", {})
-        self.assertIn("pass-1 prose findings", out.getvalue())
-        self.assertIn("skip", err.getvalue().lower())
-
-    def test_cost_gate_soft_true_on_allow_false_on_refusal(self):
-        args = audit_args()
-        with patched(amb, cost_gate=lambda *a, **k: None):
-            self.assertTrue(amb.cost_gate_soft(
-                [], "m", 1000, 1, args, {}))
-
-        def refuse(*a, **k):
-            amb.emit_json_error("audit", "cost", "nope", KEY)
-
-        out = io.StringIO()
-        with patched(amb, cost_gate=refuse), \
-                contextlib.redirect_stdout(out):
-            self.assertFalse(amb.cost_gate_soft(
-                [], "m", 1000, 1, args, {}))
-        self.assertEqual(out.getvalue(), "")  # envelope swallowed
-
-
-# --------------------------------------------------------------------------
 # H2 — intermediate symlink dir must not escape --repo
 # --------------------------------------------------------------------------
 
@@ -412,8 +318,7 @@ class TestH3GutteredCeiling(unittest.TestCase):
                      complete=lambda *a, **k: (
                          '{"findings": [], "verdict": "SHIP"}',
                          {}, {"finish_reason": "stop"}),
-                     log_usage=lambda *a, **k: None,
-                     _gate_amount=lambda *a, **k: None), \
+                     log_usage=lambda *a, **k: None), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -446,40 +351,6 @@ class TestM1MapInjectionPriced(unittest.TestCase):
             "src/b.py": "y = 2\n" * 8000,
             "src/c.py": "z = 3\n" * 8000,
         })
-
-    def test_live_gate_includes_map_times_chunks(self):
-        catalog = repo_catalog()
-        root = self._repo()
-        seen = {}
-
-        def spy_gate_mr(catalog_, model_, reduce_model_, input_chars,
-                        n_chunks, args_, conf_, **k):
-            seen["gate_chars"] = input_chars
-            seen["gate_chunks"] = n_chunks
-
-        def fake_mr(api_key, api_url, model, map_system, chunks, args,
-                    *a, **k):
-            seen["map"] = k.get("code_map") or ""
-            seen["n"] = len(chunks)
-            return ('{"findings": [], "verdict": "SHIP"}', False, "")
-
-        args = audit_args(repo=root, format="report", deep=False)
-        with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     subprocess=no_git(), run_map_reduce=fake_mr,
-                     cost_gate_mr=spy_gate_mr,
-                     _gate_amount=lambda *a, **k: None), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            amb.cmd_audit(args, KEY, "https://x", {})
-        with patched(amb, subprocess=no_git()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            labeled, _meta = amb.repo_audit_inputs(
-                audit_args(repo=root), KEY)
-        total = sum(len(t) for _, t in labeled)
-        self.assertTrue(seen["map"])
-        self.assertEqual(seen["gate_chunks"], seen["n"])
-        self.assertEqual(seen["gate_chars"],
-                         total + len(seen["map"]) * seen["n"])
 
     def test_split_estimate_includes_map_times_chunks(self):
         catalog = repo_catalog()
@@ -536,8 +407,7 @@ class TestM2ConsensusDeepPolicy(unittest.TestCase):
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(),
                      run_one_audit=lambda *a, **k: ([], True),
-                     run_cross_file_pass=boom,
-                     _gate_amount=lambda *a, **k: None), \
+                     run_cross_file_pass=boom), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(err):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -554,8 +424,7 @@ class TestM2ConsensusDeepPolicy(unittest.TestCase):
         out = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(),
-                     run_one_audit=lambda *a, **k: ([], True),
-                     _gate_amount=lambda *a, **k: None), \
+                     run_one_audit=lambda *a, **k: ([], True)), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -573,8 +442,7 @@ class TestM2ConsensusDeepPolicy(unittest.TestCase):
         args = audit_args(repo=root, format="json", deep=False)
         out = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     subprocess=no_git(), run_map_reduce=fake_mr,
-                     _gate_amount=lambda *a, **k: None), \
+                     subprocess=no_git(), run_map_reduce=fake_mr), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -583,8 +451,7 @@ class TestM2ConsensusDeepPolicy(unittest.TestCase):
         args = audit_args(repo=root, format="json")
         out = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                     subprocess=no_git(), run_map_reduce=fake_mr,
-                     _gate_amount=lambda *a, **k: None), \
+                     subprocess=no_git(), run_map_reduce=fake_mr), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             amb.cmd_audit(args, KEY, "https://x", {})

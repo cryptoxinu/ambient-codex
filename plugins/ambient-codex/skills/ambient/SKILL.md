@@ -134,11 +134,8 @@ Let the CLI derive context windows, output caps, reasoning budgets, structured
 output mode, chunk size, and hierarchical reduction from live model metadata.
 Avoid manual `--max-tokens` unless requested or recovering from truncation.
 
-Fleet reservations are controlled by `AMBIENT_FLEET_BUDGET`; stale reservation
-cleanup uses `AMBIENT_RESERVATION_TTL`. The ordinary panel should not expose the
-advanced pay-per-token spend cap. Do not quote savings or cost unless the CLI
-prints them. The opencode agent lane is billed by Ambient but is not included in
-local usage/spend reservations.
+Do not quote savings or cost unless the CLI prints them. The opencode agent lane
+is billed by Ambient but is not included in local usage.
 
 ## Trust And Output
 

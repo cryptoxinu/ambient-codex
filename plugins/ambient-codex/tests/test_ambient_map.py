@@ -92,8 +92,7 @@ class _FakeCache:
         self.store[key] = text
 
 
-def run_map(args, *, complete, cache=None, stdin=None, gate_spy=None,
-            extra=None):
+def run_map(args, *, complete, cache=None, stdin=None, extra=None):
     """Run cmd_map hermetically; returns (exit_code_or_None, stdout, stderr)."""
     cache = cache or _FakeCache()
     patches = dict(
@@ -101,13 +100,10 @@ def run_map(args, *, complete, cache=None, stdin=None, gate_spy=None,
         complete=complete,
         _cache_get=cache.get,
         _cache_put=cache.put,
-        _gate_amount=lambda *a, **k: None,
     )
     if stdin is not None:
         patches["read_stdin_if_piped"] = lambda: stdin
         patches["warn_if_stdin_ignored"] = lambda hint: None
-    if gate_spy is not None:
-        patches["cost_gate"] = gate_spy
     if extra:
         patches.update(extra)
     out, err = io.StringIO(), io.StringIO()
@@ -191,28 +187,6 @@ class TestMapHappyPath(unittest.TestCase):
         self.assertIn("1", out)  # the item id appears in the header
 
 
-class TestMapCostGate(unittest.TestCase):
-    def test_one_upfront_gate_with_n_calls_equal_item_count(self):
-        d = tempfile.mkdtemp()
-        paths = _write_items(d, ["aaa", "bbb", "ccc"])
-        calls = []
-
-        def gate_spy(catalog, model, input_chars, n_calls, args, conf):
-            calls.append((input_chars, n_calls))
-
-        def fake_complete(api_key, api_url, model, messages, args, **kw):
-            # the gate must have fired BEFORE any network call
-            self.assertEqual(len(calls), 1)
-            return "ok", {}, {}
-
-        code, _out, _err = run_map(_map_args("p", paths),
-                                   complete=fake_complete, gate_spy=gate_spy)
-        self.assertIsNone(code)
-        self.assertEqual(len(calls), 1)  # ONE batch gate, not per item
-        self.assertEqual(calls[0][1], 3)  # n_calls == item count
-        self.assertGreaterEqual(calls[0][0], len("aaabbbccc"))
-
-
 class TestMapFailureModes(unittest.TestCase):
     def test_fatal_funds_error_fails_fast_and_stops_billing(self):
         d = tempfile.mkdtemp()
@@ -227,8 +201,7 @@ class TestMapFailureModes(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with patched(amb,
                      safe_catalog=lambda *a, **k: _catalog(),
-                     complete=fake_complete,
-                     _gate_amount=lambda *a, **k: None), \
+                     complete=fake_complete), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(err):
             with self.assertRaises(amb.ChatError) as cm:
@@ -249,8 +222,7 @@ class TestMapFailureModes(unittest.TestCase):
         args = _map_args("p", paths, parallel=1)
         with patched(amb,
                      safe_catalog=lambda *a, **k: _catalog(),
-                     complete=fake_complete,
-                     _gate_amount=lambda *a, **k: None), \
+                     complete=fake_complete), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(amb.NetworkError):
@@ -469,45 +441,33 @@ class TestMapJsonContract(unittest.TestCase):
 
 
 class TestMapCacheBeforeGate(unittest.TestCase):
-    """H1: the batch cost gate must price only the CACHE MISSES — a resumed
-    (fully-cached) re-run makes zero calls and must never be re-priced or
-    refused by AMBIENT_MAX_SPEND."""
+    """A resumed (fully-cached) re-run makes zero calls: every item is served
+    from cache and never re-billed; a partial re-run bills only the misses."""
 
-    def _gate_spy(self, calls):
-        def spy(catalog, model, input_chars, n_calls, args, conf):
-            calls.append((input_chars, n_calls))
-        return spy
-
-    def test_warm_cache_rerun_never_calls_cost_gate(self):
+    def test_warm_cache_rerun_serves_every_item_from_cache(self):
         d = tempfile.mkdtemp()
         paths = _write_items(d, ["aaa", "bbb", "ccc"])
         cache = _FakeCache()
-        gates = []
 
         def fake_complete(api_key, api_url, model, messages, args, **kw):
             return "R:" + messages[1]["content"], {}, {}
 
         code, _o, _e = run_map(_map_args("p", paths, no_cache=False),
-                               complete=fake_complete, cache=cache,
-                               gate_spy=self._gate_spy(gates))
+                               complete=fake_complete, cache=cache)
         self.assertIsNone(code)
-        self.assertEqual(gates, [(gates[0][0], 3)])  # cold run: gate all 3
-        # Warm re-run: every item cached → the gate must not fire AT ALL.
+        # Warm re-run: every item is served from cache.
         code, out, err = run_map(_map_args("p", paths, no_cache=False),
-                                 complete=fake_complete, cache=cache,
-                                 gate_spy=self._gate_spy(gates))
+                                 complete=fake_complete, cache=cache)
         self.assertIsNone(code)
-        self.assertEqual(len(gates), 1)  # ZERO gate calls on the warm run
         envs = envelopes(out)
         self.assertEqual(len(envs), 3)
         self.assertTrue(all(e.get("cached") for e in envs))
         self.assertIn("3 cached", err)
 
-    def test_partial_cache_gates_only_the_misses(self):
+    def test_partial_cache_bills_only_the_misses(self):
         d = tempfile.mkdtemp()
         paths = _write_items(d, ["aaa", "bbb", "ccc"])
         cache = _FakeCache()
-        gates = []
         billed = []
 
         def fake_complete(api_key, api_url, model, messages, args, **kw):
@@ -515,17 +475,13 @@ class TestMapCacheBeforeGate(unittest.TestCase):
             return "R:" + messages[1]["content"], {}, {}
 
         code, _o, _e = run_map(_map_args("p", paths[:2], no_cache=False),
-                               complete=fake_complete, cache=cache,
-                               gate_spy=self._gate_spy(gates))
+                               complete=fake_complete, cache=cache)
         self.assertIsNone(code)
-        self.assertEqual(gates[-1][1], 2)
-        # Second run adds one NEW item: the gate prices exactly that one miss.
+        self.assertEqual(len(billed), 2)
+        # Second run adds one NEW item: only that miss is billed.
         code, _o, _e = run_map(_map_args("p", paths, no_cache=False),
-                               complete=fake_complete, cache=cache,
-                               gate_spy=self._gate_spy(gates))
+                               complete=fake_complete, cache=cache)
         self.assertIsNone(code)
-        self.assertEqual(len(gates), 2)
-        self.assertEqual(gates[-1][1], 1)   # n_calls == len(misses)
         self.assertEqual(len(billed), 3)    # the hit items were never re-billed
 
 
@@ -582,7 +538,6 @@ class TestMapFatalGateRace(unittest.TestCase):
         with patched(amb,
                      safe_catalog=lambda *a, **k: _catalog(),
                      complete=fake_complete,
-                     _gate_amount=lambda *a, **k: None,
                      threading=shim), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -629,8 +584,7 @@ class TestMapFatalJsonOneLine(unittest.TestCase):
         with patched(amb,
                      load_config=lambda: (KEY, "https://x", {}),
                      safe_catalog=lambda *a, **k: _catalog(),
-                     complete=fake_complete,
-                     _gate_amount=lambda *a, **k: None), \
+                     complete=fake_complete), \
                 patched(sys, argv=["ambient", "map", "p", *paths,
                                    "--parallel", "1", "--json",
                                    "--no-cache", "--allow-cost"]), \
@@ -711,8 +665,7 @@ class TestMapInterruptPrompt(unittest.TestCase):
         start = time.monotonic()
         with patched(amb,
                      safe_catalog=lambda *a, **k: _catalog(),
-                     complete=fake_complete,
-                     _gate_amount=lambda *a, **k: None), \
+                     complete=fake_complete), \
                 patched(amb.os, _exit=fake_exit), \
                 contextlib.redirect_stdout(out_spy), \
                 contextlib.redirect_stderr(err_spy):
@@ -811,7 +764,6 @@ class TestMapDensityBudget(unittest.TestCase):
 
         code, _o, _e = run_map(
             _map_args("p", paths), complete=fake_complete,
-            gate_spy=lambda *a, **k: None,
             extra={"apply_output_budget": budget_spy})
         self.assertIsNone(code)
         expected = int((len("p") + len(cjk)) * amb.density_factor(cjk))
@@ -870,7 +822,6 @@ class TestMapPerItemBudget(unittest.TestCase):
 
         code, _o, _e = run_map(
             _map_args("p", paths), complete=fake_complete,
-            gate_spy=lambda *a, **k: None,
             extra={"apply_output_budget": budget_spy})
         self.assertIsNone(code)
         eff_small = int((len("p") + len(small)) * amb.density_factor(small))

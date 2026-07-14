@@ -12,7 +12,7 @@
 - LOW: skills/ambient/SKILL.md must not imply --consensus and the default
   repo deep pass apply together (the deep pass is skipped under consensus).
 
-Every test patches safe_catalog/run_one_audit/_gate_amount or friends;
+Every test patches safe_catalog/run_one_audit/estimate_cost or friends;
 no network, no live API, no writes outside tempdirs.
 """
 import argparse
@@ -160,52 +160,6 @@ class TestM2MapOnlyConsensusPricing(unittest.TestCase):
                              "synthesis call")
             self.assertEqual(per_chunks[m], n_chunks)
 
-    def test_fitting_batch_is_no_longer_refused(self):
-        """A batch whose real (map-only) cost fits the ceiling must pass the
-        REAL gate — the old 2x pricing refused it spuriously."""
-        catalog = consensus_catalog()
-        root = big_repo()
-        labeled, _meta = repo_inputs(root)
-        total = sum(len(t) for _, t in labeled)
-        models = CONSENSUS.split(",")
-        exp, bnd, _parts, per_chunks, _assumed = amb._consensus_estimate(
-            catalog, models, labeled, total)
-        # What the old bug charged: one extra (synthesis) call per chunk set.
-        old = 0.0
-        for m in models:
-            prof = amb.model_profile(catalog, m)
-            n = per_chunks[m]
-            est_input = total + n * len(amb.build_code_map(
-                labeled, budget=amb.code_map_budget(prof.single_shot_chars)))
-            e, _b, _a = amb.estimate_cost(catalog, m, est_input, n * 2,
-                                          prof.output_budget)
-            old += e
-        self.assertLess(exp, old, "map-only must be cheaper than 2x")
-        ceiling = (exp + old) / 2  # fits for real cost, refused by 2x cost
-        self.assertLessEqual(bnd, ceiling * 3,
-                             "test premise: worst-case guard must not fire")
-        args = audit_args(repo=root, format="json", consensus=CONSENSUS,
-                          allow_cost=False)
-        out = io.StringIO()
-        env_old = os.environ.get("AMBIENT_MAX_SPEND")
-        os.environ["AMBIENT_MAX_SPEND"] = str(ceiling)
-        try:
-            with patched(amb, safe_catalog=lambda *a, **k: catalog,
-                         subprocess=no_git(),
-                         run_one_audit=lambda *a, **k: ([], True),
-                         _fleet_reserve=lambda *a, **k: None), \
-                    contextlib.redirect_stdout(out), \
-                    contextlib.redirect_stderr(io.StringIO()):
-                amb.cmd_audit(args, KEY, "https://x", {})  # must NOT exit
-        finally:
-            if env_old is None:
-                os.environ.pop("AMBIENT_MAX_SPEND", None)
-            else:
-                os.environ["AMBIENT_MAX_SPEND"] = env_old
-        lines = out.getvalue().strip().splitlines()
-        env = json.loads("\n".join(lines[1:]))  # after the plan line
-        self.assertNotEqual(env.get("status"), "error")
-
 
 # --------------------------------------------------------------------------
 # M1 — the --repo --consensus plan and the consensus gate agree
@@ -213,35 +167,26 @@ class TestM2MapOnlyConsensusPricing(unittest.TestCase):
 
 class TestM1PlanMatchesConsensusGate(unittest.TestCase):
     def _run(self, args, catalog):
-        seen = {}
-
-        def spy_gate(expected, args_, conf_, bound=None):
-            seen["expected"] = expected
-            seen["bound"] = bound
-
         out, err = io.StringIO(), io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(),
-                     run_one_audit=lambda *a, **k: ([], True),
-                     _gate_amount=spy_gate), \
+                     run_one_audit=lambda *a, **k: ([], True)), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(err):
             amb.cmd_audit(args, KEY, "https://x", {})
-        return out.getvalue(), err.getvalue(), seen
+        return out.getvalue(), err.getvalue()
 
     def test_consensus_plan_structure_and_gate_invoked(self):
-        # The plan no longer exposes a dollar estimate (founder policy), but the
-        # gate must STILL be invoked with a real expected amount, and the plan
-        # must carry the consensus structure.
+        # The plan no longer exposes a dollar estimate (founder policy); it
+        # must still carry the consensus structure.
         catalog = consensus_catalog()
         root = big_repo()
         args = audit_args(repo=root, format="json", consensus=CONSENSUS)
-        out, _err, seen = self._run(args, catalog)
+        out, _err = self._run(args, catalog)
         plan = json.loads(out.strip().splitlines()[0])
         self.assertEqual(plan["status"], "plan")
         self.assertNotIn("est_cost", plan)     # no dollars in the plan
         self.assertNotIn("est_bound", plan)
-        self.assertGreater(seen["expected"], 0)  # gate still charged internally
         # The model field reflects the consensus SET, not the default model.
         self.assertEqual(plan["consensus"], CONSENSUS.split(","))
         for m in CONSENSUS.split(","):
@@ -256,7 +201,7 @@ class TestM1PlanMatchesConsensusGate(unittest.TestCase):
         _exp, _bnd, _p, per_chunks, _a = amb._consensus_estimate(
             catalog, CONSENSUS.split(","), labeled, total)
         args = audit_args(repo=root, format="json", consensus=CONSENSUS)
-        out, _err, _seen = self._run(args, catalog)
+        out, _err = self._run(args, catalog)
         plan = json.loads(out.strip().splitlines()[0])
         self.assertNotIn("est_cost", plan)     # no dollars in the plan
         self.assertEqual(plan["n_chunks"], sum(per_chunks.values()))
@@ -277,9 +222,7 @@ class TestM1PlanMatchesConsensusGate(unittest.TestCase):
                      complete=lambda *a, **k: (
                          '{"findings": [], "verdict": "SHIP"}',
                          {}, {"finish_reason": "stop"}),
-                     log_usage=lambda *a, **k: None,
-                     cost_gate_soft=lambda *a, **k: False,
-                     _gate_amount=lambda *a, **k: None), \
+                     log_usage=lambda *a, **k: None), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             amb.cmd_audit(args, KEY, "https://x", {})
@@ -304,8 +247,7 @@ class TestM1PlanMatchesConsensusGate(unittest.TestCase):
         out = io.StringIO()
         with patched(amb, safe_catalog=lambda *a, **k: catalog,
                      subprocess=no_git(),
-                     run_one_audit=lambda *a, **k: ([], True),
-                     _gate_amount=lambda *a, **k: None), \
+                     run_one_audit=lambda *a, **k: ([], True)), \
                 contextlib.redirect_stdout(out), \
                 contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):

@@ -127,7 +127,7 @@ class ControlSnapshotTests(ControlCase):
         )
         self.assertIn(
             {"phrase": "change settings",
-             "description": "edit streaming, fallback, fleet-budget, and reference-price"},
+             "description": "edit streaming, fallback, and reference-price"},
             data["chat_actions"],
         )
         self.assertIn(
@@ -145,7 +145,7 @@ class ControlSnapshotTests(ControlCase):
         setting_names = [setting["name"] for setting in data["settings"]]
         self.assertEqual(
             setting_names,
-            ["streaming", "fallback", "fleet-budget", "reference-price", "savings"],
+            ["streaming", "fallback", "reference-price", "savings"],
         )
         self.assertNotIn("spend-cap", "\n".join(data["actions"]))
 
@@ -192,16 +192,6 @@ class ControlWriteTests(ControlCase):
         out, _ = self.run_control("setting", "fallback", "--unset")
         self.assertIn("back to default", out)
         self.assertNotIn("AMBIENT_FALLBACK", amb.read_config_file())
-
-    def test_spend_cap_is_advanced_config_not_control_setting(self):
-        args = self.parse("setting", "spend-cap", "12")
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            with self.assertRaises(SystemExit) as caught:
-                amb.cmd_control(args)
-        self.assertEqual(caught.exception.code, amb.EXIT_USAGE)
-        self.assertIn("advanced local budget guardrail", err.getvalue())
-        self.assertNotIn("AMBIENT_MAX_SPEND", amb.read_config_file())
 
     def test_key_setup_in_non_tty_gives_instructions_not_prompt(self):
         with patched(amb.sys, stdin=NotATTY(), stdout=io.StringIO(), stderr=io.StringIO()):
