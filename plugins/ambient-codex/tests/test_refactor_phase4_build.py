@@ -5,6 +5,10 @@ import unittest
 
 
 class BuildWorkflowTests(unittest.TestCase):
+    def test_state_path_is_scoped_to_the_build_root(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        self.assertEqual(core.state_path("/tmp/build"), "/tmp/build/.ambient-build.json")
+
     def test_identity_is_path_order_independent_and_version_sensitive(self):
         core = importlib.import_module("ambient_codex.build_workflow")
         args = dict(runtime_version="1", task="make", model="m", reduce_model=None,

@@ -2,6 +2,12 @@
 
 import hashlib
 import json
+import os
+
+
+def state_path(root):
+    """Return the fixed resume-state path beneath a validated build root."""
+    return os.path.join(root, ".ambient-build.json")
 
 
 def resume_identity(*, runtime_version, task, model, reduce_model, context_paths,
@@ -19,4 +25,4 @@ def resume_identity(*, runtime_version, task, model, reduce_model, context_paths
     return hashlib.sha256(encoded).hexdigest()
 
 
-__all__ = ("resume_identity",)
+__all__ = ("state_path", "resume_identity")

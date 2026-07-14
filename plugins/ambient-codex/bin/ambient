@@ -8054,7 +8054,7 @@ def safe_relpath(path, root):
 
 
 def _build_state_path(root):
-    return os.path.join(root, ".ambient-build.json")
+    return _build_workflow.state_path(root)
 
 
 def build_resume_identity(*, task, model, reduce_model, context_paths,
