@@ -79,12 +79,14 @@ bugs, verification, commits, or the next action changes.
 | 3F-1 | Chunk-packing primitives | Complete | `5e3477e` | `chunking.py`; density sizing, Python boundary preference, and hard size limits preserved |
 | 3G-1 | Map-reduce planning helpers | Complete | `49fd8e9` | `map_reduce.py`; index-safe prompts and ordered budget grouping preserve orchestration behavior |
 | 3G-2 | Map-reduce input helpers | Complete | `9fe1232` | `map_reduce.py`; file boundaries, coverage labels, and model-scaled map budgets extracted |
+| 3G-3 | Map-reduce execution policies | Complete | `7ee2c0a` | `map_reduce.py`; bounded fan-out and reduce-model response-format policy extracted |
 | 3 | Transport, models, and map/reduce | In progress | — | 3A + 3C-1 complete; model profiles/routing, telemetry, streaming, chunking, and orchestration remain |
 | 4A-1 | Audit sample preparation | Complete | `3a1315a` | `audit_core.py`; model-specific request budgets, schema gating, and cache identity extracted |
 | 4A-2 | Deterministic audit reduction | Complete | `ae087a7` | `audit_core.py`; parsed findings, repair/unparsed coverage, and conservative verdict derived without an LLM merge |
 | 4A-3 | Tolerant audit JSON parsing | Complete | `6022457` | `audit_core.py`; fences, outer objects, safe truncation repair, and late-object recovery extracted |
 | 4A-4 | Audit finding consolidation | Complete | `6527adf` | `audit_core.py`; identity, split-artifact filtering, deduplication, and conservative severity verdicts extracted |
 | 4A-5 | Cross-file confirmation candidate selection | Complete | `a19af95` | `audit_core.py`; bounded, ordered candidate selection extracted with facade seam |
+| 4A-6 | Audit object + cross-file merge policy | Complete | `c04adf1`→`6748c14`→`785174e` | `audit_core.py`; JSON/prose selection, bounded file inputs, and incomplete coverage merge extracted |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
