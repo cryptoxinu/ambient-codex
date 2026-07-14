@@ -7829,73 +7829,7 @@ def _parse_file_records(text):
       * an unterminated object is treated as a truncated tail and dropped;
       * a legacy {"files":[...]} wrapper is unwrapped after a full decode.
     """
-    objs = []
-    n, i, line_start = len(text), 0, 0
-    while i < n:
-        c = text[i]
-        if c == "\n":
-            i += 1
-            line_start = i
-            continue
-        if c != "{":
-            i += 1
-            continue
-        if text[line_start:i].strip():
-            nl = text.find("\n", i)
-            i = nl + 1 if nl >= 0 else n
-            line_start = i
-            continue
-
-        depth, j, in_str, esc, closed = 0, i, False, False, False
-        while j < n:
-            ch = text[j]
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-            elif ch == '"':
-                in_str = True
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    closed = True
-                    j += 1
-                    break
-            j += 1
-        if not closed:
-            break
-
-        valid = False
-        try:
-            obj = json.loads(text[i:j])
-            if isinstance(obj, dict):
-                objs.append(obj)
-                valid = True
-        except (ValueError, RecursionError):
-            pass
-        i = j
-        if valid:
-            while i < n and text[i] in " \t\r,":
-                i += 1
-            if i < n and text[i] == "{":
-                line_start = i
-                continue
-        nl = text.find("\n", i)
-        i = nl + 1 if nl >= 0 else n
-        line_start = i
-
-    files = []
-    for obj in objs:
-        if "path" in obj or "content" in obj:
-            files.append(obj)
-        elif isinstance(obj.get("files"), list):
-            files.extend(f for f in obj["files"] if isinstance(f, dict))
-    return files
+    return _build_workflow.parse_file_records(text)
 
 
 def _within_root(child_real, root_real):

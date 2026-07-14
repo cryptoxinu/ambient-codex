@@ -81,3 +81,13 @@ class BuildWorkflowTests(unittest.TestCase):
         self.assertEqual(proposed, before)
         self.assertEqual(plan, [{"path": "safe.py", "purpose": "keep"}])
         self.assertEqual(rejected, [{"path": "../unsafe.py", "reason": "unsafe path: escape"}])
+
+    def test_file_record_parser_keeps_complete_records_and_drops_cut_tail(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        records = core.parse_file_records(
+            '{"path":"a.py","content":"A"}\n'
+            '{"path":"b.py","content":"B')
+        self.assertEqual(records, [{"path": "a.py", "content": "A"}])
+        wrapped = core.parse_file_records(
+            '{"files":[{"path":"c.py","content":"C"}]}')
+        self.assertEqual(wrapped, [{"path": "c.py", "content": "C"}])

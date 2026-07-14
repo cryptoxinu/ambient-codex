@@ -100,5 +100,77 @@ def validate_plan_items(items, *, max_files, root, safe_relpath):
     return plan, rejected
 
 
+def _read_json_object(text, start):
+    """Return ``(end, object)`` for one complete top-level object or ``None``."""
+    depth, end, in_string, escaped = 0, start, False, False
+    while end < len(text):
+        character = text[end]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                end += 1
+                break
+        end += 1
+    if depth != 0:
+        return None
+    try:
+        candidate = json.loads(text[start:end])
+        return end, candidate if isinstance(candidate, dict) else None
+    except (ValueError, RecursionError):
+        return end, None
+
+
+def _scan_file_objects(text):
+    """Read only line-started complete JSON objects from a generation reply."""
+    objects, index, line_start = [], 0, 0
+    while index < len(text):
+        if text[index] == "\n":
+            index, line_start = index + 1, index + 1
+        elif text[index] != "{":
+            index += 1
+        elif text[line_start:index].strip():
+            newline = text.find("\n", index)
+            index = newline + 1 if newline >= 0 else len(text)
+            line_start = index
+        else:
+            scanned = _read_json_object(text, index)
+            if scanned is None:
+                break
+            index, candidate = scanned
+            if candidate is not None:
+                objects.append(candidate)
+                while index < len(text) and text[index] in " \t\r,":
+                    index += 1
+                if index < len(text) and text[index] == "{":
+                    line_start = index
+                    continue
+            newline = text.find("\n", index)
+            index = newline + 1 if newline >= 0 else len(text)
+            line_start = index
+    return objects
+
+
+def parse_file_records(text):
+    """Recover complete top-level JSON file records without repairing a cut tail."""
+    files = []
+    for candidate in _scan_file_objects(text):
+        if "path" in candidate or "content" in candidate:
+            files.append(candidate)
+        elif isinstance(candidate.get("files"), list):
+            files.extend(item for item in candidate["files"] if isinstance(item, dict))
+    return files
+
+
 __all__ = ("state_path", "resume_identity", "normalize_resume_state",
-           "validate_plan_items")
+           "validate_plan_items", "parse_file_records")
