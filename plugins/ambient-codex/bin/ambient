@@ -70,7 +70,6 @@ import hashlib
 import http.client
 import io
 import json
-import math
 import os
 import random
 import re
@@ -176,6 +175,7 @@ from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
+from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
@@ -2251,14 +2251,20 @@ def response_format_for(profile, schema):
     """Capability-gated structured-output request for a model (A4): strict
     json_schema when supported, else json_object, else None (prompt-only).
     Sending response_format to a model that lacks it can 400 — so gate."""
-    feats = profile.features or []
-    if "structured_outputs" in feats:
-        return {"type": "json_schema",
-                "json_schema": {"name": "ambient_findings", "strict": True,
-                                "schema": schema}}
-    if "json_mode" in feats:
-        return {"type": "json_object"}
-    return None
+    return _model_budget.response_format_for(profile, schema)
+
+
+def _model_budget_constants():
+    """Return immutable-in-use constants for extracted model budget math."""
+    return {
+        "CHARS_PER_TOKEN": CHARS_PER_TOKEN,
+        "REASONING_EXPANSION": REASONING_EXPANSION,
+        "ANSWER_TOKENS_RESERVE": ANSWER_TOKENS_RESERVE,
+        "OUTPUT_SAFETY": OUTPUT_SAFETY,
+        "INPUT_TOKEN_SAFETY": INPUT_TOKEN_SAFETY,
+        "CONTEXT_OVERHEAD_TOKENS": CONTEXT_OVERHEAD_TOKENS,
+        "MIN_REASONING_CHUNK": MIN_REASONING_CHUNK,
+    }
 
 
 def _reasoning_output_budget(input_chars, cpt=None):
@@ -2266,9 +2272,8 @@ def _reasoning_output_budget(input_chars, cpt=None):
     real answer: reasoning_tokens + a fixed answer reserve, times a safety
     factor. `cpt` lets model_profile pass the model's OBSERVED chars-per-token
 ; default = the static constant, byte-identical."""
-    cpt = cpt or CHARS_PER_TOKEN
-    reasoning_tokens = input_chars * REASONING_EXPANSION / cpt
-    return int((reasoning_tokens + ANSWER_TOKENS_RESERVE) * OUTPUT_SAFETY)
+    return _model_budget.reasoning_output_budget(
+        input_chars, cpt, _model_budget_constants())
 
 
 def _context_safe_output_cap(profile, input_chars=None, cpt=None):
@@ -2279,19 +2284,13 @@ def _context_safe_output_cap(profile, input_chars=None, cpt=None):
     a last-resort floor for tiny windows; callers still prefer smaller chunks
     when they can.
     """
-    cpt = cpt or CHARS_PER_TOKEN
-    chars = profile.single_shot_chars if input_chars is None else input_chars
-    input_tokens = math.ceil(max(0, chars) / cpt * INPUT_TOKEN_SAFETY)
-    return max(
-        256,
-        min(profile.max_output_length,
-            profile.context_length - input_tokens - CONTEXT_OVERHEAD_TOKENS),
-    )
+    return _model_budget.context_safe_output_cap(
+        profile, input_chars, cpt, _model_budget_constants())
 
 
 def _context_safe_escalation_ceiling(profile, input_chars=None, cpt=None):
-    cap = _context_safe_output_cap(profile, input_chars, cpt)
-    return max(256, min(profile.escalation_ceiling, cap))
+    return _model_budget.context_safe_escalation_ceiling(
+        profile, input_chars, cpt, _model_budget_constants())
 
 
 def single_shot_max_chars():
@@ -2309,17 +2308,8 @@ def _reasoning_single_shot_target(ctx, max_out, cpt=None):
     """Largest input a reasoning model can take in ONE pass and still fit both
     its output cap and its context window. Bounded by the cost knob. `cpt` =
     observed chars-per-token when history exists; default static."""
-    cpt = cpt or CHARS_PER_TOKEN
-    # Output constraint: _reasoning_output_budget(single) <= max_out
-    by_output = ((max_out / OUTPUT_SAFETY - ANSWER_TOKENS_RESERVE)
-                 * cpt / REASONING_EXPANSION)
-    # Context constraint: input_tok + output_budget(single) + overhead <= ctx.
-    # input_tok = single/CPT; output ≈ (single*EXP/CPT + RESERVE)*SAFETY.
-    denom = (1 + REASONING_EXPANSION * OUTPUT_SAFETY) / cpt
-    by_ctx = (ctx - ANSWER_TOKENS_RESERVE * OUTPUT_SAFETY
-              - CONTEXT_OVERHEAD_TOKENS) / denom
-    target = min(by_output, by_ctx, single_shot_max_chars())
-    return int(max(MIN_REASONING_CHUNK, target))
+    return _model_budget.reasoning_single_shot_target(
+        ctx, max_out, cpt, single_shot_max_chars(), _model_budget_constants())
 
 
 def model_profile(catalog, model):
