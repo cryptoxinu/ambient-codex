@@ -178,6 +178,7 @@ from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
+from ambient_codex import output_schema as _output_schema  # noqa: E402
 from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
@@ -3889,20 +3890,12 @@ def render_result(text, partial, reason, args, api_key, usage=None, model=None,
         )
 
 
-_PUBLIC_USAGE_KEYS = frozenset((
-    "prompt_tokens", "completion_tokens", "total_tokens",
-    "reasoning_tokens", "_estimated",
-))
-
-
 def _public_usage(usage):
     """Only token counts and the estimation marker are safe to emit. A provider
     response may attach cost/price/saved_pct metadata to `usage`; those never
     leave the tool (founder hard rule: never surface money, and the savings
     comparison is opt-in)."""
-    if not isinstance(usage, dict):
-        return usage
-    return {k: usage[k] for k in usage if k in _PUBLIC_USAGE_KEYS}
+    return _output_schema.public_usage(usage)
 
 
 def emit_json(kind, *, model, api_key="", content=None, findings=None,
