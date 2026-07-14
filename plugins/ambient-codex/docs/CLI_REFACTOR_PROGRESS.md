@@ -83,6 +83,7 @@ bugs, verification, commits, or the next action changes.
 | 4A-1 | Audit sample preparation | Complete | `3a1315a` | `audit_core.py`; model-specific request budgets, schema gating, and cache identity extracted |
 | 4A-2 | Deterministic audit reduction | Complete | `ae087a7` | `audit_core.py`; parsed findings, repair/unparsed coverage, and conservative verdict derived without an LLM merge |
 | 4A-3 | Tolerant audit JSON parsing | Complete | `6022457` | `audit_core.py`; fences, outer objects, safe truncation repair, and late-object recovery extracted |
+| 4A-4 | Audit finding consolidation | Complete | `6527adf` | `audit_core.py`; identity, split-artifact filtering, deduplication, and conservative severity verdicts extracted |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 
