@@ -27,4 +27,3 @@ class RoutingTests(unittest.TestCase):
             fits=lambda item: item["fits"],
         )
         self.assertEqual(selected, ("best", "cheapest READY that fits"))
-
