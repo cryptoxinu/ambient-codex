@@ -175,9 +175,11 @@ from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
+from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
+from ambient_codex import transport as _transport  # noqa: E402
 from ambient_codex import usage_store as _usage_store  # noqa: E402
 from ambient_codex import usage_report as _usage_report  # noqa: E402
 from ambient_codex import usage_pricing as _usage_pricing  # noqa: E402
@@ -962,17 +964,7 @@ def model_map(conf):
     {phase: model_id}. Phases: chat, code, map (the bulk lane), reduce (the
     map-reduce synthesis step). Explicit -m / --reduce-model on the CLI always
     override it. Defensive: junk config can never crash."""
-    raw = (os.environ.get("AMBIENT_MODEL_MAP")
-           or conf.get("AMBIENT_MODEL_MAP") or "")
-    out = {}
-    for part in raw.split(","):
-        if "=" not in part:
-            continue
-        k, v = part.split("=", 1)
-        k, v = k.strip().lower(), v.strip()
-        if k and v:
-            out[k] = v
-    return out
+    return _model_config.model_map(conf, os.environ)
 
 
 def resolve_model(args, conf, kind="chat", phase=None):
@@ -981,79 +973,22 @@ def resolve_model(args, conf, kind="chat", phase=None):
     consult (default: same as `kind`); the map is the user's own explicit
     config, so consulting it never violates the sacred-model rule — and the
     -m flag still beats everything."""
-    env_key = "AMBIENT_CODE_MODEL" if kind == "code" else "AMBIENT_MODEL"
-    fallback = DEFAULT_CODE_MODEL if kind == "code" else DEFAULT_MODEL
-    return (
-        getattr(args, "model", None)
-        or model_map(conf).get(phase or kind)
-        or os.environ.get(env_key)
-        or conf.get(env_key)
-        or fallback
+    return _model_config.resolve_model(
+        args, conf, kind, phase, os.environ, DEFAULT_MODEL, DEFAULT_CODE_MODEL,
     )
 
 
 def api_request(api_url, api_key, path, payload=None, timeout=DEFAULT_TIMEOUT_S):
-    """Single JSON request to the API. Returns (status_code, parsed_body).
-    Raises NetworkError when the API cannot be reached at all."""
-    url = f"{api_url}{path}"
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST" if data else "GET",
+    """Compatibility wrapper for the extracted HTTP transport operation."""
+    return _transport.api_request(
+        api_url, api_key, path, payload, timeout,
+        retry_delay=_retry_delay, sleep=time.sleep, stderr=sys.stderr,
     )
-    # Only idempotent GETs auto-retry: a timed-out completion POST may have
-    # been processed server-side, and a blind retry would double-spend.
-    retryable = data is None
-    last_err = NetworkError(f"cannot reach {url}")
-    for attempt in (1, 2):
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.status, json.loads(
-                    resp.read().decode("utf-8", errors="replace"))
-        except urllib.error.HTTPError as err:
-            body = err.read().decode("utf-8", errors="replace")
-            if err.code in (502, 503, 504) and attempt == 1 and retryable:
-                print(f"ambient: HTTP {err.code}, retrying once...", file=sys.stderr)
-                time.sleep(_retry_delay(2, err.headers))
-                continue
-            try:
-                return err.code, json.loads(body)
-            except json.JSONDecodeError:
-                return err.code, {"error": {"message": body[:2000]}}
-        except urllib.error.URLError as err:
-            last_err = NetworkError(f"cannot reach {url} ({err.reason})")
-        except (OSError, http.client.HTTPException) as err:
-            # A dropped/incomplete read is a transient network fault, not a crash
-            # — treat like URLError so it retries/wraps.
-            last_err = NetworkError(f"read from {url} failed ({err})")
-        except json.JSONDecodeError:
-            # Garbled body: retryable GETs try again; otherwise report cleanly
-            # instead of a hard sys.exit.
-            last_err = NetworkError(f"{url} returned malformed JSON")
-        if attempt == 1 and retryable:
-            print("ambient: network blip, retrying once...", file=sys.stderr)
-            time.sleep(_retry_delay(2))
-        else:
-            break
-    raise last_err
 
 
 def _catalog_data(body):
-    """Model list from a /v1/models body, normalized to DICT entries with a
-    non-empty string `id` (same filter as fetch_models). A malformed 200
-    (non-object body, `data` that is a scalar/string or a list of non-objects /
-    id-less rows) yields [] instead of crashing a downstream models[0]["id"] or
-    a `for m in models` over a non-iterable."""
-    data = body.get("data") if isinstance(body, dict) else None
-    if not isinstance(data, list):
-        return []
-    return [m for m in data
-            if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
+    """Compatibility wrapper for extracted catalog normalization."""
+    return _transport.catalog_data(body)
 
 
 def fetch_models(api_url, api_key):
@@ -1067,13 +1002,7 @@ def fetch_models(api_url, api_key):
     # assume dict entries with a string id (a bare-string or
     # id-less entry crashed _dedupe_catalog/auth_probe). Field VALUES are still
     # coerced at use (_as_pos_int etc.).
-    if not isinstance(body, dict):   # M29: a 200 with a non-object JSON body
-        return []
-    data = body.get("data")
-    if not isinstance(data, list):
-        return []
-    models = [m for m in data
-              if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
+    models = _catalog_data(body)
     if models:
         # Memoize for post-run pricing (savings receipt / log_usage) — never
         # overwrite a good memo with a degraded empty catalog.
@@ -1087,27 +1016,18 @@ def _as_pos_int(v, default):
     The catalog is network data from a decentralized API — one drifted field
     type (string context_length, bool, dict) must never crash every command
 ."""
-    try:
-        if isinstance(v, bool):  # bool is an int subclass; True==1 is nonsense here
-            return default
-        n = int(v)
-        return n if n > 0 else default
-    except (TypeError, ValueError):
-        return default
+    return _model_config.as_pos_int(v, default)
 
 
 def _as_bool(v):
     """Coerce an untrusted catalog READINESS flag. A raw truthiness test let a
     drifted string `"false"`/`"0"` read as READY (any non-empty string is
     truthy). bool → itself; str → false for the usual falsey words; else bool()."""
-    if isinstance(v, str):
-        return v.strip().lower() not in ("", "false", "0", "no", "off")
-    return bool(v)
+    return _model_config.as_bool(v)
 
 
 def ready_model_ids(models):
-    return [m.get("id") for m in models
-            if isinstance(m, dict) and _as_bool(m.get("is_ready")) and m.get("id")]
+    return _model_config.ready_model_ids(models)
 
 
 def safe_catalog(api_url, api_key):
