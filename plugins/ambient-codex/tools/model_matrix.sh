@@ -177,5 +177,9 @@ assert all('corroboration' in f for f in d['findings'])" 2>/dev/null \
   && pass "consensus --json envelope with corroboration" || fail "consensus --json" "$(head -c 150 "$OUT")"
 
 if grep -qF "$KEY" "$LOG"; then fail "KEY-LEAK tripwire" "key appeared in output"; else pass "key-leak tripwire clean"; fi
-echo "=== MATRIX SUMMARY: $PASS passed, $FAIL failed, $SKIP skipped ==="
+SUMMARY="=== MATRIX SUMMARY: $PASS passed, $FAIL failed, $SKIP skipped ==="
+echo "$SUMMARY"
+if [ -n "${AMBIENT_MATRIX_WORK:-}" ]; then
+  printf '%s\n' "$SUMMARY" > "$WORK/summary.txt"
+fi
 [ "$FAIL" -eq 0 ]
