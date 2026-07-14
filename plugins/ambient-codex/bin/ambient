@@ -67,7 +67,6 @@ import dataclasses
 import difflib
 import fnmatch
 import hashlib
-import http.client
 import io
 import json
 import os
@@ -76,7 +75,6 @@ import re
 import select
 import shlex
 import shutil
-import queue
 import subprocess
 import sys
 import tempfile
@@ -181,6 +179,7 @@ from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
+from ambient_codex import streaming as _streaming  # noqa: E402
 from ambient_codex import transport as _transport  # noqa: E402
 from ambient_codex import telemetry as _telemetry_core  # noqa: E402
 from ambient_codex import usage_store as _usage_store  # noqa: E402
@@ -2555,237 +2554,22 @@ def usage_exit(msg):
     sys.exit(EXIT_USAGE)
 
 
+
 def stream_completion(api_url, api_key, payload, timeout, on_delta=None):
-    """Streamed chat completion. Returns (status, result): on HTTP error the
-    parsed error body; on success a dict with content/reasoning/usage/
-    finish_reason. Liveness = data flow: any silence longer than `timeout`
-    raises StallError carrying whatever was already generated."""
-    url = f"{api_url}/v1/chat/completions"
-    data = json.dumps(
-        dict(payload, stream=True, stream_options={"include_usage": True})
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        },
-        method="POST",
+    """Facade seam for the extracted dependency-injected SSE transport."""
+    return _streaming.stream_completion(
+        api_url, api_key, payload, timeout, on_delta,
+        opener=urllib.request.urlopen,
+        network_error=NetworkError,
+        stall_error=StallError,
+        stream_line_max=STREAM_LINE_MAX,
+        heartbeat_s=HEARTBEAT_S,
+        hard_wall_s=HARD_WALL_S,
+        noprogress_s=NOPROGRESS_S,
+        progress_enabled=progress_display_enabled,
+        stderr=sys.stderr,
+        stderr_is_tty=_stderr_is_tty,
     )
-    start = time.time()
-    last_beat = start
-    last_growth = start
-    last_size = 0
-    beat = {"open": False}  # is an in-place status line pending a close? (B5)
-
-    def close_beat():
-        if beat["open"]:
-            sys.stderr.write("\n")
-            sys.stderr.flush()
-            beat["open"] = False
-
-    content, reasoning, usage, finish = [], [], None, None
-    try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            parsed = {"error": {"message": body[:2000]}}
-        # Preserve a server-requested cooldown so the fan-out can honor it
-        # instead of re-hitting the limiter on jitter alone.
-        ra = err.headers.get("Retry-After") if err.headers else None
-        if ra and isinstance(parsed, dict):
-            parsed["_retry_after"] = ra
-        return err.code, parsed
-    except urllib.error.URLError as err:
-        raise NetworkError(f"cannot reach {url} ({err.reason})") from err
-    except TimeoutError as err:
-        raise NetworkError(f"{url} timed out connecting after {timeout}s") from err
-    except (OSError, http.client.HTTPException) as err:
-        # urlopen can also raise a bare OSError out of getresponse() — a
-        # RemoteDisconnected/ConnectionReset before the headers arrive, or (on
-        # py<=3.9) a socket.timeout that is NOT TimeoutError. Categorize it as
-        # a network fault instead of letting it surface as.
-        raise NetworkError(f"cannot reach {url} ({err})") from err
-    with resp:
-        ctype = resp.headers.get("Content-Type", "").lower()  # M20: media type is case-insensitive
-        if "text/event-stream" not in ctype:
-            # Endpoint answered non-streamed anyway — parse it as one body.
-            try:
-                raw_body = resp.read()
-            except (OSError, http.client.HTTPException) as err:
-                # A reset/timeout mid-body is a transient network fault, not a
-                # crash — mirror api_request's hardening.
-                raise NetworkError(
-                    f"connection dropped reading response from {url} "
-                    f"({err})") from err
-            try:
-                body = json.loads(raw_body.decode("utf-8", errors="replace"))
-            except json.JSONDecodeError:
-                return resp.status, {"error": {"message": "non-JSON response"}}
-            return resp.status, body
-        terminated = False  # saw [DONE] or a finish_reason
-        data_lines = []  # accumulate multi-line `data:` fields of one SSE event
-
-        def handle_event():
-            """Process one complete SSE event (its joined data payload)."""
-            nonlocal usage, finish, terminated
-            if not data_lines:
-                return
-            payload_str = "\n".join(data_lines)
-            data_lines.clear()
-            if payload_str.strip() == "[DONE]":
-                terminated = True
-                return
-            try:
-                obj = json.loads(payload_str)
-            except json.JSONDecodeError:
-                return
-            if not isinstance(obj, dict):   # M18: a valid non-object SSE event
-                return
-            if isinstance(obj.get("usage"), dict):
-                usage = obj["usage"]
-            choices = obj.get("choices")
-            for ch in (choices if isinstance(choices, list) else []):
-                if not isinstance(ch, dict):   # a scalar/list choice entry
-                    continue
-                delta = ch.get("delta")
-                if not isinstance(delta, dict):
-                    delta = {}
-                # Only STRING values are streamable — a scalar delta value
-                # (e.g. {"content": 1}) would crash on "".join / on_delta.
-                piece = delta.get("content")
-                if isinstance(piece, str) and piece:
-                    content.append(piece)
-                    if on_delta is not None:   # live stdout streaming
-                        on_delta(piece)
-                # Providers differ: OpenAI-style uses "reasoning_content",
-                # Kimi/others stream "reasoning". Capture BOTH (string only) —
-                # dropping either loses a reasoning model's whole thinking trace.
-                for _rk in ("reasoning_content", "reasoning"):
-                    _rv = delta.get(_rk)
-                    if isinstance(_rv, str) and _rv:
-                        reasoning.append(_rv)
-                if ch.get("finish_reason"):
-                    finish = ch["finish_reason"]
-                    terminated = True
-
-        # Read lines off the socket in a BACKGROUND thread so the main loop can
-        # enforce the hard-wall / no-progress limits on a fixed ~1s cadence. A
-        # peer that dribbles bytes and never sends a newline can no longer make a
-        # blocking readline() own the clock and delay every limit (Codex 2026-07-08:
-        # readline(cap) still blocks until newline/EOF/timeout/full cap). The
-        # queue is bounded, so the reader can't buffer the whole stream ahead.
-        line_q = queue.Queue(maxsize=256)
-
-        def _reader():
-            try:
-                while True:
-                    ln = resp.readline(STREAM_LINE_MAX)
-                    line_q.put(ln)
-                    if not ln:      # EOF sentinel (empty bytes)
-                        break
-            except BaseException as exc:   # hand the socket fault to the main loop
-                line_q.put(exc)
-
-        threading.Thread(target=_reader, daemon=True).start()
-        while True:
-            now = time.time()
-            # Enforced EVERY tick, INDEPENDENT of whether a line arrived — so a
-            # blocked/dribbling read can't push these past their limits.
-            if now - start > HARD_WALL_S:
-                close_beat()
-                raise StallError(
-                    f"generation exceeded the {HARD_WALL_S // 60}-minute hard wall",
-                    "".join(content), "".join(reasoning), hard_wall=True,
-                )
-            if now - last_growth > NOPROGRESS_S:
-                # Nothing useful produced for the window — a stall, even if bytes
-                # (keep-alives / a newline-less dribble) keep the socket alive.
-                close_beat()
-                raise StallError(
-                    f"no new content for {NOPROGRESS_S}s despite an open stream "
-                    f"({last_size:,} chars so far) — the stream stopped making "
-                    "progress",
-                    "".join(content), "".join(reasoning),
-                )
-            if progress_display_enabled() and now - last_beat >= HEARTBEAT_S:
-                # Visible liveness so a long generation never LOOKS hung. On a
-                # TTY, rewrite ONE line in place (no scroll spam); off-TTY (CI
-                # logs) keep newline-per-beat so lines stay greppable (B5).
-                # --no-progress / AMBIENT_PROGRESS=off silences this; the wall/
-                # no-progress guards ABOVE still run every tick regardless.
-                got = sum(map(len, content)) or sum(map(len, reasoning))
-                phase = "writing" if content else "thinking"
-                msg = (f"ambient: …{phase} ({got:,} chars, "
-                       f"{int(now - start)}s elapsed)")
-                # In-place only on the main thread — parallel chunk workers would
-                # clobber each other's \r, so they keep newline-per-beat.
-                if _stderr_is_tty() and \
-                        threading.current_thread() is threading.main_thread():
-                    sys.stderr.write("\r\033[K" + msg)
-                    sys.stderr.flush()
-                    beat["open"] = True
-                else:
-                    print(msg, file=sys.stderr)
-                last_beat = now
-            try:
-                raw = line_q.get(timeout=1.0)
-            except queue.Empty:
-                continue  # no line this tick — loop back to re-check the wall
-            if isinstance(raw, BaseException):
-                close_beat()
-                if isinstance(raw, TimeoutError):
-                    raise StallError(
-                        f"stream went silent for {timeout}s "
-                        f"({sum(map(len, content))} chars received before the stall)",
-                        "".join(content), "".join(reasoning),
-                    )
-                # Connection reset mid-stream = truncation, not a crash — route
-                # the partial through the same retry/salvage ladder as EOF.
-                raise StallError(
-                    f"connection dropped mid-stream ({raw}); "
-                    f"{sum(map(len, content))} chars received",
-                    "".join(content), "".join(reasoning),
-                )
-            if not raw:
-                # EOF. A clean stream ends with [DONE] or a finish_reason; a
-                # connection that just drops mid-generation is TRUNCATION, not
-                # success — route it through the stall/retry/salvage ladder.
-                handle_event()  # flush any buffered final event
-                if not terminated:
-                    close_beat()
-                    raise StallError(
-                        "stream closed before completion "
-                        f"({sum(map(len, content))} chars received, no end marker)",
-                        "".join(content), "".join(reasoning),
-                    )
-                break
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            if line == "":
-                handle_event()  # blank line = event boundary (SSE framing)
-                if terminated:
-                    break
-            elif line.startswith("data:"):
-                # Per spec, a leading single space after the colon is stripped.
-                value = line[5:]
-                data_lines.append(value[1:] if value.startswith(" ") else value)
-            # else: an SSE comment/keep-alive (":") or unknown field — ignore.
-            # Progress accounting AFTER the event may have grown content/reasoning.
-            size = sum(map(len, content)) + sum(map(len, reasoning))
-            if size > last_size:
-                last_size, last_growth = size, now
-    close_beat()  # close the in-place status line so later output starts fresh
-    return 200, {
-        "content": "".join(content),
-        "reasoning": "".join(reasoning),
-        "usage": usage,
-        "finish_reason": finish,
-    }
 
 
 # Per-Session catalog memo kept OUTSIDE the frozen value object so a Session
