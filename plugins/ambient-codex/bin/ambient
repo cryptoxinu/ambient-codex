@@ -170,6 +170,7 @@ from ambient_codex.records import (  # noqa: E402
 )
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
+from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
@@ -3461,74 +3462,20 @@ def density_factor(text):
     a 120k-char Chinese doc is 2-3x the assumed tokens and would 400 on context
     at 'correct' char sizing. Sampled, linear blend:
     pure-ASCII → 1.0, heavily-non-ASCII → ~2.6."""
-    if not text:
-        return 1.0
-    sample = text[:200_000]
-    non_ascii = sum(1 for ch in sample if ord(ch) > 127)
-    return 1.0 + (non_ascii / len(sample)) * 1.6
+    return _chunking.density_factor(text)
+
+
+
+def _chunk_break_lines(label, text):
+    """Return preferred split points for a labeled Python source item."""
+    return (_py_break_lines(text)
+            if label.endswith(".py") or ".py " in label else set())
 
 
 def pack_chunks(labeled_chunks, chunk_chars=CHUNK_CHARS):
-    """Pack (label, text) items into chunk strings <= chunk_chars. Whole items
-    stay together; oversize items split on line boundaries — biased to land at
-    top-level def/class boundaries for .py so a function is never cut mid-body
-    (A6) — and any SINGLE line longer than the budget is hard-split into char
-    ranges so no chunk can ever exceed the budget. Guarantees every chunk fits."""
-    # A block is at minimum "===== <label> [line N chars X-Y] =====\n" + 1 char;
-    # if the requested budget can't even hold a file's header, raise it to the
-    # irreducible minimum so a chunk is still GUARANTEED to fit chunk_chars
-    # (never a silent overflow). No-op for real budgets (≥14k) vs paths (<260).
-    longest = max((len(lbl) for lbl, _ in labeled_chunks), default=0)
-    chunk_chars = max(chunk_chars, longest + 200)
-    pieces = []  # (label, segment), each segment fits after its block header
-    for label, text in labeled_chunks:
-        # Header is "===== <label> [lines a-b] =====\n" (or "[line N chars X-Y]"
-        # for a hard-split minified line, whose offsets can be 8 digits). Reserve
-        # the label + a generous 80 for that suffix so header+body <= chunk_chars.
-        # The clamp above guarantees this stays positive; do NOT floor it higher
-        # or a tiny budget would overflow.
-        body_budget = max(1, chunk_chars - len(label) - 80)
-        if len(text) <= body_budget:
-            pieces.append((label, text))
-            continue
-        breaks = _py_break_lines(text) if label.endswith(".py") or ".py " in label \
-            else set()
-        buf, buf_len, first = [], 0, 1
-        lineno = 0
-        for ln in text.splitlines(keepends=True):
-            lineno += 1
-            if len(ln) > body_budget:
-                if buf:
-                    pieces.append(
-                        (f"{label} [lines {first}-{lineno - 1}]", "".join(buf)))
-                    buf, buf_len = [], 0
-                for j in range(0, len(ln), body_budget):
-                    seg = ln[j:j + body_budget]
-                    pieces.append(
-                        (f"{label} [line {lineno} chars {j}-{j + len(seg)}]", seg))
-                first = lineno + 1
-                continue
-            # Prefer to break at a top-level definition once we're past ~60% of
-            # budget, so functions stay whole; hard-break at the budget as before.
-            at_def_boundary = (lineno in breaks and buf_len >= body_budget * 0.6)
-            if buf and (buf_len + len(ln) > body_budget or at_def_boundary):
-                pieces.append((f"{label} [lines {first}-{lineno - 1}]", "".join(buf)))
-                buf, buf_len, first = [], 0, lineno
-            buf.append(ln)
-            buf_len += len(ln)
-        if buf:
-            pieces.append((f"{label} [lines {first}-{lineno}]", "".join(buf)))
-    chunks, cur, cur_len = [], [], 0
-    for label, text in pieces:
-        block = f"===== {label} =====\n{text}"
-        if cur and cur_len + len(block) + 2 > chunk_chars:
-            chunks.append("\n\n".join(cur))
-            cur, cur_len = [], 0
-        cur.append(block)
-        cur_len += len(block) + 2
-    if cur:
-        chunks.append("\n\n".join(cur))
-    return chunks
+    """Facade seam for extracted size-safe chunk packing."""
+    return _chunking.pack_chunks(
+        labeled_chunks, chunk_chars, break_lines=_chunk_break_lines)
 
 
 def _resolve_parallel(args):
