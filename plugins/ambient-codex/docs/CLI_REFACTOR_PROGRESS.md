@@ -78,6 +78,7 @@ bugs, verification, commits, or the next action changes.
 | 3E | Observed token telemetry | Complete | local checkpoint | `telemetry.py`; immutable cache derivation and fail-open ledger reads preserved |
 | 3F-1 | Chunk-packing primitives | Complete | `5e3477e` | `chunking.py`; density sizing, Python boundary preference, and hard size limits preserved |
 | 3G-1 | Map-reduce planning helpers | Complete | `49fd8e9` | `map_reduce.py`; index-safe prompts and ordered budget grouping preserve orchestration behavior |
+| 3G-2 | Map-reduce input helpers | Complete | `9fe1232` | `map_reduce.py`; file boundaries, coverage labels, and model-scaled map budgets extracted |
 | 3 | Transport, models, and map/reduce | In progress | — | 3A + 3C-1 complete; model profiles/routing, telemetry, streaming, chunking, and orchestration remain |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
