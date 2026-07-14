@@ -62,10 +62,10 @@ bugs, verification, commits, or the next action changes.
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
 | 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
 | 2D2B | Usage summary records/report | Complete | pending push | Reader extracted; Codex-audited |
-| 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | pending push | Extracted to `usage_pricing.py`; audit pending |
-| 2D3b | Cost + savings notes (`usage_cost`, `reference_cost`, `savings_note*`) | Pending | — | needs assumed-price + ref-resolution wiring |
-| 2D3c | Spend gate (`_gate_amount`, `_config_norm_spend`) | Pending | — | — |
-| 2D4 | Fleet reservations and concurrency | Pending | — | — |
+| 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | `34b5958`+`ed4f314` | Extracted to `usage_pricing.py`; Codex-audited; CI green |
+| 2D3b | Cost + savings notes (`usage_cost`, `reference_cost`, `savings_note*`) | Pending | — | Survives; needs assumed-price + ref-resolution wiring |
+| 2D3c | Spend gate (`_gate_amount`, `_config_norm_spend`) | REMOVED | `5b08854` | Feature DELETED per founder 2026-07-14 — nothing to extract |
+| 2D4 | Fleet reservations | REMOVED | `5b08854` | Deleted with the spend cap; concurrency (`_resolve_parallel`) is independent and survives |
 | 3 | Transport, models, and map/reduce | Pending | — | — |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |

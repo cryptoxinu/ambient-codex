@@ -11,13 +11,13 @@ Commands:
                        cat doc.txt | ambient-codex ask "summarize" -)
   audit     [paths…]   Second-opinion code audit (files as args, diff via
                        stdin, or --repo [DIR] for a whole repository —
-                       git-aware walk, upfront file/cost plan)
+                       git-aware walk, upfront file plan)
   map       "<p>" [f…] Bulk lane: run ONE prompt independently over MANY items
                        (files, or stdin lines / --jsonl objects); one result
-                       streamed per item, one up-front batch cost gate,
-                       cache-resumable (re-runs re-bill only missing items)
-  chat                 Interactive REPL — streams each reply, per-turn cost/
-                       savings receipt; /model /clear /help /exit
+                       streamed per item, cache-resumable (re-runs re-bill
+                       only missing items)
+  chat                 Interactive REPL — streams each reply, per-turn token
+                       receipt (opt-in savings); /model /clear /help /exit
   code      [task]     Single-file code generation on the code model
   build     [task]     Plan + generate a SET of files (manifest-first; writes
                        only with --apply, inside --dir; never executes)
@@ -4097,7 +4097,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
                    synth_system, reduce_budget, reducer=None, code_map="",
                    gate=None, cancel_event=None, reduce_model=None,
                    catalog=None, session=None):
-    """Fan chunk calls out in parallel, then reduce with BUDGET-AWARE synthesis.
+    """Fan chunk calls out in parallel, then reduce the per-chunk results.
     Returns (final_text, partial, reason). Never discards paid-for work: failed
     or truncated chunks are counted as coverage gaps and surfaced; a synthesis
     failure falls back to the raw per-chunk reports rather than exiting.
@@ -4149,7 +4149,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
                 spec.response_format, reduce_profile))
     print(
         f"ambient: input {total:,} chars → {len(chunks)} chunks → parallel calls "
-        f"(max {width} at once) + budget-aware synthesis "
+        f"(max {width} at once) + {'deterministic merge' if reducer else 'synthesis'} "
         f"(~{total // 3:,} input tokens)"
         + (f" · reduce on {synth_model}" if synth_model != model else ""),
         file=sys.stderr,
@@ -5220,8 +5220,9 @@ def _best_of_chat(api_key, api_url, model, messages, args, k, catalog, conf,
                   kind, session=None):
     """7a for ask/code: draw K INDEPENDENT single-shot samples of `messages`
     (shared gate + cancel_event fan-out, per-sample salted cache so re-runs
-    resume), then emit the K candidates plus a deterministic selection. ONE
-    up-front cost gate covers every cache-missing sample BEFORE any call."""
+    resume), then emit the K candidates plus a deterministic selection. The
+    salted cache is resolved BEFORE any call, so only cache-missing samples
+    are drawn."""
     session = _session_or(session, api_key, api_url, conf)
     api_key, api_url = session.api_key, session.api_url
     spec = RequestSpec.from_args(args)
@@ -5472,9 +5473,9 @@ def _answers_agreement(texts):
 def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
                    session=None):
     """7b: run the SAME ask on several EXPLICITLY-named models (--consensus —
-    the set is the user's choice, SACRED) concurrently behind ONE summed
-    up-front cost gate, then print every model's answer plus an agreement/
-    divergence note. Fail-fast semantics mirror audit --consensus: key/funds/
+    the set is the user's choice, SACRED) concurrently, then print every
+    model's answer plus an agreement/divergence note. Fail-fast semantics
+    mirror audit --consensus: key/funds/
     network abort the whole set; any other per-model failure is reported and
     makes the result PARTIAL, never silently dropped."""
     session = _session_or(session, api_key, api_url, conf)
@@ -5633,9 +5634,9 @@ def _ask_consensus(args, api_key, api_url, conf, catalog, question, doc,
 # `ambient map` — the bulk per-item inference lane. ONE prompt
 # applied INDEPENDENTLY to MANY items: each file/stdin-line is its own
 # complete() call (NOT map-reduce — no synthesis pass), streamed out as it
-# finishes, resumable via the content-addressed cache, all behind ONE
-# up-front batch cost gate. map only READS items and PRINTS results — it
-# never writes files and never executes model output.
+# finishes, resumable via the content-addressed cache. map only READS
+# items and PRINTS results — it never writes files and never executes
+# model output.
 
 MAP_OVERSIZE_MSG = ("input too large for map — use ambient-codex audit for large "
                     "files (map is one single-shot call per item)")
@@ -7410,9 +7411,9 @@ def _parse_consensus_models(args, catalog, api_key):
 def _consensus_estimate(catalog, models, labeled, total,
                         explicit_max_tokens=None, fb_args=None, fb_conf=None):
     """(expected_sum, bound_sum, parts, per_model_chunks, assumed_any) — the
-    ONE consensus pricing, shared by the --repo upfront plan and the
-    consensus cost gate so the printed plan and the gated amount agree BY
-    CONSTRUCTION. Each model is priced on ITS OWN chunking — the
+    ONE consensus pricing that backs the --repo upfront plan, computed once
+    so the printed plan is accurate BY CONSTRUCTION. Each model is priced on
+    ITS OWN chunking — the
     old models[0]-priced single-chunk-count estimate was ~30x off on mixed
     pairs (a small-window second model runs many more calls
     than the default model's chunking suggests) — and as MAP-ONLY work:
@@ -7481,8 +7482,8 @@ def _best_of_audit_misses(catalog, model, labeled, sys_prompt, args, k,
                           explicit_max_tokens, original_max_tokens):
     """[(miss_calls, miss_input_chars, sample_max_tokens, miss_call_chars)]
     per best-of sample — the salted cache entries the live run will NOT
-    find, so the cost gate can price ONLY what will actually be billed
-    (the cache must be resolved BEFORE the gate, exactly like
+    find — the cache is resolved BEFORE the run so only these cache-missing
+    calls are billed (exactly like
     run_map_reduce's own resume lane). Each sample's spec/keys are built
     through the SAME helpers run_one_audit uses (_audit_sample_prep/
     _audit_single_key/_map_note), so a predicted hit here is a real hit
@@ -11291,7 +11292,7 @@ def _add_best_of_flag(parser):
         "--best-of", type=int, default=None, metavar="K", dest="best_of",
         help=f"draw K independent samples (2-{BEST_OF_MAX}) at temperature>0 "
              "and pick/corroborate the best — quality from cheap samples "
-             "(one up-front cost gate for all K)",
+             "(cache-resumable across re-runs)",
     )
 
 
@@ -11596,8 +11597,7 @@ def _configure_ask(sub):
     p.add_argument(
         "--consensus", metavar="M1,M2",
         help="ask the SAME question on several explicitly-named models and "
-             "report each answer plus an agreement/divergence note "
-             "(one summed cost gate up front)",
+             "report each answer plus an agreement/divergence note",
     )
     _add_best_of_flag(p)
     add_common_flags(p)
@@ -11649,7 +11649,7 @@ def _configure_audit(sub):
     )
     p.add_argument(
         "--dry-run", action="store_true",
-        help="show the plan (model, budget, chunks, cost ceiling) and exit — no call",
+        help="show the plan (model, chunks) and exit — no call",
     )
     p.add_argument(
         "--staged", action="store_true",
@@ -11699,8 +11699,8 @@ def _configure_map(sub):
 Each item is ONE single-shot call (the prompt is the system instruction,
 the item is the user message). Output streams per item as it completes —
 under --json as JSONL (one envelope per line, always carrying the item id).
-One batch cost gate up front; re-runs serve finished items from the cache
-and re-bill only the missing ones.""")
+Re-runs serve finished items from the cache and re-bill only the missing
+ones.""")
     p.add_argument(
         "prompt",
         help="the instruction applied INDEPENDENTLY to each item")
