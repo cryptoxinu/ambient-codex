@@ -233,6 +233,34 @@ class ProseRecoveryTests(unittest.TestCase):
         assert obj is not None and len(obj["findings"]) == 1
         assert obj["findings"][0]["file"] == "a.py"
 
+    def test_numbered_markdown_heading_with_labeled_defect_recovers(self):
+        # Live GLM 5.2 output uses a Markdown heading that ends at file:line;
+        # its defect text follows in a bold labeled block rather than after a
+        # second dash on the heading line.
+        txt = (
+            "## Audit Findings\n\n"
+            "### 1. CRITICAL (confidence: HIGH) — bug.py:6\n\n"
+            "**Defect:** `always_crashes()` evaluates `1 / 0`, so every call fails.\n\n"
+            "**Scenario:** Calling it raises `ZeroDivisionError`.\n\n"
+            "**Fix:** Replace the placeholder with intended logic.\n\n"
+            "---\n\n"
+            "### 2. MEDIUM (confidence: HIGH) — bug.py:2\n\n"
+            "**Defect:** `divide(a, b)` does not guard a zero divisor.\n\n"
+            "**Scenario:** `divide(10, 0)` crashes.\n\n"
+            "**Fix:** Validate the divisor.\n\n"
+            "## Verdict\n\n"
+            "**FIX FIRST** — repair the guaranteed crash first.\n"
+        )
+        obj = amb.parse_prose_findings(txt)
+        assert obj is not None and len(obj["findings"]) == 2
+        first = obj["findings"][0]
+        assert first["severity"] == "CRITICAL"
+        assert first["file"] == "bug.py" and first["line"] == 6
+        assert "always_crashes" in first["title"]
+        assert "always_crashes" in first["defect"]
+        assert "ZeroDivisionError" in first["scenario"]
+        assert obj["verdict"] == "FIX FIRST"
+
     def test_labeled_heading_finding_does_not_fake_clean(self):
         # Codex round 7: '### Finding 1: HIGH …' (severity not first) must not fake
         # a clean SHIP — it falls to the safe raw envelope.

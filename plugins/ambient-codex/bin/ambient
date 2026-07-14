@@ -5539,8 +5539,11 @@ _PROSE_FINDING_RE = re.compile(
     # ':7', ':L7', '#7', '#L7', ' L7', ' line 7', ' line number 7'
     r"(?:[:#][ \t]*L?[ \t]*|[ \t]+L|[ \t]+lines?[ \t]+(?:number[ \t]+|no\.?[ \t]+|#)?)"
     r"(\d+)(?![-\d])"  # 3 file 4 line (single line, not a '12-88' range)
-    r"\s*[—–\-]\s*"                                   # sep -> title
-    r"(.{1,2000}?)\s*$")                              # 5 title (rest of line)
+    # Most models put the short defect after a second dash on the heading, but
+    # some emit a Markdown heading that ends at file:line and provide a bold
+    # `Defect:` block beneath it.  Keep that title segment optional; the parser
+    # below promotes the labeled defect when it is absent.
+    r"(?:\s*[—–\-]\s*(.{1,2000}?))?\s*$")            # 5 optional title
 _PROSE_VERDICT_RE = re.compile(
     r"(?im)^" + _PROSE_LEAD + r"verdict\b\s*[:\-—]?\s*\*{0,4}\s*"
     r"(SHIP|FIX FIRST|NEEDS WORK)\b")
@@ -5758,7 +5761,7 @@ def _extract_labeled(body, label):
     """The text of a `Label: …` block up to the next blank line, next finding
     header, or end — whitespace collapsed, markdown stripped. '' when absent."""
     m = re.search(
-        r"(?im)^" + _PROSE_LEAD + label + r"\b\s*[:\-—]\s*(.+?)"
+        r"(?im)^" + _PROSE_LEAD + label + r"\b\*{0,4}\s*[:\-—]\s*(.+?)"
         r"(?=\n[\ \t]*\n|\n" + _PROSE_LEAD + r"(?:CRITICAL|HIGH|MEDIUM|LOW)\b"
         r"|\n" + _PROSE_LEAD + r"verdict\b|\Z)",
         body, re.S)
@@ -5786,7 +5789,15 @@ def parse_prose_findings(text):
         sev, conf, fname, line, title = m.groups()
         body = text[m.end():(matches[i + 1].start() if i + 1 < len(matches)
                              else len(text))]
-        title = title.strip().strip("*").strip().rstrip(".").strip()
+        title = (title or "").strip().strip("*").strip().rstrip(".").strip()
+        defect = _extract_labeled(body, "defect")
+        if not title:
+            title = defect
+        if not title:
+            # A heading with no title and no defect is not a recoverable
+            # finding. Let the existing safe raw fallback preserve the model
+            # output rather than inventing an empty structured defect.
+            continue
         if _PROSE_RESOLVED_TITLE_RE.match(title):
             continue  # 'HIGH — auth.py:88 — RESOLVED: …' is not a live defect
         findings.append({
@@ -5797,7 +5808,7 @@ def parse_prose_findings(text):
             "file": fname,
             "line": int(line),
             "title": title,
-            "defect": title,
+            "defect": defect or title,
             "scenario": _extract_labeled(body, "scenario"),
             "fix": _extract_labeled(body, "fix"),
         })
