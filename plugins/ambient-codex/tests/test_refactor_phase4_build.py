@@ -61,3 +61,23 @@ class BuildWorkflowTests(unittest.TestCase):
                 base, task_sha="task", root="/build", max_plan=1,
                 max_file_bytes=10,
                 safe_relpath=lambda path, root: (_ for _ in ()).throw(ValueError("unsafe")))
+
+    def test_plan_validation_caps_paths_and_does_not_mutate_model_payload(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        proposed = [
+            {"path": "safe.py", "purpose": "keep"},
+            {"path": "../unsafe.py", "purpose": "reject"},
+            "not-an-object",
+            {"path": "later.py"},
+        ]
+        before = __import__("copy").deepcopy(proposed)
+
+        plan, rejected = core.validate_plan_items(
+            proposed, max_files=3, root="/build",
+            safe_relpath=lambda path, root: (
+                (_ for _ in ()).throw(ValueError("escape"))
+                if path.startswith("../") else path))
+
+        self.assertEqual(proposed, before)
+        self.assertEqual(plan, [{"path": "safe.py", "purpose": "keep"}])
+        self.assertEqual(rejected, [{"path": "../unsafe.py", "reason": "unsafe path: escape"}])

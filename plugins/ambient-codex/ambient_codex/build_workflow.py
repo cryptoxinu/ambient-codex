@@ -84,4 +84,21 @@ def normalize_resume_state(state, *, task_sha, root, max_plan, max_file_bytes,
                 if isinstance(failed, list) else [])
 
 
-__all__ = ("state_path", "resume_identity", "normalize_resume_state")
+def validate_plan_items(items, *, max_files, root, safe_relpath):
+    """Copy, cap, and firewall a model-proposed build manifest."""
+    plan, rejected = [], []
+    for item in items[:max_files]:
+        if not isinstance(item, dict) or not item.get("path"):
+            continue
+        candidate = dict(item)
+        raw_path = str(candidate["path"])
+        try:
+            candidate["path"] = safe_relpath(raw_path, root)
+            plan.append(candidate)
+        except ValueError as error:
+            rejected.append({"path": raw_path, "reason": f"unsafe path: {error}"})
+    return plan, rejected
+
+
+__all__ = ("state_path", "resume_identity", "normalize_resume_state",
+           "validate_plan_items")

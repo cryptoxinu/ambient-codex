@@ -8305,15 +8305,9 @@ def cmd_build(args, api_key, api_url, conf):
             if _json_mode(args):
                 emit_json_error("build", "model", pmsg, api_key)
             sys.exit(f"ambient: {pmsg}")
-        plan, bad = [], []
-        for item in obj["plan"][:args.max_files]:
-            if not isinstance(item, dict) or not item.get("path"):
-                continue
-            try:
-                item["path"] = safe_relpath(str(item["path"]), root)
-                plan.append(item)
-            except ValueError as why:
-                bad.append({"path": str(item.get("path")), "reason": f"unsafe path: {why}"})
+        plan, bad = _build_workflow.validate_plan_items(
+            obj["plan"], max_files=args.max_files, root=root,
+            safe_relpath=safe_relpath)
         if len(obj["plan"]) > args.max_files:
             print(f"ambient: plan capped at {args.max_files} files "
                   f"(model proposed {len(obj['plan'])}; raise with "
