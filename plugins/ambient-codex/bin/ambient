@@ -170,6 +170,7 @@ from ambient_codex.records import (  # noqa: E402
 )
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
+from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
@@ -6658,25 +6659,21 @@ def _audit_sample_prep(model, catalog, labeled, sys_prompt, args):
     the final system prompt, and the sizing numbers. Used by run_one_audit
     AND the best-of miss-plan so precomputed cache keys match the live
     call's BY CONSTRUCTION."""
-    profile = model_profile(catalog, model)
-    single, chunk = profile.single_shot_chars, profile.chunk_chars
-    total = sum(len(t) for _, t in labeled)
-    spec = RequestSpec.from_args(args)
-    rf = adaptive_response_format(model, profile, AUDIT_FINDINGS_SCHEMA)
-    a = dataclasses.replace(
-        spec.with_output_budget(profile, total if total <= single else chunk),
-        response_format=rf)
-    sp = sys_prompt + (AUDIT_JSON_INSTRUCTION
-                       if (rf is None or rf.get("type") == "json_object") else "")
-    return a, sp, single, chunk, total
+    return _audit_core.prepare_sample(
+        model, catalog, labeled, sys_prompt, args,
+        model_profile=model_profile,
+        request_spec=RequestSpec,
+        response_format=adaptive_response_format,
+        findings_schema=AUDIT_FINDINGS_SCHEMA,
+        json_instruction=AUDIT_JSON_INSTRUCTION,
+    )
 
 
 def _audit_single_key(model, sp, labeled, a):
     """Salted content-address for ONE single-shot audit call — shared by
     run_one_audit's cache lane and the best-of miss-plan."""
-    return _cache_key(model, sp, files_block(labeled), a.max_tokens,
-                      a.temperature, a.response_format,
-                      salt=a._cache_salt)
+    return _audit_core.single_shot_key(
+        model, sp, labeled, a, files_block=files_block, cache_key=_cache_key)
 
 
 def run_one_audit(model, catalog, labeled, sys_prompt, args, api_key, api_url,
