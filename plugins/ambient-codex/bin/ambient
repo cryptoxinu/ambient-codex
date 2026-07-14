@@ -176,6 +176,7 @@ from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
+from ambient_codex import model_profiles as _model_profiles  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
@@ -2236,6 +2237,20 @@ def _model_budget_constants():
     }
 
 
+def _model_profile_constants():
+    """Return the model-profile inputs without coupling the pure module to CLI state."""
+    return {
+        **_model_budget_constants(),
+        "FALLBACK_CONTEXT": FALLBACK_CONTEXT,
+        "FALLBACK_MAX_OUTPUT": FALLBACK_MAX_OUTPUT,
+        "MAX_AUTO_BUDGET_TOKENS": MAX_AUTO_BUDGET_TOKENS,
+        "MIN_OUTPUT_TOKENS": MIN_OUTPUT_TOKENS,
+        "NONREASONING_OUTPUT_BUDGET": NONREASONING_OUTPUT_BUDGET,
+        "NONREASONING_CONTEXT_MARGIN": NONREASONING_CONTEXT_MARGIN,
+        "REASONING_CHUNK_FACTOR": REASONING_CHUNK_FACTOR,
+    }
+
+
 def _reasoning_output_budget(input_chars, cpt=None):
     """Tokens needed to REASON over `input_chars` of dense code AND still emit a
     real answer: reasoning_tokens + a fixed answer reserve, times a safety
@@ -2291,90 +2306,10 @@ def model_profile(catalog, model):
     the model's OBSERVED chars-per-token when the local ledger has real usage
     history (AMBIENT_TELEMETRY=off opts out), else
     the static CHARS_PER_TOKEN — a no-history profile is byte-identical."""
-    cpt = _effective_cpt(model)
-    meta = next((m for m in (catalog or [])
-                 if isinstance(m, dict) and m.get("id") == model), None)
-    if meta is None:
-        ctx, max_out, feats = FALLBACK_CONTEXT, FALLBACK_MAX_OUTPUT, ["reasoning"]
-    else:
-        # Coerce untrusted catalog types — a string "202752" or junk must
-        # degrade to the fallback, never TypeError every command.
-        # Only substitute the fallback when the field is absent/invalid — a
-        # real but small cap (e.g. 1024) is respected, not inflated past the
-        # API limit.
-        ctx = _as_pos_int(meta.get("context_length"), FALLBACK_CONTEXT)
-        max_out = _as_pos_int(meta.get("max_output_length"), FALLBACK_MAX_OUTPUT)
-        raw_feats = meta.get("supported_features")
-        feats = [f for f in raw_feats if isinstance(f, str)] \
-            if isinstance(raw_feats, list) else []
-    ctx = max(ctx, 4000)  # keep the math sane on absurd metadata
-    # The literal catalog signal: only a MISSING entry assumes reasoning; a
-    # present entry without the flag (qwen3-coder/next) is a real non-reasoner.
-    is_reasoning = "reasoning" in feats
-    ceiling = min(max_out, MAX_AUTO_BUDGET_TOKENS)  # real cap AND cost guard
-
-    if is_reasoning:
-        # A1: size single-shot to the model's REAL window, not a flat 32k.
-        single = _reasoning_single_shot_target(ctx, max_out, cpt)
-        out = _reasoning_output_budget(single, cpt)
-        if out > ceiling:
-            # Hard output cap (e.g. gemma-4-31b = 16384) can't hold
-            # reasoning+answer for the target single-shot. INVERT
-            # _reasoning_output_budget INCLUDING OUTPUT_SAFETY so the shrunk
-            # input's derived budget actually fits the cap: solve
-            # out = (reasoning_tok + reserve) * safety = ceiling.
-            out = ceiling
-            reasoning_tok = max(
-                256, ceiling / OUTPUT_SAFETY - ANSWER_TOKENS_RESERVE
-            )
-            single = max(MIN_REASONING_CHUNK,
-                         int(reasoning_tok * cpt / REASONING_EXPANSION))
-        chunk = int(single * REASONING_CHUNK_FACTOR)
-    else:
-        # Non-reasoning: answers directly. Size input off the context window with a
-        # 15% margin, but CLAMP output+input to stay within context even for a
-        # degenerate tiny-context model where max_output ≈ context.
-        out = min(NONREASONING_OUTPUT_BUDGET, max_out, max(MIN_OUTPUT_TOKENS, ctx // 2))
-        input_tokens = int(ctx * NONREASONING_CONTEXT_MARGIN) - out
-        input_tokens = max(1000, min(input_tokens, ctx - out - 1000))
-        single = int(input_tokens * cpt)
-        chunk = int(single * REASONING_CHUNK_FACTOR)
-    # REASONING INVARIANT: after all caps/floors, guarantee
-    # the derived budget actually holds reasoning over `single` + the answer.
-    # A small output cap (e.g. 8000) with the MIN_REASONING_CHUNK floor could
-    # otherwise leave _reasoning_output_budget(single) > out. Shrink until it
-    # fits (or hit a hard floor — a truly tiny-cap model just can't audit well).
-    if is_reasoning:
-        while single > 500 and _reasoning_output_budget(single, cpt) > out:
-            single = int(single * 0.85)
-        chunk = min(chunk, single)
-    # FINAL context-fit clamp: guarantee single-shot input + output fit
-    # the context window with overhead, for ANY model (incl. hypothetical tiny-
-    # context reasoners). Shrink the input if needed; if even a floor input
-    # won't fit, also trim the output budget so a call can still complete.
-    # CONTEXT_OVERHEAD_TOKENS = system prompt + chat framing + a real safety margin
-    # (not a knife's edge), so input+output never lands within a token of context.
-    overhead_tok = CONTEXT_OVERHEAD_TOKENS
-    max_input_tok = ctx - out - overhead_tok
-    if max_input_tok < 1000:
-        # Give input room by trimming output — but NEVER above the model's real
-        # output cap.
-        out = min(max_out, max(256, ctx - 1000 - overhead_tok))
-        max_input_tok = ctx - out - overhead_tok
-    single_tok = -(-single // cpt)  # ceil, conservative
-    if single_tok > max_input_tok:
-        single = max(1000, int(max_input_tok * cpt))
-        single_tok = -(-single // cpt)
-    # The escalation ceiling must also respect remaining context, not just the
-    # model's output cap, so a budget bump can't push input+output past context.
-    ceiling = min(ceiling, int(ctx - single_tok - overhead_tok))
-    ceiling = max(ceiling, out)  # never below the starting budget
-    # A chunk must never exceed the single-shot budget, and never drop below the
-    # floor (keeps map-reduce chunks strictly smaller than single).
-    chunk = max(MIN_REASONING_CHUNK, min(chunk, single))
-    chunk = min(chunk, single)  # floor may have pushed it above single on tiny models
-    return ModelProfile(model, is_reasoning, ctx, max_out,
-                        out, single, chunk, ceiling, list(feats))
+    return _model_profiles.build_model_profile(
+        catalog, model, _effective_cpt, _as_pos_int, ModelProfile,
+        _model_profile_constants(), single_shot_max_chars(),
+    )
 
 
 def _resolve_output_budget(max_tokens, profile, input_chars=None):
