@@ -181,6 +181,7 @@ from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
+from ambient_codex import usage_store as _usage_store  # noqa: E402
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -3177,72 +3178,13 @@ def _cache_put(key, text):
     )
 
 
-_USAGE_LOCK = threading.Lock()  # serialize the read-rewrite trim across chunk workers
-
-
-def _spool_usage_line(line):
-    """A metering line that can't take the ledger lock goes to a
-    per-pid SPOOL file instead of an UNLOCKED append the lock holder's
-    read-trim-write could truncate away. Only this process writes its own
-    spool (no lock needed); it is merged back under the lock on a later
-    successful acquire. Size-capped so a permanently-wedged lock (crashed
-    Windows owner) can't grow it without bound."""
-    spool = f"{USAGE_PATH}.spool.{os.getpid()}"
-    try:
-        if os.path.exists(spool) and os.path.getsize(spool) > USAGE_MAX_BYTES:
-            return  # cap reached — drop rather than grow unbounded
-        fd = os.open(spool, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        with os.fdopen(fd, "a", encoding="utf-8") as fh:
-            fh.write(line)
-    except OSError:
-        pass
-
-
-def _merge_usage_spools():
-    """Fold spooled metering lines back into the main ledger — caller MUST
-    hold the ledger lock. Our own spool is always safe (only we write it,
-    and log_usage is serialized in-process); a foreign spool is merged only
-    when its owner pid is PROVABLY dead — a live/unknowable owner may still
-    be appending to it (its own merge folds it in later)."""
-    d = os.path.dirname(USAGE_PATH)
-    prefix = os.path.basename(USAGE_PATH) + ".spool."
-    try:
-        names = os.listdir(d)
-    except OSError:
-        return
-    for name in names:
-        if not name.startswith(prefix):
-            continue
-        try:
-            pid = int(name[len(prefix):])
-        except ValueError:
-            continue
-        if pid != os.getpid() and _pid_alive(pid) is not False:
-            continue
-        spath = os.path.join(d, name)
-        try:
-            with open(spath, encoding="utf-8") as fh:
-                data = fh.read()
-            if data:
-                fd = os.open(USAGE_PATH,
-                             os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-                with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                    fh.write(data)
-            os.unlink(spath)
-        except OSError:
-            continue
-
-
 def log_usage(model, usage, input_chars=None):
-    """Best-effort local metering (Ambient has no balance endpoint). Caps the
-    file so it can't grow without bound over a long-lived install. The trim is
-    a read-modify-rewrite, so it must be exclusive across BOTH in-process
-    chunk workers (_USAGE_LOCK) and concurrent ambient PROCESSES (the
-    cross-platform _fs_lock) — two interleaved trims tear the
-    ledger, the only spend signal we have. If the file lock can't be
-    taken, the line goes to a per-pid spool merged back under the lock later
- — never an unlocked append the lock holder's trim could
-    truncate away. Losing a trim costs nothing, losing metering does."""
+    """Best-effort local metering (Ambient has no balance endpoint). Builds the
+    enriched ledger record here — token counts, observed char telemetry, the
+    priced cost, and the frontier reference in force at call time — then
+    delegates bounded, lock-serialized persistence to
+    ``ambient_codex.usage_store``. Losing a trim costs nothing; losing metering
+    does, so the store spools rather than dropping a line under lock contention."""
     try:
         record = {
             "ts": int(time.time()),
@@ -3279,28 +3221,16 @@ def log_usage(model, usage, input_chars=None):
         except Exception:  # enrichment must never cost us the base record
             pass
         line = json.dumps(record) + "\n"
-        conf_dir = os.path.dirname(USAGE_PATH)
-        _private_dir(conf_dir)
-        with _USAGE_LOCK, \
-                _fs_lock(os.path.join(conf_dir, ".usage.lock"),
-                         _LEDGER_LOCK_WAIT_S) as locked:
-            if not locked:
-                _spool_usage_line(line)
-                return
-            _merge_usage_spools()  # before the trim, so merged lines trim too
-            try:
-                if os.stat(USAGE_PATH).st_mode & 0o077:
-                    os.chmod(USAGE_PATH, 0o600)  # heal a pre-hardening ledger
-                if os.path.getsize(USAGE_PATH) > USAGE_MAX_BYTES:
-                    with open(USAGE_PATH, encoding="utf-8") as fh:
-                        kept = fh.readlines()[-USAGE_TRIM_KEEP_LINES:]
-                    with open(USAGE_PATH, "w", encoding="utf-8") as fh:
-                        fh.writelines(kept)
-            except OSError:
-                pass
-            fd = os.open(USAGE_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-            with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                fh.write(line)
+        _usage_store.append_line(
+            line,
+            usage_path=USAGE_PATH,
+            max_bytes=USAGE_MAX_BYTES,
+            trim_keep_lines=USAGE_TRIM_KEEP_LINES,
+            lock_wait_s=_LEDGER_LOCK_WAIT_S,
+            private_dir=_private_dir,
+            fs_lock=_fs_lock,
+            pid_alive=_pid_alive,
+        )
     except OSError:
         pass
 
