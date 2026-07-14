@@ -177,6 +177,7 @@ from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
+from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
@@ -2341,80 +2342,16 @@ def apply_output_budget(args, profile, input_chars=None):
 
 
 def error_message(body):
-    err = body.get("error") if isinstance(body, dict) else None
-    if isinstance(err, dict):
-        msg = err.get("message")
-        # A non-string "message" (None / list / number) must not propagate — a
-        # caller does msg.lower()/redact(msg), which would crash on a non-str.
-        return msg if isinstance(msg, str) else json.dumps(err)[:500]
-    return json.dumps(body)[:500]
-
-
-FUNDS_WORDS = (
-    "credit", "account balance", "low balance", "insufficient funds",
-    "insufficient balance", "out of funds", "quota", "billing", "payment",
-)
+    return _response_errors.error_message(body)
 
 
 def classify_error(status, body, api_key):
     """Map an API failure to (category, user-facing diagnosis) so users can tell
     a dead key from an empty account from a busy model from a real outage.
     Categories: key | funds | model | rate | service | unknown."""
-    msg = redact(error_message(body), api_key)
-    lower = msg.lower()
-    # Order matters: 5xx first (a 503 mentioning "billing service" is an outage,
-    # not a funds problem); explicit funds wording next (a 403 "insufficient
-    # credits" is a funds problem, not a bad key); auth after that.
-    if status >= 500:
-        return "service", (
-            f"Ambient service problem (HTTP {status}: {msg}). Nothing is wrong with "
-            "your key or account — retry shortly."
-        )
-    if status == 402 or any(w in lower for w in FUNDS_WORDS):
-        return "funds", (
-            f"Your Ambient account looks out of funds or over quota (HTTP {status}: "
-            f"{msg}). Top up your account — the service itself is fine."
-        )
-    if status in (401, 403) or "authentication_error" in lower:
-        return "key", (
-            f"Ambient rejected your API key (HTTP {status}). The key may be revoked, "
-            "expired, or mistyped — this is NOT an Ambient outage. "
-            f"Fix: {LAUNCHER_NAME} setup --force"
-        )
-    if status == 429 and "no workers" in lower:
-        return "model", (
-            "That model isn't serving right now — Ambient spins models up and "
-            "down with demand. Your key and account are fine — pick a model "
-            "that's serving (ambient-codex models) or retry shortly."
-        )
-    if status == 429:
-        return "rate", (f"The network asked us to slow down ({msg}) — "
-                        "wait a moment and retry.")
-    if status == 400:
-        ctx_words = ("context", "context_length", "maximum context", "too long",
-                     "reduce the length")
-        budget_words = ("maximum tokens", "max_tokens", "token limit")
-        if any(w in lower for w in ctx_words):
-            return "context", (
-                f"input exceeds the model's context window (HTTP {status}: {msg})."
-            )
-        if any(w in lower for w in budget_words):
-            # A too-large max_tokens is NOT a context overflow: splitting the
-            # input resends the same doomed budget and every chunk fails the
-            # same way. Handled by halving the budget.
-            return "budget", (
-                f"the requested output budget exceeds this model's limit "
-                f"(HTTP {status}: {msg})."
-            )
-        if "unknown model" in lower or "not a valid model" in lower \
-                or "model not found" in lower:
-            # A mistyped -m is a model problem, not an opaque 'unknown' — say so
-            # and point at the catalog so the fix is one command away.
-            return "model", (
-                f"'{msg}'. That model id isn't in the catalog — check the "
-                "spelling or run `ambient-codex models` to see what's available."
-            )
-    return "unknown", f"HTTP {status}: {msg}"
+    return _response_errors.classify_error(
+        status, body, api_key, redact, LAUNCHER_NAME,
+    )
 
 
 def auth_probe(api_url, api_key, models):
