@@ -10,7 +10,7 @@ class AuditPreparationTests(unittest.TestCase):
         self.assertEqual(core.__all__, (
             "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
             "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
-            "select_cross_file_inputs",
+            "select_cross_file_inputs", "merge_cross_file_findings",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -90,3 +90,13 @@ class AuditPreparationTests(unittest.TestCase):
             ["a.py", "b.py"], {"a.py": "a" * 700, "b.py": "b" * 700}, 1_000)
         self.assertEqual(picked, [("a.py", "a" * 700)])
         self.assertEqual(used, 700)
+
+    def test_cross_file_merge_preserves_incomplete_coverage(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        merged = core.merge_cross_file_findings(
+            {"findings": [{"severity": "LOW"}], "_unparsed_chunks": 1},
+            {"findings": [{"severity": "HIGH"}]}, False,
+            dedupe=lambda values: values, verdict=lambda *_: "SHIP",
+            as_pos_int=lambda value, default: int(value or default))
+        self.assertEqual(merged["verdict"], "NEEDS WORK")
+        self.assertEqual(merged["_unparsed_chunks"], 1)

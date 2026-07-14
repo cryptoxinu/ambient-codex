@@ -6167,25 +6167,18 @@ def run_cross_file_pass(final, labeled, model, profile, args, api_key,
               "pass-1 findings stand unchanged", file=sys.stderr)
         return final
     obj1 = extract_json(final) or {}
-    merged = dedupe_findings(list(obj1.get("findings") or [])
-                             + list(obj2.get("findings") or []))
     # _as_pos_int coerces UNTRUSTED counts (obj2 is raw model JSON; a
     # non-numeric _repaired_chunks would crash int()) to a safe non-negative int.
-    unparsed = _as_pos_int(obj1.get("_unparsed_chunks"), 0)
-    repaired = _as_pos_int(obj1.get("_repaired_chunks"), 0)
     # M38: the second pass itself can be truncated/JSON-repaired — fold its
     # state in, else the merged verdict over-states completeness (a truncated
     # confirmation pass would read as clean).
-    if (obj2.get("_repaired") or obj2.get("_repaired_chunks")
-            or (isinstance(body2, dict)
-                and (body2.get("finish_reason") == "length"
-                     or body2.get("salvaged_partial")))):
-        repaired += _as_pos_int(obj2.get("_repaired_chunks"), 1)
-    verdict = ("NEEDS WORK" if (unparsed or repaired)
-               else _verdict_from(merged, False))
-    return json.dumps({"findings": merged, "verdict": verdict,
-                       "_unparsed_chunks": unparsed,
-                       "_repaired_chunks": repaired})
+    incomplete = (obj2.get("_repaired") or obj2.get("_repaired_chunks")
+                  or (isinstance(body2, dict)
+                      and (body2.get("finish_reason") == "length"
+                           or body2.get("salvaged_partial"))))
+    return json.dumps(_audit_core.merge_cross_file_findings(
+        obj1, obj2, incomplete, dedupe=dedupe_findings,
+        verdict=_verdict_from, as_pos_int=_as_pos_int))
 
 
 def git_diff_inputs(staged, ref):

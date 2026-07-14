@@ -229,6 +229,19 @@ def select_cross_file_inputs(suspects, by_path, cap):
     return picked, used
 
 
+def merge_cross_file_findings(first, second, second_incomplete, *, dedupe,
+                              verdict, as_pos_int):
+    """Merge confirmation findings without laundering incomplete coverage."""
+    merged = dedupe(list(first.get("findings") or []) + list(second.get("findings") or []))
+    unparsed = as_pos_int(first.get("_unparsed_chunks"), 0)
+    repaired = as_pos_int(first.get("_repaired_chunks"), 0)
+    if second_incomplete:
+        repaired += as_pos_int(second.get("_repaired_chunks"), 1)
+    return {"findings": merged,
+            "verdict": "NEEDS WORK" if (unparsed or repaired) else verdict(merged, False),
+            "_unparsed_chunks": unparsed, "_repaired_chunks": repaired}
+
+
 __all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
            "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
-           "select_cross_file_inputs")
+           "select_cross_file_inputs", "merge_cross_file_findings")
