@@ -1,5 +1,26 @@
 """Pure planning helpers for the map-reduce orchestration facade."""
 
+import re
+
+
+def files_block(chunks):
+    """Render labeled input files with explicit, model-visible boundaries."""
+    return "\n\n".join(f"===== FILE: {path} =====\n{text}"
+                       for path, text in chunks)
+
+
+def chunk_ranges(chunk_text):
+    """Return packed-block coverage labels from a chunk body."""
+    return [match.group(1).strip()
+            for match in re.finditer(r"===== (.+?) =====", chunk_text or "")]
+
+
+def code_map_budget(single_shot_chars, default_budget, maximum_budget):
+    """Scale a repository-map budget to the model's single-shot capacity."""
+    if not single_shot_chars or single_shot_chars <= 0:
+        return default_budget
+    return max(512, min(single_shot_chars // 10, maximum_budget))
+
 
 def map_note(map_system, code_map, chunk_count, index_marker):
     """Build the shared per-chunk system prompt before index substitution."""
@@ -31,4 +52,5 @@ def group_for_budget(texts, budget):
     return groups
 
 
-__all__ = ("map_note", "group_for_budget")
+__all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
+           "group_for_budget")

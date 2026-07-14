@@ -3233,17 +3233,14 @@ def read_files(paths):
 
 
 def files_block(chunks):
-    return "\n\n".join(f"===== FILE: {p} =====\n{c}" for p, c in chunks)
+    return _map_reduce_core.files_block(chunks)
 
 
 def _chunk_ranges(chunk_text):
     """Extract 'path lines a-b' coverage labels from a packed chunk's block
     headers, so a failed chunk names exactly which file:lines went unreviewed
     (A8 coverage manifest)."""
-    out = []
-    for m in re.finditer(r"===== (.+?) =====", chunk_text or ""):
-        out.append(m.group(1).strip())
-    return out
+    return _map_reduce_core.chunk_ranges(chunk_text)
 
 
 def code_map_budget(single_shot_chars=None):
@@ -3251,9 +3248,8 @@ def code_map_budget(single_shot_chars=None):
     richer cross-file map than the old flat 4000 chars, capped so the map can
     never crowd real code out of a chunk. Safe default when the window is
     unknown (offline catalog / direct callers)."""
-    if not single_shot_chars or single_shot_chars <= 0:
-        return CODE_MAP_BUDGET_DEFAULT
-    return max(512, min(single_shot_chars // 10, CODE_MAP_BUDGET_MAX))
+    return _map_reduce_core.code_map_budget(
+        single_shot_chars, CODE_MAP_BUDGET_DEFAULT, CODE_MAP_BUDGET_MAX)
 
 
 def _sigs_python(raw):
