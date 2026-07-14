@@ -171,6 +171,7 @@ from ambient_codex.records import (  # noqa: E402
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
+from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
@@ -7642,16 +7643,7 @@ def _trim_chat_history(history, budget_chars):
     OLDEST turns first (user+assistant pairs, then singles). The most recent
     exchange always survives — a REPL must never truncate what the user just
     said in favor of stale turns."""
-    kept = list(history)
-
-    def size(msgs):
-        return sum(len(m.get("content") or "") for m in msgs)
-
-    while len(kept) > 2 and size(kept) > budget_chars:
-        kept = kept[2:]
-    while len(kept) > 1 and size(kept) > budget_chars:
-        kept = kept[1:]
-    return kept
+    return _chat_workflow.trim_history(history, budget_chars)
 
 
 def cmd_chat(args, api_key, api_url, conf):
