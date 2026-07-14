@@ -5641,23 +5641,12 @@ def findings_reducer(texts):
     whose output won't parse is a COVERAGE GAP, not a clean pass:
     it forces a non-SHIP verdict rather than silently dropping to
     {"findings":[], "SHIP"}."""
-    collected = []
-    parse_fail = 0
-    repaired = 0
-    for t in texts:
-        obj = parse_audit_object(t)
-        if obj and isinstance(obj.get("findings"), list):
-            collected.extend(obj["findings"])
-            if obj.get("_repaired"):
-                repaired += 1  # tail findings may be missing from this chunk
-        else:
-            parse_fail += 1
-    merged = dedupe_findings(collected)
-    verdict = ("NEEDS WORK" if (parse_fail or repaired)
-               else _verdict_from(merged, False))
-    return json.dumps({"findings": merged, "verdict": verdict,
-                       "_unparsed_chunks": parse_fail,
-                       "_repaired_chunks": repaired})
+    return json.dumps(_audit_core.reduce_findings(
+        texts,
+        parse=parse_audit_object,
+        dedupe=dedupe_findings,
+        verdict=_verdict_from,
+    ))
 
 
 # The prose format the audit system prompt dictates (:218) — one header line

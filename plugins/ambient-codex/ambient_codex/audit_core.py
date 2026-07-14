@@ -32,4 +32,27 @@ def single_shot_key(model, system_prompt, labeled, spec, *, files_block,
     )
 
 
-__all__ = ("prepare_sample", "single_shot_key")
+def reduce_findings(texts, *, parse, dedupe, verdict):
+    """Reduce parsed chunk findings without masking incomplete coverage."""
+    collected = []
+    unparsed = 0
+    repaired = 0
+    for text in texts:
+        parsed = parse(text)
+        if parsed and isinstance(parsed.get("findings"), list):
+            collected.extend(parsed["findings"])
+            repaired += 1 if parsed.get("_repaired") else 0
+        else:
+            unparsed += 1
+    findings = dedupe(collected)
+    final_verdict = ("NEEDS WORK" if (unparsed or repaired)
+                     else verdict(findings, False))
+    return {
+        "findings": findings,
+        "verdict": final_verdict,
+        "_unparsed_chunks": unparsed,
+        "_repaired_chunks": repaired,
+    }
+
+
+__all__ = ("prepare_sample", "single_shot_key", "reduce_findings")
