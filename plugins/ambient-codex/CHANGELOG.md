@@ -383,7 +383,7 @@ is checked not to inherit `takeover` from the locked-out neighbour.
 ### Added
 
 - Standalone Codex plugin manifest at `.codex-plugin/plugin.json`.
-- Codex-native `$ambient` skill instructions and `agents/openai.yaml` metadata.
+- Codex-native `$ambient` skill instructions and `skills/ambient/agents/openai.yaml` metadata.
 - Local stdio MCP server at `mcp/ambient_mcp.py` with bounded tools for status,
   models, doctor, usage, short asks, and small audits.
 - Codex session-start hook using `${PLUGIN_ROOT}`.

@@ -295,7 +295,7 @@ Exit either mode with:
 
 ## Model Rules
 
-Model choice is sacred. A concrete model id is never silently replaced. Fallback
+A concrete model id is never silently replaced. Fallback
 requires `--fallback` or bundled `config set fallback on`, and the CLI prints the
 swap it made.
 
