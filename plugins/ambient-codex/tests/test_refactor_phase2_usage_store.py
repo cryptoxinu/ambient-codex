@@ -342,5 +342,83 @@ class UsageFacadeTests(unittest.TestCase):
             self.assertFalse(hasattr(facade, "_merge_usage_spools"))
 
 
+class UsageHardeningTests(unittest.TestCase):
+    def test_append_line_default_getpid_is_lazy(self):
+        store = importlib.import_module("ambient_codex.usage_store")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "conf" / "usage.jsonl"
+            with mock.patch.object(store.os, "getpid", return_value=767676):
+                store.append_line(
+                    "L\n", usage_path=str(ledger), max_bytes=10,
+                    trim_keep_lines=5, lock_wait_s=1.0, private_dir=private_dir,
+                    fs_lock=denying_lock, pid_alive=lambda pid: False)
+            self.assertTrue(Path(f"{ledger}.spool.767676").exists())
+            self.assertFalse(ledger.exists())
+
+    def test_serialize_lock_wraps_fs_lock_and_denied_lock_never_appends(self):
+        store = importlib.import_module("ambient_codex.usage_store")
+        events = []
+
+        class Recorder:
+            def __enter__(self):
+                events.append("enter:serial")
+                return self
+
+            def __exit__(self, *exc):
+                events.append("exit:serial")
+                return False
+
+        @contextlib.contextmanager
+        def recording_fs_lock(path, wait_s):
+            events.append("enter:fs")
+            try:
+                yield False  # deny the lock -> spool path
+            finally:
+                events.append("exit:fs")
+
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "conf" / "usage.jsonl"
+            with mock.patch.object(store, "_LEDGER_SERIALIZE", Recorder()):
+                store.append_line(
+                    "L\n", usage_path=str(ledger), max_bytes=1_000,
+                    trim_keep_lines=5, lock_wait_s=1.0, private_dir=private_dir,
+                    fs_lock=recording_fs_lock, pid_alive=lambda pid: False,
+                    getpid=lambda: 4242)
+            self.assertEqual(
+                events,
+                ["enter:serial", "enter:fs", "exit:fs", "exit:serial"],
+            )
+            self.assertFalse(ledger.exists())
+            self.assertTrue(Path(f"{ledger}.spool.4242").exists())
+
+    def test_corrupt_utf8_ledger_does_not_raise(self):
+        store = importlib.import_module("ambient_codex.usage_store")
+        with tempfile.TemporaryDirectory() as td:
+            conf = Path(td) / "conf"
+            private_dir(str(conf))
+            ledger = conf / "usage.jsonl"
+            ledger.write_bytes(b"\xff\xfe not-utf8 junk\n" * 20)
+            persist(store, "NEW\n", ledger, max_bytes=10, trim_keep_lines=5)
+            self.assertTrue(ledger.read_bytes().endswith(b"NEW\n"))
+
+    def test_out_of_range_pid_spool_is_skipped_without_probing_liveness(self):
+        store = importlib.import_module("ambient_codex.usage_store")
+        probed = []
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            ledger.write_text("", encoding="utf-8")
+            huge = Path(f"{ledger}.spool.99999999999999999999")
+            huge.write_text("HUGE\n", encoding="utf-8")
+
+            def probe(pid):
+                probed.append(pid)
+                return False
+
+            store.merge_spools(str(ledger), probe, getpid=lambda: 1)
+            self.assertEqual(probed, [])
+            self.assertTrue(huge.exists())
+            self.assertEqual(ledger.read_text(encoding="utf-8"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -60,7 +60,7 @@ bugs, verification, commits, or the next action changes.
 | 2C3B | Repository discovery and classification | Complete | `ae34b98` | All gates green |
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
-| 2D2A | Usage ledger persistence | Scoped | — | Boundary pending commit |
+| 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
 | 2D2B | Usage summary records/report | Pending | — | — |
 | 2D3 | Pricing and spend gates | Pending | — | — |
 | 2D4 | Fleet reservations and concurrency | Pending | — | — |
@@ -1285,9 +1285,13 @@ Production/test files (three; below the five-file ceiling):
    `USAGE_PATH`/limits/wait knobs, `_fs_lock`, `_pid_alive`, `_private_dir`, and
    the patchable `log_usage` facade while delegating persistence explicitly.
 3. New `tests/test_refactor_phase2_usage_store.py` owns import/location,
-   facade-injection, record-byte compatibility, permission, trim, lock-timeout,
-   spool cap/merge/liveness, symlink/nonregular, failure cleanup, thread/process
-   concurrency, and malformed boundary contracts.
+   facade delegation with patchable knobs, record-byte compatibility, late-bound
+   `getpid` parity, permission heal, line-based trim, lock-timeout spooling,
+   spool cap, merge liveness (own/dead/unknown), malformed and out-of-range
+   spool-name skips, missing-dir no-op, best-effort/fail-open behavior,
+   corrupt-UTF-8 tolerance, deterministic in-process lock ordering, and
+   in-process append concurrency. Symlink/nonregular refusal, cross-process
+   concurrency, and fd-cleanup are deferred hardening (see 2D2A verification).
 
 Stable behavior: additive JSONL record format/order, full-precision enrichment,
 estimated/character telemetry markers, 0600 ledger/spools, bounded newest-line
@@ -1309,8 +1313,49 @@ math, spend/fleet decisions, `_fs_lock` implementation, transport, models,
 workflows, integrations, MCP, or parser/dispatch in 2D2A. 2D2B will own bounded
 record reads and report composition only after 2D2A is independently released.
 
+## Phase 2D2A verification
+
+- Extraction `114966e`: `spool_line`/`merge_spools`/`_trim_ledger`/`append_line`
+  moved to `ambient_codex/usage_store.py`; `log_usage` keeps enrichment and
+  delegates via patchable facade knobs. RED-first contracts observed.
+- Parity follow-up `b91d26f`: fixed a Codex-found late-binding regression —
+  `getpid` was an early-bound default argument; now a `None` sentinel resolves
+  `os.getpid` at call time. Dropped the unused injectable `serialize` seam.
+- Codex adversarial audit (frozen tree, independent second pass): runtime parity
+  green, NO material production regression. Fix-now items applied:
+  - `merge_spools` resolves `getpid` per candidate (matches the original's
+    per-iteration `os.getpid()`), closing the call-timing delta.
+  - Fail-open hardening: `append_line`'s boundary swallows any `Exception`
+    (metering must never break a chat turn); `_trim_ledger`/`merge_spools`
+    tolerate a corrupt (invalid-UTF-8) ledger; out-of-range spool pids are
+    skipped before `pid_alive`, closing an `OverflowError` reaching `os.kill`.
+  - Docstrings corrected: no absolute "bounded"/"never raises"/"costs nothing".
+  - New contracts: append_line default-getpid, deterministic lock enter/exit
+    order + denied-lock-no-append, corrupt-UTF-8 no-raise, out-of-range pid skip.
+- Gates: 1330 guarded tests pass; `ruff check .` clean; plugin + skill validators
+  pass; no-Node MCP startup lists 14 tools with 0-byte stderr; CI green on all 18
+  jobs at `b91d26f` (coverage >= 80%); usage-touching subset 157 pass.
+
+### Deferred hardening (PRE-EXISTING; explicitly tracked, not 2D2A regressions)
+
+Codex enumerated durability gaps that predate this refactor and are out of scope
+for a behavior-preserving extraction. Tracked for a dedicated hardening pass:
+- Strict byte budget for spools/ledger + aggregate per-install spool quota
+  (current caps are approximate/line-based).
+- Torn/partial JSONL record framing repair or quarantine on crash/ENOSPC.
+- Bounded/streaming reads under the lock (full-file `read()`/`readlines()` can
+  exhaust memory; a FIFO could block while holding `_LEDGER_SERIALIZE`).
+- Symlink/nonregular refusal (`lstat`/`fstat`/`O_NOFOLLOW`) for ledger + spools.
+- Windows spool reclamation via a process nonce + conservative TTL (unknown
+  liveness currently strands foreign spools off POSIX).
+- Duplicate-replay avoidance when `os.unlink` fails after a spool merge.
+- `fchmod` on the open FD + heal-before-merge; guaranteed FD close on `fdopen`
+  failure; timestamp/sequence-aware recovery ordering.
+
 ## Exact resume point
 
-1. Commit/push this 2D2A scope boundary.
-2. Write usage-store ownership/concurrency/corruption contracts first and
-   observe scoped RED before implementation.
+Phase 2D2A is COMPLETE and CI-green. Next: **Phase 2D2B — usage summary
+records/report** (`observed_cpt` at `bin/ambient:1157` reads the ledger;
+`cmd_usage` at `bin/ambient:11235` composes the report). Extract bounded ledger
+record reads + report composition ONLY; pricing/reference math stays for 2D3.
+Write ownership/parse/report contracts RED-first before implementation.

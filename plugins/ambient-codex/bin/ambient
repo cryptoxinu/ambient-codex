@@ -3182,9 +3182,10 @@ def log_usage(model, usage, input_chars=None):
     """Best-effort local metering (Ambient has no balance endpoint). Builds the
     enriched ledger record here — token counts, observed char telemetry, the
     priced cost, and the frontier reference in force at call time — then
-    delegates bounded, lock-serialized persistence to
-    ``ambient_codex.usage_store``. Losing a trim costs nothing; losing metering
-    does, so the store spools rather than dropping a line under lock contention."""
+    delegates fail-open, lock-serialized persistence to
+    ``ambient_codex.usage_store``. A skipped trim only lets the ledger grow a
+    little; a lost line loses spend signal, so the store spools rather than
+    dropping a line under lock contention."""
     try:
         record = {
             "ts": int(time.time()),
@@ -3231,7 +3232,7 @@ def log_usage(model, usage, input_chars=None):
             fs_lock=_fs_lock,
             pid_alive=_pid_alive,
         )
-    except OSError:
+    except Exception:  # metering is best-effort; never break the caller's turn
         pass
 
 
