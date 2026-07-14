@@ -124,8 +124,9 @@ run wk "$AMB" usage --json
 python3 -c "
 import json; raw=open('$OUT').read()
 d=json.JSONDecoder().raw_decode(raw[raw.index('{'):])[0]
-assert 'models' in d and 'total_est_cost' in d" 2>/dev/null \
-  && pass "usage --json parses (spend metered)" || skip "usage --json" "no usage yet in sandbox"
+forbidden={'cost','price','total_est_cost','reference_price','frontier_cost','saved','saved_pct'}
+assert 'models' in d and not (forbidden & set(d))" 2>/dev/null \
+  && pass "usage --json parses without money fields" || skip "usage --json" "no usage yet in sandbox"
 
 echo "--- setup validation lanes (safe: bogus key only; no store/delete) ---"
 run bash -c "echo not-a-plausible | \"$AMB\" setup --key-stdin"
