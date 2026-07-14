@@ -6125,19 +6125,7 @@ def run_cross_file_pass(final, labeled, model, profile, args, api_key,
     # The confirmation call is single-shot: summary + suspects must FIT the
     # model's window together, even on a tiny-window model.
     summary_cap = min(20_000, max(2_000, profile.single_shot_chars // 3))
-    picked, used = [], 0
-    for p in suspects:
-        text = by_path.get(p)
-        if not text:
-            continue
-        room = cap - used
-        if room <= 500:
-            break
-        seg = text if len(text) <= room else (
-            text[:room] + "\n[ambient: file truncated for the bounded "
-                          "cross-file pass]")
-        picked.append((p, seg))
-        used += len(seg)
+    picked, used = _audit_core.select_cross_file_inputs(suspects, by_path, cap)
     if not picked:
         return final
     summary = final[:summary_cap]

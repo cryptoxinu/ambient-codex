@@ -212,5 +212,23 @@ def parse_audit_object(raw, *, parse_prose, has_unparsed):
     return parse_prose(raw) if isinstance(raw, str) else None
 
 
+def select_cross_file_inputs(suspects, by_path, cap):
+    """Select ordered suspect files without exceeding the confirmation budget."""
+    picked, used = [], 0
+    for path in suspects:
+        text = by_path.get(path)
+        if not text:
+            continue
+        room = cap - used
+        if room <= 500:
+            break
+        segment = text if len(text) <= room else (
+            text[:room] + "\n[ambient: file truncated for the bounded cross-file pass]")
+        picked.append((path, segment))
+        used += len(segment)
+    return picked, used
+
+
 __all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
-           "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object")
+           "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
+           "select_cross_file_inputs")

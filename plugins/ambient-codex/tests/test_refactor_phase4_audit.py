@@ -10,6 +10,7 @@ class AuditPreparationTests(unittest.TestCase):
         self.assertEqual(core.__all__, (
             "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
             "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
+            "select_cross_file_inputs",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -82,3 +83,10 @@ class AuditPreparationTests(unittest.TestCase):
             '{"findings": [{"severity": "LOW"}]}',
             parse_prose=lambda _: None, has_unparsed=lambda _: False),
             {"findings": [{"severity": "LOW"}]})
+
+    def test_cross_file_input_selection_clips_in_order(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        picked, used = core.select_cross_file_inputs(
+            ["a.py", "b.py"], {"a.py": "a" * 700, "b.py": "b" * 700}, 1_000)
+        self.assertEqual(picked, [("a.py", "a" * 700)])
+        self.assertEqual(used, 700)
