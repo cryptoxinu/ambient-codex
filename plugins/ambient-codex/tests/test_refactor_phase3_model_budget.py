@@ -22,7 +22,7 @@ class ModelBudgetTests(unittest.TestCase):
         self.assertEqual(self.core.__all__, (
             "response_format_for", "reasoning_output_budget",
             "context_safe_output_cap", "context_safe_escalation_ceiling",
-            "reasoning_single_shot_target",
+            "reasoning_single_shot_target", "resolve_output_budget",
         ))
 
     def test_response_format_respects_advertised_capabilities(self):
@@ -42,3 +42,13 @@ class ModelBudgetTests(unittest.TestCase):
         self.assertEqual(
             self.core.context_safe_escalation_ceiling(
                 self.profile, 20_000, 4.0, self.constants), 16_000)
+
+    def test_explicit_budget_is_clamped_to_context_without_mutating_profile(self):
+        messages = []
+        budget, automatic = self.core.resolve_output_budget(
+            99_999, self.profile, 80_000, lambda _model: 4.0,
+            self.constants, messages.append, 2_048,
+        )
+        self.assertFalse(automatic)
+        self.assertLessEqual(budget, self.profile.max_output_length)
+        self.assertEqual(messages, [])

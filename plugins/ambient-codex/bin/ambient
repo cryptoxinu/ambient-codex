@@ -2320,54 +2320,11 @@ def _resolve_output_budget(max_tokens, profile, input_chars=None):
     drift. When `input_chars` is given, RIGHT-SIZE a reasoning model's budget
     to the actual input (A1) — so a small prompt gets a sane ceiling, not the
     worst-case one."""
-    cpt = _effective_cpt(profile.model)
-    cap = _context_safe_output_cap(profile, input_chars, cpt)
-    if max_tokens is None:  # auto — the common path
-        if input_chars is not None and profile.is_reasoning:
-            # Same observed-or-static chars/token the profile itself used.
-            want = _reasoning_output_budget(input_chars, cpt)
-            # Floor gives room to think+answer, but must never exceed the
-            # profile's already context-safe budget or this input's context cap.
-            floor = min(8192, profile.output_budget)
-            budget = max(floor, min(want, profile.output_budget))
-            return max(256, min(budget, cap)), True
-        # let --fallback re-derive (True) vs. respect a user value (False)
-        return max(256, min(profile.output_budget, cap)), True
-    # explicit --max-tokens: respect it, but keep it sane for THIS model — clamp
-    # to BOTH the output cap AND what leaves room for the input in context, so a
-    # big --max-tokens on a big-context model can't overflow.
-    # The floor must never exceed the model's real output cap (a
-    # 500-token-cap model must not be forced up to the 2048 floor).
-    floor = min(MIN_OUTPUT_TOKENS, profile.max_output_length, cap)
-    resolved = max(floor,
-                   min(max_tokens, profile.max_output_length,
-                       cap))
-    # Flag an explicit --max-tokens only when it is genuinely below what THIS
-    # input needs (right-sized from the actual input, not the model's worst-case
-    # capacity — the old message quoted single_shot_chars and false-alarmed on
-    # tiny prompts, e.g. "over a 120,000-char input" for a 5-char question).
-    if profile.is_reasoning:
-        need = (_reasoning_output_budget(input_chars, cpt)
-                if input_chars is not None else profile.output_budget)
-        need = min(need, profile.output_budget)
-        if resolved < need:
-            if max_tokens > cap:
-                print(
-                    f"ambient: --max-tokens {max_tokens} was clamped to "
-                    f"{resolved} so input+output fit the model context; if "
-                    "the answer truncates, narrow the input or let Ambient "
-                    "split it into smaller chunks.",
-                    file=sys.stderr,
-                )
-                return resolved, False
-            print(
-                f"ambient: --max-tokens {resolved} may be low for a reasoning "
-                f"model — it emits reasoning tokens before the answer and can "
-                f"need ~{need} to finish; it may stop mid-reasoning (the "
-                "auto-escalation guard will try to recover).",
-                file=sys.stderr,
-            )
-    return resolved, False
+    return _model_budget.resolve_output_budget(
+        max_tokens, profile, input_chars, _effective_cpt,
+        _model_budget_constants(),
+        lambda message: print(message, file=sys.stderr), MIN_OUTPUT_TOKENS,
+    )
 
 
 def apply_output_budget(args, profile, input_chars=None):

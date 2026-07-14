@@ -59,6 +59,42 @@ def reasoning_single_shot_target(context_length, max_output, chars_per_token,
                    min(by_output, by_context, single_shot_cap)))
 
 
+def resolve_output_budget(max_tokens, profile, input_chars, effective_cpt,
+                          constants, emit, minimum_output_tokens):
+    """Resolve a requested output budget against a profile and actual input."""
+    cpt = effective_cpt(profile.model)
+    cap = context_safe_output_cap(profile, input_chars, cpt, constants)
+    if max_tokens is None:
+        if input_chars is not None and profile.is_reasoning:
+            wanted = reasoning_output_budget(input_chars, cpt, constants)
+            floor = min(8192, profile.output_budget)
+            budget = max(floor, min(wanted, profile.output_budget))
+            return max(256, min(budget, cap)), True
+        return max(256, min(profile.output_budget, cap)), True
+    floor = min(minimum_output_tokens, profile.max_output_length, cap)
+    resolved = max(floor, min(max_tokens, profile.max_output_length, cap))
+    if profile.is_reasoning:
+        needed = (reasoning_output_budget(input_chars, cpt, constants)
+                  if input_chars is not None else profile.output_budget)
+        needed = min(needed, profile.output_budget)
+        if resolved < needed:
+            if max_tokens > cap:
+                emit(
+                    f"ambient: --max-tokens {max_tokens} was clamped to "
+                    f"{resolved} so input+output fit the model context; if "
+                    "the answer truncates, narrow the input or let Ambient "
+                    "split it into smaller chunks."
+                )
+                return resolved, False
+            emit(
+                f"ambient: --max-tokens {resolved} may be low for a reasoning "
+                f"model — it emits reasoning tokens before the answer and can "
+                f"need ~{needed} to finish; it may stop mid-reasoning (the "
+                "auto-escalation guard will try to recover)."
+            )
+    return resolved, False
+
+
 __all__ = ("response_format_for", "reasoning_output_budget",
            "context_safe_output_cap", "context_safe_escalation_ceiling",
-           "reasoning_single_shot_target")
+           "reasoning_single_shot_target", "resolve_output_budget")
