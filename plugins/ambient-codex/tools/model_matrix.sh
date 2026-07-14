@@ -11,8 +11,13 @@
 # Usage: bash tools/model_matrix.sh
 set -u
 AMB="${AMB:-$(cd "$(dirname "$0")/.." && pwd)/bin/ambient}"
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+WORK="${AMBIENT_MATRIX_WORK:-$(mktemp -d)}"
+mkdir -p "$WORK"
+if [ -z "${AMBIENT_MATRIX_WORK:-}" ]; then
+  trap 'rm -rf "$WORK"' EXIT
+else
+  echo "matrix artifacts retained at: $WORK"
+fi
 PASS=0; FAIL=0; SKIP=0
 pass() { echo "  PASS  $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL  $1  -- $2"; FAIL=$((FAIL+1)); }
