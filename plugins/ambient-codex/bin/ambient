@@ -183,6 +183,7 @@ from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import usage_store as _usage_store  # noqa: E402
 from ambient_codex import usage_report as _usage_report  # noqa: E402
+from ambient_codex import usage_pricing as _usage_pricing  # noqa: E402
 
 try:
     import fcntl  # POSIX-only; Windows uses a portable lock-file fallback (B1)
@@ -1130,23 +1131,9 @@ ASSUMED_MAX_OUTPUT_PRICE = 8.0   # per Mtok
 
 
 def model_pricing(catalog, model):
-    """(input per Mtok, output per Mtok) from the catalog, or None if unpriced.
-    Zero/absent/NaN pricing is UNPRICED, not free — treating it as 0 would
-    disable the spend gate exactly when the catalog is degraded.
-    Unpriced models fall to assumed worst-case pricing."""
-    for m in catalog or []:
-        if isinstance(m, dict) and m.get("id") == model:
-            p = m.get("pricing")
-            if not isinstance(p, dict):
-                return None
-            try:
-                pin, pout = float(p.get("input")), float(p.get("output"))
-            except (TypeError, ValueError):
-                return None
-            if not (pin >= 0 and pout >= 0 and (pin > 0 or pout > 0)):
-                return None  # rejects NaN, negatives, and all-zero "pricing"
-            return (pin, pout)
-    return None
+    """Facade wrapper: pure pricing lookup lives in
+    ``ambient_codex.usage_pricing``."""
+    return _usage_pricing.model_pricing(catalog, model)
 
 
 def _telemetry_enabled():
@@ -1503,22 +1490,9 @@ _PRICING_CATALOG = []   # last successfully fetched catalog (pricing memo)
 
 
 def parse_reference_price(raw):
-    """AMBIENT_REFERENCE_PRICE value → (input, output) per Mtok, else None.
-    Accepts an "in/out" pair ("3/15") or one blended figure ("10" → 10/10).
-    Zero/negative/NaN/inf/garbage → None (caller falls back to the default —
-    a junk reference must never fabricate a comparison)."""
-    if not isinstance(raw, str):
-        return None
-    parts = [p.strip() for p in raw.strip().split("/")]
-    if not 1 <= len(parts) <= 2 or not all(parts):
-        return None
-    try:
-        vals = [float(p) for p in parts]
-    except ValueError:
-        return None
-    if not all(0 < v < float("inf") for v in vals):  # also rejects NaN
-        return None
-    return (vals[0], vals[0]) if len(vals) == 1 else (vals[0], vals[1])
+    """Facade wrapper: pure reference-price parsing lives in
+    ``ambient_codex.usage_pricing``."""
+    return _usage_pricing.parse_reference_price(raw)
 
 
 def resolve_reference_price(conf=None):
