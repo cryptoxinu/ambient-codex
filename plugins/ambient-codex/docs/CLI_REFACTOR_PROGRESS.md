@@ -86,6 +86,7 @@ bugs, verification, commits, or the next action changes.
 | 4A-4 | Audit finding consolidation | Complete | `6527adf` | `audit_core.py`; identity, split-artifact filtering, deduplication, and conservative severity verdicts extracted |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
+| 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
 
 ## Phase 0 checklist
 
