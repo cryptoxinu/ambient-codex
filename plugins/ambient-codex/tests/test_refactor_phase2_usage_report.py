@@ -97,6 +97,19 @@ class ReadRecordsTests(unittest.TestCase):
             ledger.write_text("", encoding="utf-8")
             self.assertEqual(report.read_records(str(ledger)), ([], 0))
 
+    def test_oversize_integer_line_counted_corrupt_not_crashed(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        with tempfile.TemporaryDirectory() as td:
+            ledger = Path(td) / "usage.jsonl"
+            # A 5000-digit integer line raises a plain ValueError on 3.11+ and
+            # parses to a non-dict int on older Python -- counted bad either way,
+            # never crashing the reader (Codex 2D2B finding 1).
+            ledger.write_text("9" * 5000 + "\n" + '{"model":"ok"}\n',
+                              encoding="utf-8")
+            records, bad = report.read_records(str(ledger))
+            self.assertEqual(records, [{"model": "ok"}])
+            self.assertEqual(bad, 1)
+
 
 class FilterRecentTests(unittest.TestCase):
     def test_keeps_records_at_or_after_cutoff(self):
@@ -131,6 +144,37 @@ class UsageReportFacadeTests(unittest.TestCase):
             printed = "".join(
                 str(c.args[0]) for c in err.write.call_args_list if c.args)
             self.assertIn("skipped 4 corrupt", printed)
+
+    def test_cmd_usage_maps_generic_oserror_to_cannot_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            facade.USAGE_PATH = "/patched/usage.jsonl"
+            with mock.patch.object(facade._usage_report, "read_records",
+                                   side_effect=OSError("boom")):
+                with self.assertRaises(SystemExit) as ctx:
+                    facade.cmd_usage(types.SimpleNamespace(days=7))
+            self.assertIn("cannot read /patched/usage.jsonl: boom",
+                          str(ctx.exception))
+
+    def test_cmd_usage_wires_reader_and_recency_filter(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            facade.USAGE_PATH = "/patched/usage.jsonl"
+            recs = [{"ts": 10 ** 9, "model": "m", "in": 1, "out": 1}]
+            with mock.patch.object(facade._usage_report, "read_records",
+                                   return_value=(recs, 0)) as reader, \
+                    mock.patch.object(facade._usage_report, "filter_recent",
+                                      return_value=[]) as recent:
+                with self.assertRaises(SystemExit):  # empty recent -> exits
+                    facade.cmd_usage(types.SimpleNamespace(days=7))
+            reader.assert_called_once_with("/patched/usage.jsonl")
+            self.assertEqual(recent.call_count, 1)
+            args, _ = recent.call_args
+            self.assertEqual(args[0], recs)
+            ts_of = args[2]
+            self.assertTrue(callable(ts_of))
+            self.assertEqual(ts_of({"ts": 5}), 5)
+            self.assertEqual(ts_of({"ts": "x"}), 0)
 
 
 if __name__ == "__main__":

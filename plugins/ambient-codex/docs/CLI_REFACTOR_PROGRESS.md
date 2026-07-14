@@ -1365,7 +1365,17 @@ for a behavior-preserving extraction. Tracked for a dedicated hardening pass:
   FileNotFound + OSError propagation, empty ledger, recency filter, facade
   delegation on missing-ledger + bad-line reporting).
 - Gates: full guarded suite + `ruff check .` clean; validators pass; no-Node MCP
-  14 tools; cmd_usage-touching suites (v8/v9/v10) green; CI 18 jobs green.
+  14 tools; cmd_usage-touching suites (v8/v9/v10) green; CI 18 jobs green on
+  `92354c0` (Windows incl.).
+- Codex audit (frozen tree): NO CRITICAL/HIGH/MEDIUM; pricing/reference/savings
+  tail SHA-256 identical, `observed_cpt` byte-identical. Fix-now items applied:
+  documented + tested the intentional `except ValueError` broadening (a 4300+
+  digit integer line is counted corrupt, not crashed); added exact-`OSError`
+  message + reader/recency wiring facade tests; fixed a PRE-EXISTING time-bomb in
+  `test_audit_fixes.py` (fixed 2026-07 ts + 30-day window would fail after
+  2026-08-05). DEFERRED (pre-existing, matches original): a byte-corrupted
+  (invalid-UTF-8) ledger still tracebacks `ambient usage` (the writer only ever
+  emits UTF-8) — added to the deferred-hardening list.
 
 ## Exact resume point
 

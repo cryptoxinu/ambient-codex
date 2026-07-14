@@ -25,7 +25,11 @@ def read_records(usage_path):
                 continue
             try:
                 record = json.loads(line)
-            except ValueError:  # json.JSONDecodeError is a ValueError subclass
+            except ValueError:
+                # Deliberately broader than json.JSONDecodeError: json.loads can
+                # also raise a plain ValueError (e.g. an integer line past the
+                # int-string digit limit on 3.11+). The old inline reader crashed
+                # on that; counting it corrupt is intentional, tested hardening.
                 bad += 1
                 continue
             if not isinstance(record, dict):

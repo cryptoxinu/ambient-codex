@@ -18,6 +18,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -136,10 +137,11 @@ class TestF15UsageSkipsNonDictLines(unittest.TestCase):
             return out.getvalue()
 
     def test_non_dict_lines_do_not_crash(self):
+        recent_ts = int(time.time())  # keep the valid record inside the window
         body = ('42\n'
                 '"garbage"\n'
                 '[1, 2, 3]\n'
-                '{"ts": 1783357893, "model": "m", "in": 10, "out": 20, '
+                f'{{"ts": {recent_ts}, "model": "m", "in": 10, "out": 20, '
                 '"cost": 0.001, "ref": [3.0, 15.0]}\n')
         try:
             printed = self._run_usage(body)
