@@ -127,7 +127,7 @@ class ControlSnapshotTests(ControlCase):
         )
         self.assertIn(
             {"phrase": "change settings",
-             "description": "edit streaming, fallback, and reference-price"},
+             "description": "edit streaming, fallback, and optional savings"},
             data["chat_actions"],
         )
         self.assertIn(
@@ -143,10 +143,9 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("ambient-codex control mode on", data["actions"])
         self.assertIn("ambient-codex setup", data["actions"])
         setting_names = [setting["name"] for setting in data["settings"]]
-        self.assertEqual(
-            setting_names,
-            ["streaming", "fallback", "reference-price", "savings"],
-        )
+        self.assertNotIn("reference-price", setting_names)
+        self.assertNotIn("reference-price", "\n".join(data["actions"]))
+        self.assertEqual(setting_names, ["streaming", "fallback", "savings"])
         self.assertNotIn("spend-cap", "\n".join(data["actions"]))
 
     def test_text_panel_exposes_controls_without_network_requirement(self):

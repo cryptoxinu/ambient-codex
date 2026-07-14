@@ -9137,7 +9137,6 @@ CONTROL_ACTIONS = tuple(
         "setup --remove",
         "control setting streaming on|off",
         "control setting fallback on|off",
-        "control setting reference-price IN/OUT",
         "control setting savings on|off",
         "ask PROMPT",
         "audit --staged --json",
@@ -9151,8 +9150,7 @@ CONTROL_ACTIONS = tuple(
     )
 )
 
-CONTROL_SETTING_NAMES = ("streaming", "fallback",
-                         "reference-price", "savings")
+CONTROL_SETTING_NAMES = ("streaming", "fallback", "savings")
 
 CONTROL_MODE_OPTIONS = (
     ("off", "Off", "Codex works normally; Ambient runs only when you ask."),
@@ -9165,7 +9163,7 @@ CONTROL_WORKFLOWS = (
     ("audit this repo", "repository-level review"),
     ("build <task>", "draft file changes for Codex to inspect before applying"),
     ("ask Ambient <question>", "ask the chat model directly"),
-    ("show Ambient usage", "show local usage and savings estimates"),
+    ("show Ambient usage", "show local usage and optional relative savings"),
     ("diagnose Ambient", "run key, funds, model, network, and service checks"),
 )
 
@@ -9175,13 +9173,13 @@ CONTROL_CHAT_ACTIONS = (
     ("change chat model", "choose the chat/audit model lane only"),
     ("change code model", "choose the code/build/agent model lane only"),
     ("change mode", "choose off / delegate / takeover"),
-    ("change settings", "edit streaming, fallback, and reference-price"),
+    ("change settings", "edit streaming, fallback, and optional savings"),
     ("audit this diff", "audit the current git diff"),
     ("audit this repo", "run a repository audit"),
     ("build <task>", "draft a file set with Codex review"),
     ("ask Ambient <question>", "ask the chat model"),
     ("diagnose Ambient", "run doctor"),
-    ("show Ambient usage", "show usage and savings"),
+    ("show Ambient usage", "show usage and optional relative savings"),
 )
 
 
