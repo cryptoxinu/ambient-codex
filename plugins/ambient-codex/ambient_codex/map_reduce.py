@@ -77,5 +77,64 @@ def reduce_response_format(response_format, profile, *, response_format_for):
     return response_format
 
 
+def coverage_gap(errors, truncated):
+    """Describe incomplete map coverage for the synthesis model."""
+    gap = ""
+    if errors:
+        gap += (
+            f"\n\nCOVERAGE GAP: {len(errors)} chunk(s) FAILED (missing entirely): "
+            f"{'; '.join(errors)}. State this gap at the TOP and do NOT issue a "
+            "clean/SHIP verdict."
+        )
+    if truncated:
+        gap += (
+            f"\n\nCOVERAGE GAP: chunk(s) {truncated} were TRUNCATED (partial). "
+            "Treat their coverage as incomplete and do NOT issue a clean verdict."
+        )
+    return gap
+
+
+def hierarchical_reduce(texts, *, effective_budget, merge):
+    """Merge ordered partials within budget, retaining incomplete merges."""
+    current = list(texts)
+    synth_failed = False
+    while len(current) > 1 and sum(len(text) for text in current) > effective_budget:
+        groups = group_for_budget(current, effective_budget)
+        if all(len(group) == 1 for group in groups):
+            break
+        next_texts = []
+        for group in groups:
+            if len(group) == 1:
+                next_texts.append(group[0])
+            else:
+                merged, complete = merge(group)
+                synth_failed = synth_failed or not complete
+                next_texts.append(merged)
+        current = next_texts
+    if len(current) > 1:
+        final, complete = merge(current)
+        return final, synth_failed or not complete
+    return current[0], synth_failed
+
+
+def partial_reason(*, errors, truncated, synth_failed, missed_ranges, chunk_count):
+    """Return the partial flag and concise user-facing incomplete-work reason."""
+    partial = bool(errors or truncated or synth_failed)
+    reasons = []
+    if errors:
+        detail = "; ".join(error[:500] for error in errors[:3])
+        if len(errors) > 3:
+            detail += f"; +{len(errors) - 3} more"
+        reasons.append(f"{len(errors)} of {chunk_count} chunks failed ({detail})")
+    if truncated:
+        reasons.append(f"{len(truncated)} chunk(s) truncated")
+    if synth_failed:
+        reasons.append("synthesis was incomplete (truncated or fell back to raw concatenation)")
+    if missed_ranges:
+        reasons.append("UNREVIEWED: " + "; ".join(dict.fromkeys(missed_ranges)))
+    return partial, "; ".join(reasons)
+
+
 __all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
-           "group_for_budget", "resolve_parallel", "reduce_response_format")
+           "group_for_budget", "resolve_parallel", "reduce_response_format",
+           "coverage_gap", "hierarchical_reduce", "partial_reason")

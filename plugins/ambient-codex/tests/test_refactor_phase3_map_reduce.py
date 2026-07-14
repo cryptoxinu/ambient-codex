@@ -10,7 +10,8 @@ class MapReducePlanningTests(unittest.TestCase):
         self.assertEqual(
             core.__all__,
             ("files_block", "chunk_ranges", "code_map_budget", "map_note", "group_for_budget",
-             "resolve_parallel", "reduce_response_format"),
+             "resolve_parallel", "reduce_response_format", "coverage_gap",
+             "hierarchical_reduce", "partial_reason"),
         )
 
     def test_input_helpers_preserve_file_boundaries_and_coverage_ranges(self):
@@ -40,3 +41,30 @@ class MapReducePlanningTests(unittest.TestCase):
         self.assertIsNone(core.reduce_response_format(
             {"type": "json_object"}, profile,
             response_format_for=lambda *_: {"unexpected": True}))
+
+    def test_coverage_and_partial_reason_preserve_incomplete_work(self):
+        core = importlib.import_module("ambient_codex.map_reduce")
+        gap = core.coverage_gap(["chunk 2: timeout"], [3])
+        self.assertIn("1 chunk(s) FAILED", gap)
+        self.assertIn("chunk(s) [3] were TRUNCATED", gap)
+        partial, reason = core.partial_reason(
+            errors=["chunk 2: timeout"], truncated=[3], synth_failed=True,
+            missed_ranges=["a.py [1-2]", "a.py [1-2]"], chunk_count=3)
+        self.assertTrue(partial)
+        self.assertIn("1 of 3 chunks failed", reason)
+        self.assertIn("synthesis was incomplete", reason)
+        self.assertEqual(reason.count("a.py [1-2]"), 1)
+
+    def test_hierarchical_reduce_groups_orderedly_and_preserves_merge_failure(self):
+        core = importlib.import_module("ambient_codex.map_reduce")
+        calls = []
+
+        def merge(parts):
+            calls.append(list(parts))
+            return "[" + "+".join(parts) + "]", len(calls) != 1
+
+        final, failed = core.hierarchical_reduce(
+            ["aaa", "bbb", "ccc"], effective_budget=6, merge=merge)
+        self.assertEqual(calls, [["aaa", "bbb"], ["[aaa+bbb]", "ccc"]])
+        self.assertEqual(final, "[[aaa+bbb]+ccc]")
+        self.assertTrue(failed)

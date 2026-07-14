@@ -3707,18 +3707,7 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
             f"{errors[0] if errors else 'unknown'}",
         )
 
-    gap = ""
-    if errors:
-        gap += (
-            f"\n\nCOVERAGE GAP: {len(errors)} chunk(s) FAILED (missing entirely): "
-            f"{'; '.join(errors)}. State this gap at the TOP and do NOT issue a "
-            "clean/SHIP verdict."
-        )
-    if truncated:
-        gap += (
-            f"\n\nCOVERAGE GAP: chunk(s) {truncated} were TRUNCATED (partial). "
-            "Treat their coverage as incomplete and do NOT issue a clean verdict."
-        )
+    gap = _map_reduce_core.coverage_gap(errors, truncated)
 
     def merge(texts):
         body = "\n\n".join(
@@ -3746,23 +3735,13 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
     # re-billed merge call — just parse + dedupe the chunk findings.
     if reducer is not None:
         final = reducer(texts)
-        partial = bool(errors or truncated)
-        reasons = []
-        if errors:
-            detail = "; ".join(e[:500] for e in errors[:3])
-            if len(errors) > 3:
-                detail += f"; +{len(errors) - 3} more"
-            reasons.append(
-                f"{len(errors)} of {len(chunks)} chunks failed ({detail})")
-        if truncated:
-            reasons.append(f"{len(truncated)} chunk(s) truncated")
-        if missed_ranges:
-            reasons.append("UNREVIEWED: " + "; ".join(dict.fromkeys(missed_ranges)))
+        partial, reason = _map_reduce_core.partial_reason(
+            errors=errors, truncated=truncated, synth_failed=False,
+            missed_ranges=missed_ranges, chunk_count=len(chunks))
         if partial:
-            print(f"[ambient-codex map-reduce: PARTIAL — {'; '.join(reasons)}]",
+            print(f"[ambient-codex map-reduce: PARTIAL — {reason}]",
                   file=sys.stderr)
-        return final, partial, "; ".join(reasons)
-    synth_failed = False
+        return final, partial, reason
     # The synthesis prompt is system + gap + per-part headers, not just the
     # parts — reserve that overhead so a merge call can't blow the context.
     overhead = len(synth_system) + len(gap) + 200 * max(1, len(texts))
@@ -3770,48 +3749,17 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
     # get a merge budget above its own window → doomed, re-billed synthesis
     # calls. Respect the model's real budget.
     effective_budget = max(1_000, reduce_budget - overhead)
-    # Budget-aware hierarchical reduce: pack partials into groups that each fit
-    # the reduce budget (by CHARS, not by count), collapsing tier by tier.
-    while len(texts) > 1 and sum(len(t) for t in texts) > effective_budget:
-        groups = _map_reduce_core.group_for_budget(texts, effective_budget)
-        if all(len(g) == 1 for g in groups):
-            break  # can't reduce further (each partial already huge)
-        new_texts = []
-        for g in groups:
-            if len(g) == 1:
-                new_texts.append(g[0])
-            else:
-                merged, ok = merge(g)
-                synth_failed = synth_failed or not ok
-                new_texts.append(merged)
-        texts = new_texts
-    if len(texts) > 1:
-        final, ok = merge(texts)
-        synth_failed = synth_failed or not ok
-    else:
-        final = texts[0]
-
-    partial = bool(errors or truncated or synth_failed)
-    reasons = []
-    if errors:
-        detail = "; ".join(e[:500] for e in errors[:3])
-        if len(errors) > 3:
-            detail += f"; +{len(errors) - 3} more"
-        reasons.append(
-            f"{len(errors)} of {len(chunks)} chunks failed ({detail})")
-    if truncated:
-        reasons.append(f"{len(truncated)} chunk(s) truncated")
-    if synth_failed:
-        reasons.append("synthesis was incomplete (truncated or fell back to "
-                       "raw concatenation)")
-    if missed_ranges:
-        reasons.append("UNREVIEWED: " + "; ".join(dict.fromkeys(missed_ranges)))
+    final, synth_failed = _map_reduce_core.hierarchical_reduce(
+        texts, effective_budget=effective_budget, merge=merge)
+    partial, reason = _map_reduce_core.partial_reason(
+        errors=errors, truncated=truncated, synth_failed=synth_failed,
+        missed_ranges=missed_ranges, chunk_count=len(chunks))
     if partial:
         print(
-            f"[ambient-codex map-reduce: PARTIAL — {'; '.join(reasons)}]",
+            f"[ambient-codex map-reduce: PARTIAL — {reason}]",
             file=sys.stderr,
         )
-    return final, partial, "; ".join(reasons)
+    return final, partial, reason
 
 
 def _reasoning_hint(content, completion_tokens):
