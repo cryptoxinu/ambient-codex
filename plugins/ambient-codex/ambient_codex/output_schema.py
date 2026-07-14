@@ -14,4 +14,35 @@ def public_usage(usage):
     return {key: usage[key] for key in usage if key in _PUBLIC_USAGE_KEYS}
 
 
-__all__ = ("public_usage",)
+def build_envelope(kind, *, model, usage=None, content=None, findings=None,
+                   verdict=None, partial=False, reason=None,
+                   finish_reason=None, extra=None, allow_partial=False,
+                   partial_exit_code=2):
+    """Build one public result envelope and its process exit code."""
+    truncated = finish_reason == "length"
+    partial = bool(partial or truncated)
+    if truncated:
+        reason = (reason + "; " if reason else "") + "output hit the token cap"
+    exit_code = partial_exit_code if (partial and not allow_partial) else 0
+    envelope = {
+        "schema_version": 1,
+        "kind": kind,
+        "status": "partial" if partial else "ok",
+        "model": model,
+        "partial": partial,
+        "coverage_gap": reason or None,
+        "finish_reason": finish_reason,
+        "usage": public_usage(usage),
+        "exit_code": exit_code,
+    }
+    if content is not None:
+        envelope["content"] = content
+    if findings is not None:
+        envelope["findings"] = findings
+        envelope["verdict"] = verdict
+    if extra:
+        envelope.update(extra)
+    return envelope, exit_code
+
+
+__all__ = ("public_usage", "build_envelope")

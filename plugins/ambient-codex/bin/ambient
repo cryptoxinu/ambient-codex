@@ -3907,29 +3907,12 @@ def emit_json(kind, *, model, api_key="", content=None, findings=None,
     shape, so an orchestrator never special-cases how a result was computed
 . schema_version bumps on any
     breaking change. Returns the exit code; exits itself unless exit_now=False."""
-    truncated = finish_reason == "length"
-    partial = bool(partial or truncated)
-    if truncated:
-        reason = (reason + "; " if reason else "") + "output hit the token cap"
-    code = EXIT_PARTIAL if (partial and not allow_partial) else 0
-    env = {
-        "schema_version": 1,
-        "kind": kind,
-        "status": "partial" if partial else "ok",
-        "model": model,
-        "partial": partial,
-        "coverage_gap": reason or None,
-        "finish_reason": finish_reason,
-        "usage": _public_usage(usage),
-        "exit_code": code,
-    }
-    if content is not None:
-        env["content"] = content
-    if findings is not None:
-        env["findings"] = findings
-        env["verdict"] = verdict
-    if extra:
-        env.update(extra)
+    env, code = _output_schema.build_envelope(
+        kind, model=model, usage=usage, content=content, findings=findings,
+        verdict=verdict, partial=partial, reason=reason,
+        finish_reason=finish_reason, extra=extra,
+        allow_partial=allow_partial, partial_exit_code=EXIT_PARTIAL,
+    )
     print(redact(json.dumps(env, indent=2), api_key))
     if usage and model:
         # The savings receipt goes to STDERR in --json mode too (F05d): stdout
