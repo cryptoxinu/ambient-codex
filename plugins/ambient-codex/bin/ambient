@@ -3649,33 +3649,12 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
                     continue
                 raise
 
-    results = [None] * len(chunks)  # (text, is_partial) or None on failure
-    errors = []
-    missed_ranges = []  # A8: exact file:line ranges left unreviewed
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=width)
     try:
-        futures = {pool.submit(work, i): i for i in range(len(chunks))}
-        for fut in concurrent.futures.as_completed(futures):
-            i = futures[fut]
-            try:
-                results[i] = fut.result()
-            except Exception as err:  # noqa: BLE001 — one chunk must never
-                # abort the fan-out; record it as a coverage gap and continue.
-                cov = _chunk_ranges(chunks[i])
-                missed_ranges.extend(cov)
-                where = f" [{'; '.join(cov)}]" if cov else ""
-                errors.append(f"chunk {i + 1}{where}: {type(err).__name__}: {err}")
-            except BaseException:
-                # a worker-side FATAL (SystemExit &
-                # co) fails the whole fan-out FAST — trip the cancel event
-                # and drop the queue so no sibling starts billing while the
-                # unwind propagates (in-flight calls drain in finally).
-                cancel_event.set()
-                try:
-                    pool.shutdown(wait=False, cancel_futures=True)  # py3.9+
-                except TypeError:
-                    pool.shutdown(wait=False)                       # py3.8
-                raise
+        results, errors, missed_ranges = _map_reduce_core.collect_fanout(
+            chunks, work=work, width=width, cancel_event=cancel_event,
+            chunk_ranges=_chunk_ranges,
+            executor=concurrent.futures.ThreadPoolExecutor,
+            as_completed=concurrent.futures.as_completed)
     except KeyboardInterrupt:
         # Cancel QUEUED chunks and exit PROMPTLY. Re-raising would hit the
         # finally's blocking pool.shutdown(wait=True) and stall exit-130 for up
@@ -3683,16 +3662,11 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
         # os._exit(130) after flushing BOTH streams (os._exit skips the blocking
         # teardown, matching the consensus/best-of Ctrl-C lanes).
         print("\nambient: cancelling…", file=sys.stderr)
-        cancel_event.set()
-        try:
-            pool.shutdown(wait=False, cancel_futures=True)  # py3.9+
-        except TypeError:
-            pool.shutdown(wait=False)                       # py3.8
+        # collect_fanout already tripped cancellation and non-blockingly
+        # discarded queued work before it re-raised this interrupt.
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(130)
-    finally:
-        pool.shutdown(wait=True)
     if cache_hits[0]:
         print(f"ambient: {cache_hits[0]}/{len(chunks)} chunks served from cache "
               "(not re-billed)", file=sys.stderr)

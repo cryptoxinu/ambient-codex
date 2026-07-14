@@ -135,6 +135,44 @@ def partial_reason(*, errors, truncated, synth_failed, missed_ranges, chunk_coun
     return partial, "; ".join(reasons)
 
 
+def _cancel_executor(pool):
+    """Stop queued work while allowing in-flight workers to unwind."""
+    try:
+        pool.shutdown(wait=False, cancel_futures=True)
+    except TypeError:  # Python 3.8
+        pool.shutdown(wait=False)
+
+
+def collect_fanout(chunks, *, work, width, cancel_event, chunk_ranges,
+                   executor, as_completed):
+    """Collect ordered map results while recording ordinary worker failures."""
+    results, errors, missed_ranges = [None] * len(chunks), [], []
+    pool = executor(max_workers=width)
+    aborted = False
+    try:
+        futures = {pool.submit(work, index): index for index in range(len(chunks))}
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except Exception as error:  # one failed chunk preserves sibling work
+                coverage = chunk_ranges(chunks[index])
+                missed_ranges.extend(coverage)
+                where = f" [{'; '.join(coverage)}]" if coverage else ""
+                errors.append(f"chunk {index + 1}{where}: {type(error).__name__}: {error}")
+            except BaseException:
+                raise
+    except BaseException:
+        aborted = True
+        cancel_event.set()
+        _cancel_executor(pool)
+        raise
+    finally:
+        if not aborted:
+            pool.shutdown(wait=True)
+    return results, errors, missed_ranges
+
+
 __all__ = ("files_block", "chunk_ranges", "code_map_budget", "map_note",
            "group_for_budget", "resolve_parallel", "reduce_response_format",
-           "coverage_gap", "hierarchical_reduce", "partial_reason")
+           "coverage_gap", "hierarchical_reduce", "partial_reason", "collect_fanout")

@@ -82,6 +82,7 @@ bugs, verification, commits, or the next action changes.
 | 3G-3 | Map-reduce execution policies | Complete | `7ee2c0a` | `map_reduce.py`; bounded fan-out and reduce-model response-format policy extracted |
 | 3G-4 | Map-reduce result policy | Complete | local checkpoint | `map_reduce.py`; coverage prompts, ordered hierarchical synthesis, and partial reasons extracted |
 | 3G-5 | Independent map-item execution | Complete | local checkpoint | `map_workflow.py`; injected retry, cancellation, and cache-integrity policy extracted |
+| 3G-6 | Map-reduce fan-out collection | Complete | local checkpoint | `map_reduce.py`; injected executor collection preserves ordered results, coverage gaps, and prompt Ctrl-C cancellation |
 | 3 | Transport, models, and map/reduce | In progress | — | 3A + 3C-1 complete; model profiles/routing, telemetry, streaming, chunking, and orchestration remain |
 | 4A-1 | Audit sample preparation | Complete | `3a1315a` | `audit_core.py`; model-specific request budgets, schema gating, and cache identity extracted |
 | 4A-2 | Deterministic audit reduction | Complete | `ae087a7` | `audit_core.py`; parsed findings, repair/unparsed coverage, and conservative verdict derived without an LLM merge |

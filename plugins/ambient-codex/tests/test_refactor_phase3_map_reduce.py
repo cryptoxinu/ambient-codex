@@ -11,7 +11,7 @@ class MapReducePlanningTests(unittest.TestCase):
             core.__all__,
             ("files_block", "chunk_ranges", "code_map_budget", "map_note", "group_for_budget",
              "resolve_parallel", "reduce_response_format", "coverage_gap",
-             "hierarchical_reduce", "partial_reason"),
+             "hierarchical_reduce", "partial_reason", "collect_fanout"),
         )
 
     def test_input_helpers_preserve_file_boundaries_and_coverage_ranges(self):
@@ -68,3 +68,29 @@ class MapReducePlanningTests(unittest.TestCase):
         self.assertEqual(calls, [["aaa", "bbb"], ["[aaa+bbb]", "ccc"]])
         self.assertEqual(final, "[[aaa+bbb]+ccc]")
         self.assertTrue(failed)
+
+    def test_fanout_collector_orders_results_and_reports_coverage_gaps(self):
+        core = importlib.import_module("ambient_codex.map_reduce")
+        import concurrent.futures
+
+        class Event:
+            def __init__(self):
+                self.cancelled = False
+
+            def set(self):
+                self.cancelled = True
+
+        def work(index):
+            if index == 1:
+                raise RuntimeError("broken")
+            return f"item-{index}", False
+
+        results, errors, missed = core.collect_fanout(
+            ["one", "two", "three"], work=work, width=2,
+            cancel_event=Event(), chunk_ranges=lambda value: [f"range:{value}"],
+            executor=concurrent.futures.ThreadPoolExecutor,
+            as_completed=concurrent.futures.as_completed)
+        self.assertEqual(results, [("item-0", False), None, ("item-2", False)])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("chunk 2 [range:two]: RuntimeError: broken", errors[0])
+        self.assertEqual(missed, ["range:two"])
