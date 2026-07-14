@@ -74,6 +74,7 @@ bugs, verification, commits, or the next action changes.
 | 3C-2 | Model budget primitives | Complete | local checkpoint | `model_budget.py`; structured output and context-safe sizing formulas extracted |
 | 3C-3 | Model profile construction | Complete | local checkpoint | `model_profiles.py`; catalog-driven context/output/chunk profile preserves facade telemetry adapter |
 | 3C-4 | Output-budget decision core | Complete | `309c612` | `model_budget.py`; auto/explicit context clamps and diagnostics preserve CLI behavior |
+| 3D-1 | Automatic routing candidate selection | Complete | `954d8d2` | `routing.py`; curation, fit, price ranking, and concrete-model invariants remain facade-governed |
 | 3E | Observed token telemetry | Complete | local checkpoint | `telemetry.py`; immutable cache derivation and fail-open ledger reads preserved |
 | 3F-1 | Chunk-packing primitives | Complete | `5e3477e` | `chunking.py`; density sizing, Python boundary preference, and hard size limits preserved |
 | 3G-1 | Map-reduce planning helpers | Complete | `49fd8e9` | `map_reduce.py`; index-safe prompts and ordered budget grouping preserve orchestration behavior |
