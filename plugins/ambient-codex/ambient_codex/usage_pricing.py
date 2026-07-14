@@ -1,9 +1,13 @@
 """Pure pricing primitives for local Ambient spend estimation.
 
 These functions turn a fetched model catalog and the reference-price setting
-into ``(input_per_Mtok, output_per_Mtok)`` pairs. They are total and pure: no
-I/O, no environment, no state, no catalog fetching. Higher layers own catalog
-fetching, reference resolution/memoization, cost math, and receipt copy.
+into ``(input_per_Mtok, output_per_Mtok)`` pairs. They are pure (no I/O,
+environment, state, or catalog fetching) and match the pre-extraction facade
+behavior exactly. They are not fully total: a non-iterable catalog or a price
+integer too large to convert to ``float()`` raises, exactly as before -- neither
+arises from a real fetched catalog, and normalizing those is deferred hardening.
+Higher layers own catalog fetching, reference resolution/memoization, cost math,
+and receipt copy.
 """
 
 

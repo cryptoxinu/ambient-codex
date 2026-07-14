@@ -80,15 +80,32 @@ class ModelPricingTests(unittest.TestCase):
             ([{"id": "x", "pricing": {"input": float("nan"),
                                        "output": 5}}], "x"),      # NaN
             ([{"id": "x", "pricing": {"input": None, "output": 5}}], "x"),  # None
+            ([{"id": "x", "pricing": {"input": 5, "output": -1}}], "x"),  # out neg
+            ([{"id": "x", "pricing": {"input": 5,
+                                       "output": float("nan")}}], "x"),  # out NaN
+            ([{"id": "x", "pricing": {"input": "abc", "output": 5}}], "x"),  # bad
             ([{"id": "y", "pricing": {"input": 3, "output": 15}}], "x"),  # miss
         ]
         for catalog, model in cases:
             with self.subTest(catalog=catalog):
                 self.assertIsNone(self.pricing.model_pricing(catalog, model))
 
-    def test_partial_zero_is_still_priced(self):
-        catalog = [{"id": "x", "pricing": {"input": 0, "output": 8}}]
-        self.assertEqual(self.pricing.model_pricing(catalog, "x"), (0.0, 8.0))
+    def test_partial_zero_is_still_priced_either_side(self):
+        self.assertEqual(
+            self.pricing.model_pricing(
+                [{"id": "x", "pricing": {"input": 0, "output": 8}}], "x"),
+            (0.0, 8.0))
+        self.assertEqual(
+            self.pricing.model_pricing(
+                [{"id": "x", "pricing": {"input": 8, "output": 0}}], "x"),
+            (8.0, 0.0))
+
+    def test_first_matching_id_wins(self):
+        catalog = [
+            {"id": "x", "pricing": {"input": 3, "output": 15}},
+            {"id": "x", "pricing": {"input": 1, "output": 1}},
+        ]
+        self.assertEqual(self.pricing.model_pricing(catalog, "x"), (3.0, 15.0))
 
 
 class ParseReferencePriceTests(unittest.TestCase):
@@ -119,6 +136,19 @@ class PricingFacadeTests(unittest.TestCase):
                                    return_value=(9.0, 9.0)) as pr:
                 self.assertEqual(facade.parse_reference_price("9"), (9.0, 9.0))
             pr.assert_called_once_with("9")
+
+    def test_facade_global_is_the_seam_for_downstream_callers(self):
+        with tempfile.TemporaryDirectory() as td:
+            facade = load_facade(Path(td) / "home")
+            # usage_cost calls model_pricing() as a facade global; patching the
+            # facade name must flow through to the downstream caller.
+            with mock.patch.object(facade, "model_pricing",
+                                   return_value=(2.0, 4.0)):
+                cost, assumed = facade.usage_cost(
+                    "m", {"prompt_tokens": 1_000_000,
+                          "completion_tokens": 1_000_000})
+            self.assertFalse(assumed)
+            self.assertAlmostEqual(cost, 6.0)  # (1e6*2 + 1e6*4) / 1e6
 
 
 if __name__ == "__main__":
