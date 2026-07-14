@@ -1505,25 +1505,22 @@ def resolve_reference_price(conf=None):
 
 
 def usage_cost(model, usage, catalog=None):
-    """(dollars, assumed) for a FINISHED run's token counts. Unpriced model /
-    degraded catalog → worst-case ASSUMED prices with assumed=True, so the
-    figure can over-state cost but never under-state it (and the caller must
-    not claim a saving from it)."""
-    price = model_pricing(
-        _PRICING_CATALOG if catalog is None else catalog, model)
-    assumed = price is None
-    if assumed:
-        price = (ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE)
-    tin = _as_pos_int(usage.get("prompt_tokens"), 0)
-    tout = _as_pos_int(usage.get("completion_tokens"), 0)
-    return (tin * price[0] + tout * price[1]) / 1e6, assumed
+    """Facade wrapper: pure cost math lives in ``ambient_codex.usage_pricing``.
+    Passes the facade's memoized catalog default, worst-case ASSUMED prices,
+    and the untrusted-token coercer. (dollars, assumed) for a FINISHED run's
+    token counts — unpriced model / degraded catalog over-states never
+    under-states, and the caller must not claim a saving from an assumed cost."""
+    return _usage_pricing.usage_cost(
+        model, usage,
+        _PRICING_CATALOG if catalog is None else catalog,
+        (ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE),
+        _as_pos_int)
 
 
 def reference_cost(usage, ref):
-    """The same tokens priced at the frontier reference (input, output)."""
-    tin = _as_pos_int(usage.get("prompt_tokens"), 0)
-    tout = _as_pos_int(usage.get("completion_tokens"), 0)
-    return (tin * ref[0] + tout * ref[1]) / 1e6
+    """Facade wrapper: pure cost math lives in ``ambient_codex.usage_pricing``.
+    The same tokens priced at the frontier reference (input, output)."""
+    return _usage_pricing.reference_cost(usage, ref, _as_pos_int)
 
 
 _SAVINGS_CACHE = None

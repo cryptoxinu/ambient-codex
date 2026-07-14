@@ -1,12 +1,15 @@
 """Pure pricing primitives for local Ambient spend estimation.
 
 These functions turn a fetched model catalog and the reference-price setting
-into ``(input_per_Mtok, output_per_Mtok)`` pairs. They are pure (no I/O,
+into ``(input_per_Mtok, output_per_Mtok)`` pairs, and price a finished run's
+token counts against catalog or reference pricing. They are pure (no I/O,
 environment, state, or catalog fetching) and match the pre-extraction facade
-behavior exactly. They are not fully total: a non-iterable catalog or a price
-integer too large to convert to ``float()`` raises, exactly as before -- neither
-arises from a real fetched catalog, and normalizing those is deferred hardening.
-Higher layers own catalog fetching, reference resolution/memoization, cost math,
+behavior exactly. The cost-math functions take their worst-case ASSUMED prices
+and untrusted-token coercer as injected deps -- the facade owns those constants
+and the ``_as_pos_int`` helper. They are not fully total: a non-iterable catalog
+or a price integer too large to convert to ``float()`` raises, exactly as before
+-- neither arises from a real fetched catalog, and normalizing those is deferred
+hardening. Higher layers own catalog fetching, reference resolution/memoization,
 and receipt copy.
 """
 
@@ -51,4 +54,29 @@ def parse_reference_price(raw):
     return (vals[0], vals[0]) if len(vals) == 1 else (vals[0], vals[1])
 
 
-__all__ = ("model_pricing", "parse_reference_price")
+def usage_cost(model, usage, catalog, assumed_prices, to_pos_int):
+    """``(dollars, assumed)`` for a FINISHED run's token counts. Unpriced model
+    / degraded catalog -> worst-case ``assumed_prices`` (an (input, output)
+    per-Mtok pair) with ``assumed=True``, so the figure can over-state cost but
+    never under-state it (and the caller must not claim a saving from it).
+    ``to_pos_int`` coerces the untrusted ``prompt_tokens``/``completion_tokens``
+    fields to a non-negative int floor of 0."""
+    price = model_pricing(catalog, model)
+    assumed = price is None
+    if assumed:
+        price = assumed_prices
+    tin = to_pos_int(usage.get("prompt_tokens"), 0)
+    tout = to_pos_int(usage.get("completion_tokens"), 0)
+    return (tin * price[0] + tout * price[1]) / 1e6, assumed
+
+
+def reference_cost(usage, ref, to_pos_int):
+    """The same tokens priced at the frontier reference ``ref`` (input, output)
+    per Mtok. ``to_pos_int`` coerces the untrusted token counts."""
+    tin = to_pos_int(usage.get("prompt_tokens"), 0)
+    tout = to_pos_int(usage.get("completion_tokens"), 0)
+    return (tin * ref[0] + tout * ref[1]) / 1e6
+
+
+__all__ = ("model_pricing", "parse_reference_price", "usage_cost",
+           "reference_cost")
