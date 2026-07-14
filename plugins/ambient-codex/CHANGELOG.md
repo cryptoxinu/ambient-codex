@@ -2,7 +2,7 @@
 
 All notable changes to `ambient-codex`.
 
-## 1.9.0 - 2026-07-10
+## 1.10.0 - 2026-07-14
 
 ### Cost/savings display is off by default
 
@@ -23,6 +23,8 @@ All notable changes to `ambient-codex`.
   cost, and no dollar value appears in settings. Parallel fan-out (`--parallel`
   / `AMBIENT_MAX_PARALLEL`) and the raw input-size guard (`--allow-cost`) are
   unchanged.
+
+## 1.9.0 - 2026-07-10
 
 ### Public-release hardening and large-context reliability
 

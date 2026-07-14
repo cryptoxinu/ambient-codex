@@ -104,7 +104,7 @@ class SourceAndPluginCacheTests(unittest.TestCase):
             )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "ambient 1.9.0")
+        self.assertEqual(proc.stdout.strip(), "ambient 1.10.0")
 
     def test_offline_process_contract_snapshot(self):
         with tempfile.TemporaryDirectory() as td:
@@ -128,7 +128,7 @@ class SourceAndPluginCacheTests(unittest.TestCase):
         payload = json.loads(control.stdout)
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["surface"], "codex-native")
-        self.assertEqual(payload["version"], "1.9.0")
+        self.assertEqual(payload["version"], "1.10.0")
         self.assertEqual(payload["mode"], "off")
         self.assertFalse(payload["key"]["configured"])
         self.assertIn("workflows", payload)
@@ -207,7 +207,7 @@ class PackageInstallTests(unittest.TestCase):
             )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "ambient 1.9.0")
+        self.assertEqual(proc.stdout.strip(), "ambient 1.10.0")
 
 
 if __name__ == "__main__":
