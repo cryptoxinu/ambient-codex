@@ -5444,74 +5444,10 @@ invent findings not present in the inputs. End with ONE overall verdict
 at the TOP and do not issue a clean/SHIP verdict."""
 
 
+
 def extract_json(text):
-    """Best-effort JSON object extraction from a model reply (A5): strips ```json
-    fences and prose, finds the outermost balanced {...}, parses. Reasoning models
-    leak fences even in structured mode, so this must be tolerant. Returns a dict
-    or None (caller degrades to wrapping the raw text)."""
-    if not text:
-        return None
-    t = text.strip()
-    # direct parse first
-    try:
-        obj = json.loads(t)
-        return obj if isinstance(obj, dict) else None
-    except json.JSONDecodeError:
-        pass
-    # strip a fenced block if present
-    fence = re.search(r"```(?:json)?\s*(.*?)```", t, re.S)
-    if fence:
-        try:
-            obj = json.loads(fence.group(1).strip())
-            return obj if isinstance(obj, dict) else None
-        except json.JSONDecodeError:
-            pass
-    dec = json.JSONDecoder()
-    first = t.find("{")
-    if first == -1:
-        return None
-    # 1) The OUTERMOST object (the whole structured reply usually starts here).
-    frag = t[first:]
-    try:
-        obj, _end = dec.raw_decode(frag)
-        if isinstance(obj, dict):
-            return obj
-    except json.JSONDecodeError:
-        pass
-    # 2) REPAIR a cleanly-truncated outer object — model closed the array but
-    # dropped the final "verdict"/brace, or the stream was cut on a token
-    # boundary: append the missing closers. Only when NOT truncated mid-string
-    # (even quotes) and the deficit is small. Surfaced by the stress battery:
-    # strict json_schema is not always honored by the backend.
-    if frag.count('"') % 2 == 0:
-        need_br = frag.count("[") - frag.count("]")
-        need_ob = frag.count("{") - frag.count("}")
-        if 0 <= need_br <= 5 and 1 <= need_ob <= 5:
-            try:
-                obj = json.loads(frag + "]" * need_br + "}" * need_ob)
-                if isinstance(obj, dict):
-                    # A repaired object is missing its TAIL (trailing findings
-                    # and/or the verdict). Mark it so no caller can present a
-                    # repaired audit as a clean pass (
-                    # truncated audit could previously SHIP).
-                    obj["_repaired"] = True
-                    return obj
-            except json.JSONDecodeError:
-                pass
-    # 3) Prose with a valid object LATER (a non-JSON '{...}' before the real one)
-    # scan subsequent '{' positions.
-    idx = first + 1
-    while True:
-        start = t.find("{", idx)
-        if start == -1:
-            return None
-        try:
-            obj, _end = dec.raw_decode(t[start:])
-            if isinstance(obj, dict):
-                return obj
-        except json.JSONDecodeError:
-            pass
-        idx = start + 1
+    """Facade seam for the extracted tolerant audit JSON parser."""
+    return _audit_core.extract_json(text)
 
 
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}

@@ -8,8 +8,15 @@ class AuditPreparationTests(unittest.TestCase):
     def test_module_owns_audit_prep_and_single_shot_key(self):
         core = importlib.import_module("ambient_codex.audit_core")
         self.assertEqual(core.__all__, (
-            "prepare_sample", "single_shot_key", "reduce_findings",
+            "extract_json", "prepare_sample", "single_shot_key", "reduce_findings",
         ))
+
+    def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        self.assertEqual(core.extract_json("```json\n{\"findings\": []}\n```"),
+                         {"findings": []})
+        repaired = core.extract_json('{"findings": []')
+        self.assertTrue(repaired["_repaired"])
 
     def test_single_shot_key_uses_a_complete_file_block_and_sample_salt(self):
         core = importlib.import_module("ambient_codex.audit_core")

@@ -1,6 +1,61 @@
 """Dependency-injected preparation primitives shared by audit workflows."""
 
 import dataclasses
+import json
+import re
+
+
+def extract_json(text):
+    """Best-effort object extraction that marks only safe truncation repairs."""
+    if not text:
+        return None
+    stripped = text.strip()
+    try:
+        parsed = json.loads(stripped)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    fence = re.search(r"```(?:json)?\s*(.*?)```", stripped, re.S)
+    if fence:
+        try:
+            parsed = json.loads(fence.group(1).strip())
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+    decoder = json.JSONDecoder()
+    first = stripped.find("{")
+    if first == -1:
+        return None
+    fragment = stripped[first:]
+    try:
+        parsed, _end = decoder.raw_decode(fragment)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    if fragment.count('"') % 2 == 0:
+        missing_brackets = fragment.count("[") - fragment.count("]")
+        missing_braces = fragment.count("{") - fragment.count("}")
+        if 0 <= missing_brackets <= 5 and 1 <= missing_braces <= 5:
+            try:
+                parsed = json.loads(
+                    fragment + "]" * missing_brackets + "}" * missing_braces)
+                if isinstance(parsed, dict):
+                    return {**parsed, "_repaired": True}
+            except json.JSONDecodeError:
+                pass
+    index = first + 1
+    while True:
+        start = stripped.find("{", index)
+        if start == -1:
+            return None
+        try:
+            parsed, _end = decoder.raw_decode(stripped[start:])
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        index = start + 1
 
 
 def prepare_sample(model, catalog, labeled, system_prompt, args, *,
@@ -55,4 +110,4 @@ def reduce_findings(texts, *, parse, dedupe, verdict):
     }
 
 
-__all__ = ("prepare_sample", "single_shot_key", "reduce_findings")
+__all__ = ("extract_json", "prepare_sample", "single_shot_key", "reduce_findings")
