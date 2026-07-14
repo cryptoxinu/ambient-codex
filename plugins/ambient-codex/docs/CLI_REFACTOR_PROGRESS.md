@@ -71,6 +71,7 @@ bugs, verification, commits, or the next action changes.
 | 3C-1 | Model config + catalog coercion | Complete | local checkpoint | `model_config.py`; resolution precedence and readiness parsing preserved |
 | 3C-2 | Model budget primitives | Complete | local checkpoint | `model_budget.py`; structured output and context-safe sizing formulas extracted |
 | 3C-3 | Model profile construction | Complete | local checkpoint | `model_profiles.py`; catalog-driven context/output/chunk profile preserves facade telemetry adapter |
+| 3C-4 | Output-budget decision core | Complete | `309c612` | `model_budget.py`; auto/explicit context clamps and diagnostics preserve CLI behavior |
 | 3E | Observed token telemetry | Complete | local checkpoint | `telemetry.py`; immutable cache derivation and fail-open ledger reads preserved |
 | 3 | Transport, models, and map/reduce | In progress | — | 3A + 3C-1 complete; model profiles/routing, telemetry, streaming, chunking, and orchestration remain |
 | 4 | Audit and generation workflows | Pending | — | — |
