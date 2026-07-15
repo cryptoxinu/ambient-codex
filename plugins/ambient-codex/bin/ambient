@@ -195,6 +195,7 @@ from ambient_codex import maintenance_commands as _maintenance_commands  # noqa:
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import doctor_command as _doctor_command  # noqa: E402
 from ambient_codex import generation_commands as _generation_commands  # noqa: E402
+from ambient_codex import facade_adapters as _facade_adapters  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
 from ambient_codex import map_reduce_command as _map_reduce_command  # noqa: E402
@@ -281,42 +282,22 @@ def _runtime_dependencies():
         **{**{name: globals().get(name) for name in names}, **early})
 
 
-def _resolve(*args, **kwargs):
-    return _runtime_command._resolve(
-        *args, deps=_runtime_dependencies(), **kwargs)
+(_resolve, _is_within, foreign_root, validate_state_root, _state_dir, _claim_state_dir, _env_pos_int, normalize_requested_max_tokens, secret_backend, keychain_available, keychain_write, keychain_delete, shared_key_env_is_set, resolve_key_and_backend, _is_local_host, resolve_api_url, cmd_trust_url, cmd_trust_url_reset, load_config) = _facade_adapters.build(
+    globals(), "_runtime_command", "_runtime_dependencies",
+    "_resolve _is_within foreign_root validate_state_root _state_dir _claim_state_dir _env_pos_int normalize_requested_max_tokens secret_backend keychain_available keychain_write keychain_delete shared_key_env_is_set resolve_key_and_backend _is_local_host resolve_api_url cmd_trust_url cmd_trust_url_reset load_config")
 
-def _is_within(*args, **kwargs):
-    return _runtime_command._is_within(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def foreign_root(*args, **kwargs):
-    return _runtime_command.foreign_root(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def validate_state_root(*args, **kwargs):
-    return _runtime_command.validate_state_root(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def _state_dir(*args, **kwargs):
-    return _runtime_command._state_dir(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def _claim_state_dir(*args, **kwargs):
-    return _runtime_command._claim_state_dir(
-        *args, deps=_runtime_dependencies(), **kwargs)
+
 
 STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
 
 
-def _env_pos_int(*args, **kwargs):
-    return _runtime_command._env_pos_int(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def normalize_requested_max_tokens(*args, **kwargs):
-    return _runtime_command.normalize_requested_max_tokens(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
 # Completions STREAM: liveness is judged by data flow, not total duration. A
 # healthy generation can run for ages; silence beyond the per-op timeout
@@ -398,53 +379,20 @@ def read_config_file():
     return _runtime_command.read_config_file(
         deps=_runtime_dependencies())
 
-def secret_backend(*args, **kwargs):
-    return _runtime_command.secret_backend(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def keychain_available(*args, **kwargs):
-    return _runtime_command.keychain_available(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
 def keychain_read():
     return _runtime_command.keychain_read(
         deps=_runtime_dependencies())
 
-def keychain_write(*args, **kwargs):
-    return _runtime_command.keychain_write(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def keychain_delete(*args, **kwargs):
-    return _runtime_command.keychain_delete(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def shared_key_env_is_set(*args, **kwargs):
-    return _runtime_command.shared_key_env_is_set(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def resolve_key_and_backend(*args, **kwargs):
-    return _runtime_command.resolve_key_and_backend(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def _is_local_host(*args, **kwargs):
-    return _runtime_command._is_local_host(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def resolve_api_url(*args, **kwargs):
-    return _runtime_command.resolve_api_url(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def cmd_trust_url(*args, **kwargs):
-    return _runtime_command.cmd_trust_url(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def cmd_trust_url_reset(*args, **kwargs):
-    return _runtime_command.cmd_trust_url_reset(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
-def load_config(*args, **kwargs):
-    return _runtime_command.load_config(
-        *args, deps=_runtime_dependencies(), **kwargs)
 
 _KEY_PLACEHOLDER = "[AMBIENT_API_KEY]"   # _StreamRedactor mirrors this exactly
 _MAX_ESCAPE_HOLD = 256                   # compact a held escape past this so
@@ -468,13 +416,11 @@ def _presentation_dependencies():
     )
 
 
-def redact(*args, **kwargs):
-    return _presentation_command.redact(
-        *args, deps=_presentation_dependencies(), **kwargs)
+(redact, sanitize, _stderr_is_tty, _use_color, paint, _config_lock, _private_dir, save_config_values, _split_csv, curation, is_hidden, note_if_hidden, build_banner, print_welcome_panel, key_paste_problem, model_map, resolve_model) = _facade_adapters.build(
+    globals(), "_presentation_command", "_presentation_dependencies",
+    "redact sanitize _stderr_is_tty _use_color paint _config_lock _private_dir save_config_values _split_csv curation is_hidden note_if_hidden build_banner print_welcome_panel key_paste_problem model_map resolve_model")
 
-def sanitize(*args, **kwargs):
-    return _presentation_command.sanitize(
-        *args, deps=_presentation_dependencies(), **kwargs)
+
 
 class _StreamRedactor(_stream_redactor.StreamRedactor):
     """Facade-compatible streaming redactor with late-bound sanitization."""
@@ -487,29 +433,11 @@ class _StreamRedactor(_stream_redactor.StreamRedactor):
         )
 
 
-def _stderr_is_tty(*args, **kwargs):
-    return _presentation_command._stderr_is_tty(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def _use_color(*args, **kwargs):
-    return _presentation_command._use_color(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def paint(*args, **kwargs):
-    return _presentation_command.paint(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def _config_lock(*args, **kwargs):
-    return _presentation_command._config_lock(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def _private_dir(*args, **kwargs):
-    return _presentation_command._private_dir(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def save_config_values(*args, **kwargs):
-    return _presentation_command.save_config_values(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
 # Guidance shown wherever models are chosen; a user-set
 # note for the same id (ambient curate note) overrides, and an explicitly
@@ -519,41 +447,14 @@ DEFAULT_MODEL_NOTES = {
 }
 
 
-def _split_csv(*args, **kwargs):
-    return _presentation_command._split_csv(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def curation(*args, **kwargs):
-    return _presentation_command.curation(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def is_hidden(*args, **kwargs):
-    return _presentation_command.is_hidden(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def note_if_hidden(*args, **kwargs):
-    return _presentation_command.note_if_hidden(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def build_banner(*args, **kwargs):
-    return _presentation_command.build_banner(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def print_welcome_panel(*args, **kwargs):
-    return _presentation_command.print_welcome_panel(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def key_paste_problem(*args, **kwargs):
-    return _presentation_command.key_paste_problem(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def model_map(*args, **kwargs):
-    return _presentation_command.model_map(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
-def resolve_model(*args, **kwargs):
-    return _presentation_command.resolve_model(
-        *args, deps=_presentation_dependencies(), **kwargs)
 
 def _set_pricing_catalog(models):
     global _PRICING_CATALOG
@@ -573,33 +474,16 @@ def _model_runtime_dependencies():
     )
 
 
-def api_request(*args, **kwargs):
-    return _model_runtime.api_request(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
+(api_request, _catalog_data, fetch_models, _as_pos_int, _as_bool, ready_model_ids, safe_catalog, model_pricing, adaptive_response_format, downgrade_response_format, _served_model_of, build_plan_rf_ladder, _expected_output_tokens, estimate_cost) = _facade_adapters.build(
+    globals(), "_model_runtime", "_model_runtime_dependencies",
+    "api_request _catalog_data fetch_models _as_pos_int _as_bool ready_model_ids safe_catalog model_pricing adaptive_response_format downgrade_response_format _served_model_of build_plan_rf_ladder _expected_output_tokens estimate_cost")
 
-def _catalog_data(*args, **kwargs):
-    return _model_runtime._catalog_data(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def fetch_models(*args, **kwargs):
-    return _model_runtime.fetch_models(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def _as_pos_int(*args, **kwargs):
-    return _model_runtime._as_pos_int(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def _as_bool(*args, **kwargs):
-    return _model_runtime._as_bool(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def ready_model_ids(*args, **kwargs):
-    return _model_runtime.ready_model_ids(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def safe_catalog(*args, **kwargs):
-    return _model_runtime.safe_catalog(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
+
 
 # Above every price observed in the live catalog — used as the worst-case
 # price when a model's real pricing is unknown, so cost estimates never
@@ -608,9 +492,6 @@ ASSUMED_MAX_INPUT_PRICE = 2.0    # per Mtok
 ASSUMED_MAX_OUTPUT_PRICE = 8.0   # per Mtok
 
 
-def model_pricing(*args, **kwargs):
-    return _model_runtime.model_pricing(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
 def _get_telemetry_cache():
     return _TELEMETRY_CPT_CACHE
@@ -644,21 +525,13 @@ def _capability_dependencies():
     )
 
 
-def _telemetry_enabled(*args, **kwargs):
-    return _capability_runtime._telemetry_enabled(
-        *args, deps=_capability_dependencies(), **kwargs)
+(_telemetry_enabled, observed_cpt, _effective_cpt, _cost_cpt, _read_caps_file, _load_caps, _cap_recent, cap_state, _try_caps_lock, _write_caps, record_cap) = _facade_adapters.build(
+    globals(), "_capability_runtime", "_capability_dependencies",
+    "_telemetry_enabled observed_cpt _effective_cpt _cost_cpt _read_caps_file _load_caps _cap_recent cap_state _try_caps_lock _write_caps record_cap")
 
-def observed_cpt(*args, **kwargs):
-    return _capability_runtime.observed_cpt(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _effective_cpt(*args, **kwargs):
-    return _capability_runtime._effective_cpt(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _cost_cpt(*args, **kwargs):
-    return _capability_runtime._cost_cpt(
-        *args, deps=_capability_dependencies(), **kwargs)
+
 
 # --- Adaptive capability learning --------------------------------
 # The catalog's advertised features are a HYPOTHESIS; a model's OBSERVED
@@ -675,57 +548,18 @@ CAP_FAIL_THRESHOLD = 2    # recent fails (with no recent ok) => "unreliable"
 _CAP_CACHE = None
 
 
-def _read_caps_file(*args, **kwargs):
-    return _capability_runtime._read_caps_file(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _load_caps(*args, **kwargs):
-    return _capability_runtime._load_caps(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _cap_recent(*args, **kwargs):
-    return _capability_runtime._cap_recent(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def cap_state(*args, **kwargs):
-    return _capability_runtime.cap_state(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _try_caps_lock(*args, **kwargs):
-    return _capability_runtime._try_caps_lock(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def _write_caps(*args, **kwargs):
-    return _capability_runtime._write_caps(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def record_cap(*args, **kwargs):
-    return _capability_runtime.record_cap(
-        *args, deps=_capability_dependencies(), **kwargs)
 
-def adaptive_response_format(*args, **kwargs):
-    return _model_runtime.adaptive_response_format(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def downgrade_response_format(*args, **kwargs):
-    return _model_runtime.downgrade_response_format(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def _served_model_of(*args, **kwargs):
-    return _model_runtime._served_model_of(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def build_plan_rf_ladder(*args, **kwargs):
-    return _model_runtime.build_plan_rf_ladder(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def _expected_output_tokens(*args, **kwargs):
-    return _model_runtime._expected_output_tokens(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def estimate_cost(*args, **kwargs):
-    return _model_runtime.estimate_cost(
-        *args, deps=_model_runtime_dependencies(), **kwargs)
 
 # --- Savings receipts --------------------------------------------
 # The 10-40x-cheaper value proposition was invisible: no run ever showed a
@@ -781,36 +615,19 @@ def _usage_runtime_dependencies():
     )
 
 
-def parse_reference_price(*args, **kwargs):
-    return _usage_runtime.parse_reference_price(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
+(parse_reference_price, resolve_reference_price, usage_cost, reference_cost, _savings_enabled, savings_note, savings_note_by_served, _lock_owner_dead, _fs_lock, _pid_alive) = _facade_adapters.build(
+    globals(), "_usage_runtime", "_usage_runtime_dependencies",
+    "parse_reference_price resolve_reference_price usage_cost reference_cost _savings_enabled savings_note savings_note_by_served _lock_owner_dead _fs_lock _pid_alive")
 
-def resolve_reference_price(*args, **kwargs):
-    return _usage_runtime.resolve_reference_price(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def usage_cost(*args, **kwargs):
-    return _usage_runtime.usage_cost(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def reference_cost(*args, **kwargs):
-    return _usage_runtime.reference_cost(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
+
 
 _SAVINGS_CACHE = None
 
 
-def _savings_enabled(*args, **kwargs):
-    return _usage_runtime._savings_enabled(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def savings_note(*args, **kwargs):
-    return _usage_runtime.savings_note(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def savings_note_by_served(*args, **kwargs):
-    return _usage_runtime.savings_note_by_served(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
 # --- Cross-process file lock (usage ledger) --------------------
 # The usage ledger appends under a fail-open cross-process lock so a crash
@@ -819,17 +636,8 @@ def savings_note_by_served(*args, **kwargs):
 _LEDGER_LOCK_WAIT_S = 2.0     # bounded wait for the usage-ledger lock
 
 
-def _lock_owner_dead(*args, **kwargs):
-    return _usage_runtime._lock_owner_dead(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def _fs_lock(*args, **kwargs):
-    return _usage_runtime._fs_lock(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
-def _pid_alive(*args, **kwargs):
-    return _usage_runtime._pid_alive(
-        *args, deps=_usage_runtime_dependencies(), **kwargs)
 
 def _cost_dependencies():
     return _cost_runtime.CostDependencies.bind(
@@ -845,41 +653,18 @@ def _cost_dependencies():
     )
 
 
-def _lane_pricing(*args, **kwargs):
-    return _cost_runtime._lane_pricing(
-        *args, deps=_cost_dependencies(), **kwargs)
+(_lane_pricing, _fallback_enabled, _batch_fallback_alt, _fb_call_cost, _fb_alt_budget, estimate_cost_fb, estimate_cost_mr_fb, estimate_cost_mr, pick_fallback_model) = _facade_adapters.build(
+    globals(), "_cost_runtime", "_cost_dependencies",
+    "_lane_pricing _fallback_enabled _batch_fallback_alt _fb_call_cost _fb_alt_budget estimate_cost_fb estimate_cost_mr_fb estimate_cost_mr pick_fallback_model")
 
-def _fallback_enabled(*args, **kwargs):
-    return _cost_runtime._fallback_enabled(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def _batch_fallback_alt(*args, **kwargs):
-    return _cost_runtime._batch_fallback_alt(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def _fb_call_cost(*args, **kwargs):
-    return _cost_runtime._fb_call_cost(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def _fb_alt_budget(*args, **kwargs):
-    return _cost_runtime._fb_alt_budget(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def estimate_cost_fb(*args, **kwargs):
-    return _cost_runtime.estimate_cost_fb(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def estimate_cost_mr_fb(*args, **kwargs):
-    return _cost_runtime.estimate_cost_mr_fb(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def estimate_cost_mr(*args, **kwargs):
-    return _cost_runtime.estimate_cost_mr(
-        *args, deps=_cost_dependencies(), **kwargs)
 
-def pick_fallback_model(*args, **kwargs):
-    return _cost_runtime.pick_fallback_model(
-        *args, deps=_cost_dependencies(), **kwargs)
+
 
 # --- Advisory routing ------------------------------------------
 # Everything here is either the user EXPLICITLY delegating selection (they
@@ -911,77 +696,27 @@ def _routing_dependencies():
     )
 
 
-def is_auto_model(*args, **kwargs):
-    return _routing_runtime.is_auto_model(
-        *args, deps=_routing_dependencies(), **kwargs)
+(is_auto_model, _catalog_out_price, resolve_auto_model, preflight_hint, route_model, _validate_reduce_id, resolve_reduce_model, response_format_for, _model_budget_constants, _model_profile_constants, _reasoning_output_budget, _context_safe_output_cap, _context_safe_escalation_ceiling, single_shot_max_chars, _reasoning_single_shot_target, model_profile, _resolve_output_budget, apply_output_budget) = _facade_adapters.build(
+    globals(), "_routing_runtime", "_routing_dependencies",
+    "is_auto_model _catalog_out_price resolve_auto_model preflight_hint route_model _validate_reduce_id resolve_reduce_model response_format_for _model_budget_constants _model_profile_constants _reasoning_output_budget _context_safe_output_cap _context_safe_escalation_ceiling single_shot_max_chars _reasoning_single_shot_target model_profile _resolve_output_budget apply_output_budget")
 
-def _catalog_out_price(*args, **kwargs):
-    return _routing_runtime._catalog_out_price(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def resolve_auto_model(*args, **kwargs):
-    return _routing_runtime.resolve_auto_model(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def preflight_hint(*args, **kwargs):
-    return _routing_runtime.preflight_hint(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def route_model(*args, **kwargs):
-    return _routing_runtime.route_model(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _validate_reduce_id(*args, **kwargs):
-    return _routing_runtime._validate_reduce_id(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def resolve_reduce_model(*args, **kwargs):
-    return _routing_runtime.resolve_reduce_model(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def response_format_for(*args, **kwargs):
-    return _routing_runtime.response_format_for(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _model_budget_constants(*args, **kwargs):
-    return _routing_runtime._model_budget_constants(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _model_profile_constants(*args, **kwargs):
-    return _routing_runtime._model_profile_constants(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _reasoning_output_budget(*args, **kwargs):
-    return _routing_runtime._reasoning_output_budget(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _context_safe_output_cap(*args, **kwargs):
-    return _routing_runtime._context_safe_output_cap(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _context_safe_escalation_ceiling(*args, **kwargs):
-    return _routing_runtime._context_safe_escalation_ceiling(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def single_shot_max_chars(*args, **kwargs):
-    return _routing_runtime.single_shot_max_chars(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _reasoning_single_shot_target(*args, **kwargs):
-    return _routing_runtime._reasoning_single_shot_target(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def model_profile(*args, **kwargs):
-    return _routing_runtime.model_profile(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def _resolve_output_budget(*args, **kwargs):
-    return _routing_runtime._resolve_output_budget(
-        *args, deps=_routing_dependencies(), **kwargs)
 
-def apply_output_budget(*args, **kwargs):
-    return _routing_runtime.apply_output_budget(
-        *args, deps=_routing_dependencies(), **kwargs)
+
 
 def error_message(body):
     return _response_errors.error_message(body)
@@ -1317,99 +1052,46 @@ def _context_dependencies():
     )
 
 
-def read_stdin_if_piped(*args, **kwargs):
-    return _context_command.read_stdin_if_piped(
-        *args, deps=_context_dependencies(), **kwargs)
+(read_stdin_if_piped, _stdin_read_and_decode, _read_stdin_bounded, warn_if_stdin_ignored, read_files, files_block, _chunk_ranges, code_map_budget, _sigs_python, _sigs_regex, _file_signatures, build_code_map, _py_break_lines, density_factor, _chunk_break_lines, pack_chunks, _resolve_parallel, _reduce_response_format, _map_note) = _facade_adapters.build(
+    globals(), "_context_command", "_context_dependencies",
+    "read_stdin_if_piped _stdin_read_and_decode _read_stdin_bounded warn_if_stdin_ignored read_files files_block _chunk_ranges code_map_budget _sigs_python _sigs_regex _file_signatures build_code_map _py_break_lines density_factor _chunk_break_lines pack_chunks _resolve_parallel _reduce_response_format _map_note")
 
 
-def _stdin_read_and_decode(*args, **kwargs):
-    return _context_command._stdin_read_and_decode(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _read_stdin_bounded(*args, **kwargs):
-    return _context_command._read_stdin_bounded(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def warn_if_stdin_ignored(*args, **kwargs):
-    return _context_command.warn_if_stdin_ignored(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def read_files(*args, **kwargs):
-    return _context_command.read_files(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def files_block(*args, **kwargs):
-    return _context_command.files_block(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _chunk_ranges(*args, **kwargs):
-    return _context_command._chunk_ranges(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def code_map_budget(*args, **kwargs):
-    return _context_command.code_map_budget(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _sigs_python(*args, **kwargs):
-    return _context_command._sigs_python(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _sigs_regex(*args, **kwargs):
-    return _context_command._sigs_regex(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _file_signatures(*args, **kwargs):
-    return _context_command._file_signatures(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def build_code_map(*args, **kwargs):
-    return _context_command.build_code_map(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _py_break_lines(*args, **kwargs):
-    return _context_command._py_break_lines(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def density_factor(*args, **kwargs):
-    return _context_command.density_factor(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _chunk_break_lines(*args, **kwargs):
-    return _context_command._chunk_break_lines(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def pack_chunks(*args, **kwargs):
-    return _context_command.pack_chunks(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _resolve_parallel(*args, **kwargs):
-    return _context_command._resolve_parallel(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _reduce_response_format(*args, **kwargs):
-    return _context_command._reduce_response_format(
-        *args, deps=_context_dependencies(), **kwargs)
 
 
-def _map_note(*args, **kwargs):
-    return _context_command._map_note(
-        *args, deps=_context_dependencies(), **kwargs)
+
 
 
 def _map_reduce_dependencies():
@@ -1788,94 +1470,44 @@ def _audit_input_dependencies():
     )
 
 
-def extract_json(*args, **kwargs):
-    return _audit_inputs.extract_json(
-        *args, deps=_audit_input_dependencies(), **kwargs)
+(extract_json, _finding_sig, _titles_match, parse_audit_object, dedupe_findings, _verdict_from, findings_reducer, _text_has_unparsed_finding, parse_prose_findings, render_findings, with_line_gutters, _repo_candidate_paths, repo_walk, _guttered_size, repo_audit_inputs, cross_file_suspects, run_cross_file_pass, git_diff_inputs) = _facade_adapters.build(
+    globals(), "_audit_inputs", "_audit_input_dependencies",
+    "extract_json _finding_sig _titles_match parse_audit_object dedupe_findings _verdict_from findings_reducer _text_has_unparsed_finding parse_prose_findings render_findings with_line_gutters _repo_candidate_paths repo_walk _guttered_size repo_audit_inputs cross_file_suspects run_cross_file_pass git_diff_inputs")
 
 
-def _finding_sig(*args, **kwargs):
-    return _audit_inputs._finding_sig(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def _titles_match(*args, **kwargs):
-    return _audit_inputs._titles_match(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def parse_audit_object(*args, **kwargs):
-    return _audit_inputs.parse_audit_object(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def dedupe_findings(*args, **kwargs):
-    return _audit_inputs.dedupe_findings(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def _verdict_from(*args, **kwargs):
-    return _audit_inputs._verdict_from(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def findings_reducer(*args, **kwargs):
-    return _audit_inputs.findings_reducer(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def _text_has_unparsed_finding(*args, **kwargs):
-    return _audit_inputs._text_has_unparsed_finding(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def parse_prose_findings(*args, **kwargs):
-    return _audit_inputs.parse_prose_findings(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def render_findings(*args, **kwargs):
-    return _audit_inputs.render_findings(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def with_line_gutters(*args, **kwargs):
-    return _audit_inputs.with_line_gutters(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def _repo_candidate_paths(*args, **kwargs):
-    return _audit_inputs._repo_candidate_paths(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def repo_walk(*args, **kwargs):
-    return _audit_inputs.repo_walk(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def _guttered_size(*args, **kwargs):
-    return _audit_inputs._guttered_size(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def repo_audit_inputs(*args, **kwargs):
-    return _audit_inputs.repo_audit_inputs(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def cross_file_suspects(*args, **kwargs):
-    return _audit_inputs.cross_file_suspects(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def run_cross_file_pass(*args, **kwargs):
-    return _audit_inputs.run_cross_file_pass(
-        *args, deps=_audit_input_dependencies(), **kwargs)
 
 
-def git_diff_inputs(*args, **kwargs):
-    return _audit_inputs.git_diff_inputs(
-        *args, deps=_audit_input_dependencies(), **kwargs)
+
 
 
 
