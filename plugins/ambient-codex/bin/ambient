@@ -59,7 +59,7 @@ is advisory, auto is explicit delegation, --fallback stays opt-in.
 
 import argparse
 import ast
-import concurrent.futures
+import concurrent.futures  # noqa: F401 -- public test/patch seam
 import contextlib
 import dataclasses
 import difflib
@@ -191,12 +191,14 @@ from ambient_codex import doctor_command as _doctor_command  # noqa: E402
 from ambient_codex import generation_commands as _generation_commands  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
+from ambient_codex import map_reduce_command as _map_reduce_command  # noqa: E402
 from ambient_codex import map_command as _map_command  # noqa: E402
 from ambient_codex import map_workflow as _map_workflow  # noqa: E402
 from ambient_codex import model_config as _model_config  # noqa: E402
 from ambient_codex import model_budget as _model_budget  # noqa: E402
 from ambient_codex import model_profiles as _model_profiles  # noqa: E402
 from ambient_codex import output_schema as _output_schema  # noqa: E402
+from ambient_codex import output_command as _output_command  # noqa: E402
 from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
@@ -3148,319 +3150,95 @@ def _map_note(map_system, code_map, n_chunks):
         map_system, code_map, n_chunks, _CHUNK_IDX_TOKEN)
 
 
+def _map_reduce_dependencies():
+    return _map_reduce_command.MapReduceDependencies.bind(
+        CACHE_TTL_DEFAULT=CACHE_TTL_DEFAULT, ChatError=ChatError,
+        NetworkError=NetworkError, RequestSpec=RequestSpec,
+        _CHUNK_IDX_TOKEN=_CHUNK_IDX_TOKEN, _cache_get=_cache_get,
+        _cache_key=_cache_key, _cache_put=_cache_put,
+        _chunk_ranges=_chunk_ranges, _map_note=_map_note,
+        _map_reduce_core=_map_reduce_core,
+        _reduce_response_format=_reduce_response_format,
+        _resolve_parallel=_resolve_parallel, _retry_delay=_retry_delay,
+        _session_or=_session_or, complete=complete, model_profile=model_profile,
+        concurrent=concurrent, dataclasses=dataclasses, os=os, sys=sys,
+        threading=threading, time=time,
+    )
+
+
 def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
                    synth_system, reduce_budget, reducer=None, code_map="",
                    gate=None, cancel_event=None, reduce_model=None,
                    catalog=None, session=None):
-    """Fan chunk calls out in parallel, then reduce the per-chunk results.
-    Returns (final_text, partial, reason). Never discards paid-for work: failed
-    or truncated chunks are counted as coverage gaps and surfaced; a synthesis
-    failure falls back to the raw per-chunk reports rather than exiting.
-    If `reducer(chunk_texts)` is given, it replaces the LLM synthesis with a
-    deterministic Python merge (A5: structured findings dedup, no re-billed
-    synthesis call). `gate` (a shared threading.Semaphore, consensus lane)
-    caps TOTAL concurrent complete() calls ACROSS sibling pools — without it
-    N models × N chunks each = width² simultaneous network calls (bounded). A set `cancel_event` stops chunks from STARTING: once the caller
-    is unwinding (fatal sibling error / Ctrl-C), no new work gets billed.
-    `reduce_model` (explicit --reduce-model / AMBIENT_MODEL_MAP only)
-    routes the SYNTHESIS calls to a different model — cheap map, strong
-    reduce; default = the map model, byte-identical behavior. When it
-    differs and a `catalog` is supplied, the synthesis is sized to the
-    REDUCE model's own window the hierarchical grouping budget is
-    clamped to its single-shot capacity and the synthesis call gets a
-    reduce-specific replaced spec (max_tokens/response_format re-derived) — a
-    smaller-window reduce model must never receive merge prompts or token
-    budgets sized for the map model."""
-    if not chunks:   # L12: no input → ThreadPoolExecutor(max_workers=0) raises
-        return "", False, "no input"
-    session = _session_or(session, api_key, api_url)
-    api_key, api_url = session.api_key, session.api_url
-    # FAN-OUT lane: the caller's batch gate already reserved any --fallback
-    # swap exposure up front (fallback-aware estimates) — per-worker
-    # re-gating is off (see RequestSpec.gate_fallback). Applies to the
-    # synthesis spec too (derived below), which the same batch gate priced.
-    spec = dataclasses.replace(RequestSpec.from_args(args),
-                               gate_fallback=False)
-    if cancel_event is None:
-        # Local fail-fast lane: a worker-side fatal
-        # must be able to stop siblings even when no caller event exists.
-        cancel_event = threading.Event()
-    total = sum(map(len, chunks))
-    width = min(_resolve_parallel(spec), len(chunks))
-    synth_model = reduce_model or model
-    synth_spec = spec
-    if synth_model != model and catalog:
-        reduce_profile = model_profile(catalog, synth_model)
-        # Pack merge inputs to the SMALLER of the two windows: shrinking for
-        # a tiny reduce model is required; growing for a bigger one is not
-        # (the map model's budget is already proven safe for these partials).
-        reduce_budget = min(reduce_budget, reduce_profile.single_shot_chars)
-        synth_spec = dataclasses.replace(
-            spec,
-            max_tokens=(min(spec.max_tokens, reduce_profile.output_budget)
-                        if spec.max_tokens
-                        else reduce_profile.output_budget),
-            response_format=_reduce_response_format(
-                spec.response_format, reduce_profile))
-    print(
-        f"ambient: input {total:,} chars → {len(chunks)} chunks → parallel calls "
-        f"(max {width} at once) + {'deterministic merge' if reducer else 'synthesis'} "
-        f"(~{total // 3:,} input tokens)"
-        + (f" · reduce on {synth_model}" if synth_model != model else ""),
-        file=sys.stderr,
+    return _map_reduce_command.run_map_reduce(
+        api_key, api_url, model, map_system, chunks, args, synth_system,
+        reduce_budget, reducer, code_map, gate, cancel_event, reduce_model,
+        catalog, session, _map_reduce_dependencies())
+
+
+def _output_dependencies():
+    return _output_command.OutputDependencies.bind(
+        CHARS_PER_TOKEN=CHARS_PER_TOKEN, EXIT_PARTIAL=EXIT_PARTIAL,
+        _json_in_argv=_json_in_argv, _json_mode=_json_mode,
+        _output_schema=_output_schema, _reasoning_hint=_reasoning_hint,
+        emit_json_error=emit_json_error, paint=paint, redact=redact,
+        savings_note=savings_note, savings_note_by_served=savings_note_by_served,
     )
-
-    map_note = _map_note(map_system, code_map, len(chunks))
-
-    use_cache = not spec.no_cache
-    cache_ttl = spec.cache_ttl or CACHE_TTL_DEFAULT
-    cache_hits = [0]
-    cache_hits_lock = threading.Lock()   # L14: workers increment concurrently
-
-    def cancelled():
-        return cancel_event is not None and cancel_event.is_set()
-
-    def work(i):
-        text, partial, cached = _map_reduce_core.run_chunk(
-            i, chunks=chunks, map_note=map_note, index_marker=_CHUNK_IDX_TOKEN,
-            model=model, spec=spec, session=session, cancel_event=cancel_event,
-            gate=gate, cache_key=_cache_key,
-            cache_get=_cache_get, cache_put=_cache_put, cache_ttl=cache_ttl,
-            complete=lambda mod, messages, request_spec, **kwargs: complete(
-                api_key, api_url, mod, messages, request_spec, **kwargs),
-            chat_error=ChatError, retry_delay=_retry_delay, sleep=time.sleep,
-            use_cache=use_cache)
-        if cached:
-            with cache_hits_lock:
-                cache_hits[0] += 1
-        return text, partial
-
-    try:
-        results, errors, missed_ranges = _map_reduce_core.collect_fanout(
-            chunks, work=work, width=width, cancel_event=cancel_event,
-            chunk_ranges=_chunk_ranges,
-            executor=concurrent.futures.ThreadPoolExecutor,
-            as_completed=concurrent.futures.as_completed)
-    except KeyboardInterrupt:
-        # Cancel QUEUED chunks and exit PROMPTLY. Re-raising would hit the
-        # finally's blocking pool.shutdown(wait=True) and stall exit-130 for up
-        # to --timeout while an in-flight worker drains — so trip cancel and
-        # os._exit(130) after flushing BOTH streams (os._exit skips the blocking
-        # teardown, matching the consensus/best-of Ctrl-C lanes).
-        print("\nambient: cancelling…", file=sys.stderr)
-        # collect_fanout already tripped cancellation and non-blockingly
-        # discarded queued work before it re-raised this interrupt.
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(130)
-    if cache_hits[0]:
-        print(f"ambient: {cache_hits[0]}/{len(chunks)} chunks served from cache "
-              "(not re-billed)", file=sys.stderr)
-    done = [(i, r[0]) for i, r in enumerate(results) if r]
-    truncated = [i + 1 for i, r in enumerate(results) if r and r[1]]
-    for i, r in enumerate(results):
-        if r and r[1]:
-            missed_ranges.extend(_chunk_ranges(chunks[i]))
-    if not done:
-        raise ChatError(
-            "stall",
-            f"all {len(chunks)} chunk calls failed — first: "
-            f"{errors[0] if errors else 'unknown'}",
-        )
-
-    gap = _map_reduce_core.coverage_gap(errors, truncated)
-
-    def merge(texts):
-        return _map_reduce_core.synthesize_parts(
-            texts, system=synth_system, gap=gap, model=synth_model,
-            spec=synth_spec, session=session,
-            complete=lambda mod, messages, request_spec, **kwargs: complete(
-                api_key, api_url, mod, messages, request_spec, **kwargs),
-            recoverable_errors=(ChatError, NetworkError))
-
-    texts = [r for _, r in done]
-    # Deterministic Python reduce (structured mode): no LLM synthesis, no
-    # re-billed merge call — just parse + dedupe the chunk findings.
-    if reducer is not None:
-        final = reducer(texts)
-        partial, reason = _map_reduce_core.partial_reason(
-            errors=errors, truncated=truncated, synth_failed=False,
-            missed_ranges=missed_ranges, chunk_count=len(chunks))
-        if partial:
-            print(f"[ambient-codex map-reduce: PARTIAL — {reason}]",
-                  file=sys.stderr)
-        return final, partial, reason
-    # The synthesis prompt is system + gap + per-part headers, not just the
-    # parts — reserve that overhead so a merge call can't blow the context.
-    overhead = len(synth_system) + len(gap) + 200 * max(1, len(texts))
-    # No 20k floor: a small-window model (e.g. gemma, single≈17.6k) would then
-    # get a merge budget above its own window → doomed, re-billed synthesis
-    # calls. Respect the model's real budget.
-    effective_budget = max(1_000, reduce_budget - overhead)
-    final, synth_failed = _map_reduce_core.hierarchical_reduce(
-        texts, effective_budget=effective_budget, merge=merge)
-    partial, reason = _map_reduce_core.partial_reason(
-        errors=errors, truncated=truncated, synth_failed=synth_failed,
-        missed_ranges=missed_ranges, chunk_count=len(chunks))
-    if partial:
-        print(
-            f"[ambient-codex map-reduce: PARTIAL — {reason}]",
-            file=sys.stderr,
-        )
-    return final, partial, reason
 
 
 def _reasoning_hint(content, completion_tokens):
-    """A short receipt tag when billed output tokens materially exceed the
-    visible answer: a reasoning model bills its hidden thinking as output, so a
-    one-word reply can read as out=150 and look like a metering bug. Keeps the
-    receipt honest without pretending to know the exact reasoning split."""
-    try:
-        visible = len(content or "") / CHARS_PER_TOKEN
-        if completion_tokens and completion_tokens > max(20, visible * 2):
-            return " incl. reasoning"
-    except (TypeError, ValueError):
-        pass
-    return ""
+    return _output_command.reasoning_hint(
+        content, completion_tokens, _output_dependencies())
 
 
 def render_result(text, partial, reason, args, api_key, usage=None, model=None,
                   already_streamed=False, usage_by_model=None):
-    """Single place that prints a result and sets the exit code. Partial/
-    incomplete results get a loud header and a non-zero exit unless the caller
-    passed --allow-partial, so a truncated audit can never masquerade as clean.
-    `already_streamed` = the body was live-streamed to stdout, so don't
-    reprint it — just close the line, warn, and set the exit code.
-    `usage_by_model`: per-SERVED-model token split for runs whose
-    samples were served by different models — the receipt then prices each
-    model's own tokens instead of the aggregate at `model`'s price."""
-    return _output_schema.render_terminal_result(
-        text, partial, reason, args, api_key, usage=usage, model=model,
-        already_streamed=already_streamed, usage_by_model=usage_by_model,
-        paint=paint, redact=redact, stdout=sys.stdout, emit_stdout=print,
-        emit_stderr=lambda value: print(value, file=sys.stderr),
-        exit_process=sys.exit, partial_exit_code=EXIT_PARTIAL,
-        savings_note=savings_note, savings_note_by_served=savings_note_by_served,
-        reasoning_hint=_reasoning_hint,
-    )
+    return _output_command.render_result(
+        text, partial, reason, args, api_key, usage, model, already_streamed,
+        usage_by_model, _output_dependencies())
 
 
 def _public_usage(usage):
-    """Only token counts and the estimation marker are safe to emit. A provider
-    response may attach cost/price/saved_pct metadata to `usage`; those never
-    leave the tool (founder hard rule: never surface money, and the savings
-    comparison is opt-in)."""
-    return _output_schema.public_usage(usage)
+    return _output_command.public_usage(usage, _output_dependencies())
 
 
 def emit_json(kind, *, model, api_key="", content=None, findings=None,
               verdict=None, partial=False, reason=None, usage=None,
               finish_reason=None, extra=None, allow_partial=False,
               exit_now=True):
-    """THE machine-readable sink: every --json surface — ask,
-    code, audit, consensus, build, single-shot or map-reduce — emits this one
-    shape, so an orchestrator never special-cases how a result was computed
-. schema_version bumps on any
-    breaking change. Returns the exit code; exits itself unless exit_now=False."""
-    env, code = _output_schema.build_envelope(
-        kind, model=model, usage=usage, content=content, findings=findings,
-        verdict=verdict, partial=partial, reason=reason,
-        finish_reason=finish_reason, extra=extra,
-        allow_partial=allow_partial, partial_exit_code=EXIT_PARTIAL,
-    )
-    print(redact(json.dumps(env, indent=2), api_key))
-    if usage and model:
-        # The savings receipt goes to STDERR in --json mode too (F05d): stdout
-        # stays clean parseable JSON, and the value proposition is no longer
-        # invisible to anyone who runs with --json. savings_note owns the
-        # honesty rules (assumed pricing → no claim; est. label).
-        note = savings_note(model, usage)
-        print(redact(f"[ambient {model} | in={usage.get('prompt_tokens')} "
-                     f"out={usage.get('completion_tokens')} tokens{note}]",
-                     api_key), file=sys.stderr)
-    if code and exit_now:
-        sys.exit(code)
-    return code
+    return _output_command.emit_json(
+        kind, model=model, api_key=api_key, content=content, findings=findings,
+        verdict=verdict, partial=partial, reason=reason, usage=usage,
+        finish_reason=finish_reason, extra=extra, allow_partial=allow_partial,
+        exit_now=exit_now, deps=_output_dependencies())
 
 
 def _json_mode(args):
-    """True when the caller asked for the machine envelope: --json on
-    ask/code/build, or audit's --format json (its --json is a const alias)."""
-    return bool(getattr(args, "json", False)) \
-        or getattr(args, "format", None) == "json"
+    return _output_command.json_mode(args)
 
 
 def _json_in_argv():
-    """Best-effort json-mode detection from sys.argv, for usage_exit (which runs
-    before/without a parsed args object)."""
-    argv = sys.argv[1:]
-    if "--json" in argv or "--format=json" in argv:
-        return True
-    return any(a == "--format" and argv[i + 1] == "json"
-               for i, a in enumerate(argv[:-1]))
+    return _output_command.json_in_argv()
 
 
 def emit_json_error(kind, category, diagnosis, api_key="", exit_code=1):
-    """Error twin of emit_json: an orchestrator that asked for --json must get
-    a PARSEABLE failure on stdout ({"status": "error", …}), never a bare
-    stderr line it has to scrape. Same schema_version; exits with exit_code
-    (1 for a runtime failure, 64 for a usage error)."""
-    env = _output_schema.build_error_envelope(
-        kind, category, redact(str(diagnosis), api_key), exit_code)
-    # `ambient map --json` is a JSONL stream (one object per line) — its
-    # terminal error envelope must stay ONE line like every item envelope,
-    # or a line-by-line consumer breaks on the very failure it must parse.
-    indent = None if kind == "map" else 2
-    print(redact(json.dumps(env, indent=indent), api_key))
-    sys.exit(exit_code)
+    return _output_command.emit_json_error(
+        kind, category, diagnosis, api_key, exit_code, _output_dependencies())
 
 
 def _fail(args, kind, err, api_key=""):
-    """The one exit for a ChatError/NetworkError CAUGHT inside a task handler
-    (chat/ask/audit/build): under --json the orchestrator gets the machine
-    envelope — parseable, redacted, exit 1 — instead of an unredacted prose
-    line it has to scrape; the prose path stays byte-identical for humans.
-    Errors that ESCAPE to main() already get this split there."""
-    category = getattr(err, "category", "network")
-    diagnosis = getattr(err, "diagnosis", None) or str(err)
-    if _json_mode(args):
-        emit_json_error(kind, category, diagnosis, api_key)  # exits 1
-    sys.exit(f"ambient [{category}]: {diagnosis}")
+    return _output_command.fail(
+        args, kind, err, api_key, _output_dependencies())
 
 
 def _argv_command():
-    """The task command named on the command line, for envelope `kind` at exit
-    sites with no parsed args object (shared helpers, argparse itself).
-    Restricted to the --json-capable commands so `kind` stays a closed
-    vocabulary; anything else reports as 'usage'."""
-    for tok in sys.argv[1:]:
-        if not tok.startswith("-"):
-            return tok if tok in ("ask", "code", "audit", "build", "map") \
-                else "usage"
-    return "usage"
+    return _output_command.argv_command()
 
 
 def _fail_exit(args, kind, category, msg, exit_code=1, api_key="", prose=None):
-    """The one exit for every OTHER failure reachable under a --json-capable
-    command (input refusals, git preconditions, spend gates, distillation
-    gaps) — the failure contract is TOTAL: a --json caller always gets the
-    machine envelope, never a bare stderr line to scrape. `args=None` sniffs
-    sys.argv for helpers that run before/without a parsed args object. The
-    prose path prints exactly what every prior release printed (default
-    'ambient: {msg}'; pass `prose` where the historical line differs).
-    exit_code is honored on BOTH paths: runtime failures keep the historical
-    sys.exit(<string>) convention (stderr + exit 1); anything else (e.g.
-    EX_USAGE=64) prints the same prose to stderr, then exits with that code —
-    a usage error must not report as a runtime failure just because the
-    caller didn't ask for --json."""
-    wants_json = _json_mode(args) if args is not None else _json_in_argv()
-    if wants_json:
-        emit_json_error(kind, category, msg, api_key, exit_code=exit_code)
-    prose_line = prose if prose is not None else f"ambient: {msg}"
-    if exit_code == 1:
-        sys.exit(prose_line)
-    print(prose_line, file=sys.stderr)
-    sys.exit(exit_code)
+    return _output_command.fail_exit(
+        args, kind, category, msg, exit_code, api_key, prose,
+        _output_dependencies())
 
 
 def _humanize_ctx(n):
