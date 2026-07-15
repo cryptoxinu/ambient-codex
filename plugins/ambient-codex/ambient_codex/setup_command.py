@@ -44,6 +44,12 @@ def environment_variable_is_set(name):
     return name in os.environ
 
 
+def environment_override_note():
+    """Return constant guidance that cannot reflect credential metadata."""
+    return ("note: an Ambient Codex key override is still set in this shell's "
+            "environment and will keep working until you unset it.")
+
+
 def collect_key_interactive(deps):
     import getpass
     import warnings
@@ -173,8 +179,7 @@ def setup_remove(deps):
     print(f"{deps.config_path} to reset everything. Reconfigure any time: "
           f"{deps.launcher_name} setup")
     if environment_variable_is_set(deps.api_key_env):
-        print(f"note: {deps.api_key_env} is still set in this shell's environment "
-              "and will keep working until you unset it.", file=sys.stderr)
+        print(environment_override_note(), file=sys.stderr)
 
 
 def run_setup(args, deps):
@@ -226,6 +231,6 @@ def _collect_setup_key(args, deps):
 
 
 __all__ = ("SetupDependencies", "collect_key_interactive",
-           "environment_variable_is_set",
+           "environment_override_note", "environment_variable_is_set",
            "normalize_pasted_key", "run_setup", "setup_remove",
            "verify_and_store_key")
