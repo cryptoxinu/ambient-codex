@@ -21,10 +21,11 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 _MCP_DIR = str(Path(__file__).resolve().parent)
 if _MCP_DIR not in sys.path:
     sys.path.insert(0, _MCP_DIR)
-from ambient_mcp_catalog import (  # noqa: E402
+from ambient_mcp_catalog import (  # noqa: E402, F401 -- late handler deps
     MAX_PATHS, MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS, TOOLS,
 )
 import ambient_mcp_framing as _framing  # noqa: E402
+import ambient_mcp_tool_handlers as _tool_handlers  # noqa: E402
 
 
 SERVER_NAME = "ambient-codex"
@@ -412,66 +413,15 @@ def compact_ask_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return tool_text(f"{content}\n\n[{suffix}; do not present it as complete.]")
 
 
-def status_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, set())
-    return run_ambient(["config"])
+(status_tool, control_tool, _with_session_mode, set_mode_tool, _mode_menu_text, pick_mode_tool, set_model_tool, _serving_models, _model_label, _model_menu_text, pick_model_tool, set_config_tool, key_tool, models_tool, doctor_tool, usage_tool, self_test_tool, ask_tool, audit_small_tool) = _tool_handlers.build(
+    globals(), "status_tool control_tool _with_session_mode set_mode_tool _mode_menu_text pick_mode_tool set_model_tool _serving_models _model_label _model_menu_text pick_model_tool set_config_tool key_tool models_tool doctor_tool usage_tool self_test_tool ask_tool audit_small_tool")
 
 
-def control_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"all_models", "offline"})
-    argv = ["control", "--json"]
-    if optional_bool(args, "all_models", False):
-        argv.append("--all-models")
-    if optional_bool(args, "offline", False):
-        argv.append("--offline")
-    return _with_session_mode(run_ambient(argv))
 
 
-def _with_session_mode(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Overlay the transient MCP mode on the CLI's persistent control snapshot."""
-    if result.get("isError"):
-        return result
-    try:
-        text = result["content"][0]["text"]
-        payload = json.loads(text)
-    except (IndexError, KeyError, TypeError, json.JSONDecodeError):
-        return result
-    if not isinstance(payload, dict):
-        return result
-    mode = SESSION.mode
-    options = payload.get("mode_options")
-    updated_options = [
-        {**option, "current": option.get("state") == mode}
-        if isinstance(option, dict) else option
-        for option in options
-    ] if isinstance(options, list) else options
-    return tool_text(json.dumps({
-        **payload, "mode": mode, "mode_options": updated_options,
-    }, indent=2))
 
 
-def set_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"state"})
-    state = require_choice(args, "state", ("off", "on", "takeover"))
-    SESSION.mode = state
-    if state == "takeover":
-        return tool_text(
-            "Ambient session is ON. Ambient is now the direct chat and work engine "
-            "for asks, orchestration, code, builds, and audits; Codex is only the "
-            "safe local bridge. Use task-specific CLI lanes rather than forcing large "
-            "work through chat. This Codex session only — turn it off with "
-            "`ambient_set_mode` state `off`; a fresh Codex session starts in normal mode."
-        )
-    if state == "on":
-        return tool_text(
-            "Ambient delegate mode is ON for this Codex session. Ambient handles "
-            "token-heavy work; normal Codex remains the default. A fresh Codex session "
-            "starts in normal mode."
-        )
-    return tool_text(
-        "Normal Codex mode is ON. Ambient session and delegate routing are off for "
-        "this Codex session."
-    )
+
 
 
 _MODE_OPTIONS = (
@@ -481,338 +431,34 @@ _MODE_OPTIONS = (
 )
 
 
-def _mode_menu_text(current: str, reason: str) -> str:
-    listing = "\n".join(
-        f"  {i}. {label} — {description}"
-        for i, (_state, label, description) in enumerate(_MODE_OPTIONS, 1)
-    )
-    return (
-        f"{reason} Mode unchanged; current mode is '{current}'.\n"
-        "Available modes:\n"
-        f"{listing}\n"
-        "To change it, call `ambient_set_mode` with `state` set to `off`, "
-        "`on`, or `takeover` (Ambient session)."
-    )
 
 
-def pick_mode_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Render a native picker for the session-only Ambient operating mode.
-
-    Mirrors `ambient_pick_model`: a tap-to-choose session mode picker, with a
-    numbered text menu fallback for clients without elicitation and headless runs.
-    """
-    reject_unknown(args, set())
-    current = SESSION.mode
-    if not SESSION.supports_elicitation():
-        return tool_text(_mode_menu_text(
-            current,
-            "This client cannot render a native mode picker.",
-        ))
-
-    schema = {
-        "type": "object",
-        "properties": {
-            "state": {
-                "type": "string",
-                "title": "Ambient mode",
-                "description": f"Currently: {current}",
-                "enum": [state for state, _label, _description in _MODE_OPTIONS],
-                "enumNames": [label for _state, label, _description in _MODE_OPTIONS],
-            },
-        },
-        "required": ["state"],
-    }
-    result = elicit("Choose how much work Codex routes to Ambient", schema)
-    chosen = elicitation_choice(result, "state")
-    if not chosen:
-        return tool_text(_mode_menu_text(
-            current,
-            "No mode was selected; the picker may have been cancelled or unavailable.",
-        ))
-    if chosen not in {state for state, _label, _description in _MODE_OPTIONS}:
-        return tool_text(f"Mode unchanged — {chosen!r} is not a valid mode.",
-                         is_error=True)
-    return set_mode_tool({"state": chosen})
 
 
-def set_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"model", "lane"})
-    model = require_string(args, "model", max_chars=256)
-    lane = require_choice(args, "lane", ("both", "chat", "code"))
-    argv = ["control", "model"]
-    if lane == "chat":
-        argv.append("--chat")
-    elif lane == "code":
-        argv.append("--code")
-    argv.extend(["--", model])
-    return run_ambient(argv)
 
 
-def _serving_models() -> List[Dict[str, Any]]:
-    """Models the network is serving right now, as `ambient models --json` sees them.
-
-    A model that is not serving this minute is normal on a decentralized network, so
-    the picker offers only what can answer immediately rather than a stale catalogue.
-    """
-    command = [sys.executable, str(ambient_bin()), "models", "--json"]
-    try:
-        completed = subprocess.run(
-            command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            cwd=str(plugin_root()), timeout=DEFAULT_TIMEOUT_SECONDS, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise AmbientCommandError(f"unable to list Ambient models: {exc}") from exc
-    if completed.returncode != 0:
-        raise AmbientCommandError(redact(completed.stderr.strip() or "ambient models failed"))
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise AmbientCommandError(f"ambient models returned non-JSON: {exc}") from exc
-    models = payload.get("models") if isinstance(payload, dict) else None
-    if not isinstance(models, list):
-        return []
-    serving = [
-        m for m in models
-        if isinstance(m, dict) and m.get("ready") and not m.get("hidden") and m.get("id")
-    ]
-    return serving[:MAX_PICKER_OPTIONS]
 
 
-def _model_label(model: Dict[str, Any]) -> str:
-    label = str(model.get("id", ""))
-    note = model.get("note") or model.get("description")
-    if isinstance(note, str) and note.strip():
-        label = f"{label} — {note.strip()}"
-    return label[:120]
 
 
-def _model_menu_text(serving: List[Dict[str, Any]], reason: str) -> str:
-    listing = "\n".join(
-        f"  {i}. {_model_label(model)}"
-        for i, model in enumerate(serving, 1)
-    )
-    browse = len(serving) + 1
-    return (
-        f"{reason} Model unchanged.\n"
-        "Serving now - ready for immediate use:\n"
-        f"{listing}\n"
-        f"  {browse}. Browse all models - includes on-demand models that may "
-        "take longer to start.\n"
-        "To change it, call `ambient_set_model` with the selected model id. "
-        "To browse everything first, call `ambient_models` with `all=true`; "
-        "show ready models first and label the rest as on-demand."
-    )
 
 
-def pick_model_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Render a native Codex picker for the model + lane, then persist the choice.
-
-    Falls back to a numbered text menu whenever a picker cannot be drawn: an older
-    client, a client that never advertised elicitation, or a headless `codex exec`
-    run (where Codex auto-cancels elicitations because no human is present).
-    """
-    reject_unknown(args, {"lane"})
-    # The picker asks ONE question. Codex does not preserve the property order of a
-    # multi-field `requestedSchema` — a model+lane form rendered "Apply to" as field
-    # 1/2 — so a user who asked to switch models would be quizzed about lanes first.
-    lane = require_choice(args, "lane", ("both", "chat", "code")) if "lane" in args else "both"
-
-    serving = _serving_models()
-    if not serving:
-        return tool_text(
-            "No Ambient models are serving this minute. That does not mean the "
-            "catalog is broken: Ambient models can spin up on demand. Call "
-            "`ambient_models` with `all=true` to browse all models, then call "
-            "`ambient_set_model` with the selected model id.")
-
-    if not SESSION.supports_elicitation():
-        return tool_text(_model_menu_text(
-            serving,
-            "This client cannot render a native model picker.",
-        ))
-
-    lane_label = {"both": "chat + code", "chat": "chat", "code": "code"}[lane]
-    # `enum` + `enumNames` is the enum shape in the MCP restricted schema subset.
-    # Codex also accepts a richer `oneOf: [{const, title}]`, but that is a Codex
-    # extension a stricter client may reject, and both render the same picker.
-    schema = {
-        "type": "object",
-        "properties": {
-            "model": {
-                "type": "string",
-                "title": "Ambient model",
-                "description": "Serving now on Ambient; browse all models separately for on-demand options",
-                "enum": [str(m["id"]) for m in serving],
-                "enumNames": [_model_label(m) for m in serving],
-            },
-        },
-        "required": ["model"],
-    }
-    result = elicit(f"Select the Ambient model for {lane_label}", schema)
-    chosen = elicitation_choice(result, "model")
-    if not chosen:
-        return tool_text(_model_menu_text(
-            serving,
-            "No model was selected; the picker may have been cancelled or unavailable.",
-        ))
-    # Never trust an echoed value: persist only an id we actually offered.
-    offered = {str(m["id"]) for m in serving}
-    if chosen not in offered:
-        return tool_text(f"Model unchanged — {chosen!r} was not one of the offered "
-                         "models.", is_error=True)
-
-    argv = ["control", "model", chosen]
-    if lane == "chat":
-        argv.append("--chat")
-    elif lane == "code":
-        argv.append("--code")
-    return run_ambient(argv)
 
 
-def set_config_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"name", "value", "unset"})
-    name = require_choice(
-        args,
-        "name",
-        ("streaming", "fallback", "savings"),
-    )
-    unset = optional_bool(args, "unset", False)
-    value = optional_string(args, "value", max_chars=128)
-    if unset and value is not None:
-        raise ToolInputError("value cannot be provided when unset=true")
-    if unset:
-        return run_ambient(["control", "setting", name, "--unset"])
-    if value is None:
-        raise ToolInputError("value is required unless unset=true")
-    return run_ambient(["control", "setting", name, "--", value])
 
 
-def key_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"action"})
-    action = require_choice(args, "action", ("status", "setup", "rotate", "remove"))
-    return run_ambient(["control", "key", action])
 
 
-def models_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"all", "json"})
-    argv = ["models"]
-    if optional_bool(args, "all", False):
-        argv.append("--all")
-    if optional_bool(args, "json", True):
-        argv.append("--json")
-    return run_ambient(argv)
 
 
-def doctor_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, set())
-    return run_ambient(["doctor"])
 
 
-def usage_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"days", "json"})
-    days = optional_int(args, "days", 30, minimum=1, maximum=3650)
-    argv = ["usage", "--days", str(days)]
-    if optional_bool(args, "json", True):
-        argv.append("--json")
-    return run_ambient(argv)
 
 
-def self_test_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, set())
-    root = plugin_root()
-    binary = ambient_bin()
-    if not root.is_dir():
-        return tool_text(f"ambient-codex self-test failed: plugin root missing: {root}", is_error=True)
-    if not binary.is_file():
-        return tool_text(f"ambient-codex self-test failed: {missing_cli_message(root, binary)}", is_error=True)
-
-    env = {name: value for name, value in os.environ.items() if name != "AMBIENT_API_KEY"}
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(binary), "version"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(root),
-            timeout=SELF_TEST_TIMEOUT_SECONDS,
-            check=False,
-            env=env,
-        )
-    except OSError as exc:
-        return tool_text(f"ambient-codex self-test failed: unable to launch bundled CLI: {exc}", is_error=True)
-    except subprocess.TimeoutExpired:
-        return tool_text(
-            f"ambient-codex self-test failed: bundled CLI version timed out after {SELF_TEST_TIMEOUT_SECONDS}s",
-            is_error=True,
-        )
-
-    if completed.returncode:
-        details = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
-        return tool_text(f"ambient-codex self-test failed: bundled CLI exited {completed.returncode}\n{details}", is_error=True)
-
-    payload = {
-        "schema_version": 1,
-        "status": "ok",
-        "message": "ambient-codex self-test ok",
-        "server": SERVER_NAME,
-        "server_version": SERVER_VERSION,
-        "plugin_root": str(root),
-        "ambient_version": completed.stdout.strip(),
-    }
-    return tool_text(json.dumps(payload, indent=2))
 
 
-def ask_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"prompt", "system", "model", "max_tokens", "timeout", "json"})
-    prompt = require_string(args, "prompt", max_chars=MAX_PROMPT_CHARS)
-    system = optional_string(args, "system", max_chars=MAX_SYSTEM_CHARS)
-    model = optional_string(args, "model", max_chars=256)
-    max_tokens = args.get("max_tokens")
-    if max_tokens is not None:
-        optional_int(args, "max_tokens", 0, minimum=1, maximum=1_000_000)
-    timeout_seconds = optional_int(args, "timeout", DEFAULT_TIMEOUT_SECONDS, minimum=1, maximum=3600)
-
-    argv = ["ask", "--yes"]
-    if system is not None:
-        argv.append(f"--system={system}")
-    if model is not None:
-        argv.append(f"--model={model}")
-    if max_tokens is not None:
-        argv.extend(["--max-tokens", str(max_tokens)])
-    if optional_bool(args, "json", True):
-        argv.append("--json")
-    argv.extend(["--", prompt])
-    return compact_ask_result(run_ambient(argv, timeout_seconds=timeout_seconds))
 
 
-def audit_small_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    reject_unknown(args, {"paths", "staged", "diff", "focus", "cwd", "json", "timeout"})
-    paths = optional_string_list(args, "paths", max_items=MAX_PATHS, max_chars=1000)
-    staged = optional_bool(args, "staged", False)
-    diff = optional_string(args, "diff", max_chars=200)
-    focus = optional_string(args, "focus", max_chars=300)
-    cwd_value = optional_string(args, "cwd", max_chars=4096)
-    timeout_seconds = optional_int(args, "timeout", DEFAULT_TIMEOUT_SECONDS, minimum=1, maximum=3600)
-    if not paths and not staged and diff is None:
-        raise ToolInputError("ambient_audit_small requires paths, staged=true, or diff")
-
-    workdir = Path(cwd_value).expanduser().resolve() if cwd_value else Path.cwd()
-    if not workdir.is_dir():
-        raise ToolInputError("cwd must be an existing directory")
-    reject_oversized_audit_paths(workdir, paths)
-
-    argv = ["audit"]
-    if staged:
-        argv.append("--staged")
-    if diff is not None:
-        argv.append(f"--diff={diff}")
-    if focus is not None:
-        argv.append(f"--focus={focus}")
-    if optional_bool(args, "json", True):
-        argv.append("--json")
-    argv.append("--yes")
-    if paths:
-        argv.extend(["--", *paths])
-    return run_ambient(argv, cwd=workdir, timeout_seconds=timeout_seconds)
 
 
 TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {

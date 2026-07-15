@@ -152,6 +152,7 @@ bugs, verification, commits, or the next action changes.
 | 5E-2 | Declarative dependency binding | Complete | local checkpoint | `facade_adapters.py`; 27 dependency factories now validate and resolve named facade collaborators at call time, preserving patch seams while removing duplicated hand-wiring and keeping every produced dependency record immutable |
 | 5F-1 | Native MCP tool catalog | Complete | local checkpoint | `mcp/ambient_mcp_catalog.py`; all 14 strict credential-free tool schemas and their bounded prompt/path constants are isolated from stdio lifecycle and command execution while the executable preserves source-loader compatibility |
 | 5F-2 | Native MCP framing runtime | Complete | local checkpoint | `mcp/ambient_mcp_framing.py`; JSONL/content-length parsing, frame caps, immutable header accumulation, response envelopes, and sticky-EOF deadline reads are isolated behind facade-compatible functions and reader class |
+| 5F-3 | Native MCP tool execution surface | Complete | local checkpoint | `mcp/ambient_mcp_tool_handlers.py`; status/control/session-mode/model-picker/settings/key/models/doctor/usage/self-test/ask/audit handlers run over a read-only live facade view, preserving picker and subprocess patch seams while reducing the MCP executable below 800 lines |
 
 ## Phase 0 checklist
 
