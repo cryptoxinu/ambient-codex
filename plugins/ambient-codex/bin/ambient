@@ -172,6 +172,7 @@ from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import audit_prose as _audit_prose  # noqa: E402
 from ambient_codex import agent_config as _agent_config  # noqa: E402
+from ambient_codex import agent_command as _agent_command  # noqa: E402
 from ambient_codex import build_apply as _build_apply  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
@@ -8699,139 +8700,28 @@ def ensure_opencode_config(api_url, model):
     Only this install's namespaced provider entry is repaired; every other provider
     is preserved byte-for-byte at the decoded-data level. The entry is keyed by
     LAUNCHER_NAME so a second Ambient install cannot share it."""
-    cfg = {}
-    try:
-        with open(OPENCODE_CONFIG_PATH, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except FileNotFoundError:
-        pass
-    except (OSError, json.JSONDecodeError):
-        # Leave a hand-edited/broken config alone — but SAY so, or the user
-        # meets an inexplicable opencode failure (doctor also flags this).
-        print(
-            f"ambient: {OPENCODE_CONFIG_PATH} could not be parsed — leaving it "
-            "alone; `ambient-codex agent` may misbehave (see: ambient-codex doctor)",
-            file=sys.stderr,
-        )
-        return
-    if not isinstance(cfg, dict):    # M13: valid JSON but not an object ([] / "x")
-        print(
-            f"ambient: {OPENCODE_CONFIG_PATH} is not a JSON object — leaving it "
-            "alone; `ambient-codex agent` may misbehave (see: ambient-codex doctor)",
-            file=sys.stderr,
-        )
-        return
-    updated_cfg = _agent_config.update_provider_config(
-        cfg, provider=OPENCODE_PROVIDER, api_url=api_url, model=model)
-    if updated_cfg is None:
-        print(
-            f"ambient: {OPENCODE_CONFIG_PATH} provider section is not a JSON "
-            "object — leaving it alone; `ambient-codex agent` may misbehave "
-            "(see: ambient-codex doctor)",
-            file=sys.stderr,
-        )
-        return
-    if updated_cfg == cfg:
-        return  # already correct — don't rewrite the file
-    cfg = updated_cfg
-    tmp = None
-    try:
-        # Atomic write so a mid-write failure can't destroy the user's existing
-        # opencode config with its custom providers.
-        # This file may hold OTHER providers' literal API keys, so preserve its
-        # restrictive mode across the rewrite: a fresh tmp defaults to the umask
-        # (often 0644), and os.replace would hand that mode to the destination,
-        # silently widening a previously 0600 config to world/group-readable.
-        conf_dir = os.path.dirname(OPENCODE_CONFIG_PATH)
-        os.makedirs(conf_dir, exist_ok=True)
-        try:
-            orig_mode = os.stat(OPENCODE_CONFIG_PATH).st_mode & 0o777
-        except OSError:
-            orig_mode = 0o600  # new file → secret-safe default, not the umask
-        # A6: pid+time-unique tmp (matching the vault helper's convention) so
-        # two concurrent writers never share one `.tmp` inode — a fixed name let
-        # process B's O_TRUNC clobber A's in-flight write, and the interleaved
-        # bytes could land as corrupt JSON or drop a provider on os.replace.
-        tmp = OPENCODE_CONFIG_PATH + f".tmp-{os.getpid()}-{time.time_ns()}"
-        # Create the tmp restrictively so the key is never even briefly exposed.
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(cfg, fh, indent=2)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, OPENCODE_CONFIG_PATH)
-        os.chmod(OPENCODE_CONFIG_PATH, orig_mode)
-        print(
-            f"ambient: wrote opencode provider config → {OPENCODE_CONFIG_PATH}",
-            file=sys.stderr,
-        )
-    except OSError as err:
-        # A unique tmp name won't be reused, so clean up a stray on failure
-        # (a fixed name was harmlessly overwritten next run).
-        if tmp:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp)
-        print(f"ambient: could not write opencode config ({err})", file=sys.stderr)
+    return _agent_command.ensure_provider_config(
+        OPENCODE_CONFIG_PATH, OPENCODE_PROVIDER, api_url, model,
+        _agent_config.update_provider_config)
+
+
+def _agent_dependencies():
+    return _agent_command.AgentDependencies(
+        provider=OPENCODE_PROVIDER, ensure_config=ensure_opencode_config,
+        resolve_model=resolve_model, note_if_hidden=note_if_hidden,
+        is_auto_model=is_auto_model, resolve_auto_model=resolve_auto_model,
+        safe_catalog=safe_catalog, build_argv=_agent_config.build_agent_argv,
+        which=shutil.which, run_process=subprocess.run,
+    )
 
 
 def cmd_agent(args, api_key, api_url, conf):
-    if not shutil.which("opencode"):
-        sys.exit(
-            "ambient: opencode not found on PATH. Install it with:\n"
-            "  brew install opencode      (or see https://opencode.ai)"
-        )
-    model = resolve_model(args, conf, "code")
-    if getattr(args, "model", None):
-        note_if_hidden(args.model, conf)
-    if is_auto_model(model):
-        # opencode needs a REAL model id — resolve the explicit auto spec
-        # against the live catalog (printed, like every auto pick).
-        model = resolve_auto_model(model, safe_catalog(api_url, api_key),
-                                   conf, 0, args)
-    ensure_opencode_config(api_url, model)
-    print(
-        "ambient: the agent reads files itself — the secrets tripwire does "
-        "NOT cover this lane; keep .env/credentials out of its working tree.",
-        file=sys.stderr,
-    )
-    # The key is passed to opencode via its process environment — the standard
-    # credential model used by aws/gh/docker/codex (env_key). It is NOT hidden
-    # from opencode; do not ask an agent to print its environment.
-    # The child resolves `{env:AMBIENT_CODEX_API_KEY}` from OUR provider entry.
-    env = dict(os.environ, AMBIENT_CODEX_API_KEY=api_key)
-    # Keep this Codex-native lane independent of unrelated opencode extensions
-    # installed in the user's global config. The provider config still loads;
-    # only external plugins are disabled. The extracted builder deliberately
-    # takes no credential argument, so keys can only enter the child environment.
-    argv = _agent_config.build_agent_argv(
-        args.agent_args, provider=OPENCODE_PROVIDER, model=model)
-    if os.name == "nt":
-        # Windows: os.exec* SPAWNS a new process then the parent exits, so the
-        # shell prompt and opencode's full-screen TUI fight over the console; and
-        # it can't cleanly exec the npm 'opencode.cmd' shim. Run it as a CHILD
-        # (subprocess handles .cmd via PATHEXT and keeps the console attached)
-        # and forward its exit code.
-        try:
-            proc = subprocess.run([shutil.which("opencode") or "opencode", *argv[1:]],
-                                  env=env)
-        except FileNotFoundError:
-            sys.exit("ambient: opencode not found on PATH (see https://opencode.ai)")
-        sys.exit(proc.returncode)
-    try:
-        os.execvpe("opencode", argv, env)
-    except FileNotFoundError:
-        sys.exit("ambient: opencode not found on PATH (brew install opencode)")
+    return _agent_command.run_agent(
+        args, api_key, api_url, conf, _agent_dependencies())
 
 
 def cmd_codex(args, api_key, api_url, conf):
-    sys.exit(
-        "ambient: Codex CLI cannot talk to Ambient yet — Codex >=0.142 only speaks "
-        "the OpenAI Responses API, and Ambient's /v1/responses gateway rejects "
-        "Codex's 'namespace' tool type and typed message content (verified "
-        "2026-07-02). The provider config is already in place in ~/.codex; once "
-        "Ambient's validator accepts/ignores unknown tool types this will work.\n"
-        "Use the working agentic terminal instead:  ambient-codex agent"
-    )
+    return _agent_command.run_codex()
 
 
 class _Parser(argparse.ArgumentParser):
