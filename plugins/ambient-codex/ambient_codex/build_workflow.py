@@ -330,6 +330,45 @@ def generation_prompt(*, task, batch, plan, done_paths, context, system_chars,
     return prompt if head + len(prompt) <= single_shot_chars else None
 
 
+def generation_recovery(batch, *, done_paths, failed_paths, response_meta,
+                        attempts, recovery_paths):
+    """Return the immutable retry transition for files missing from one reply."""
+    done, failed = set(done_paths), set(failed_paths)
+    missing = tuple(dict(item) for item in batch
+                    if item["path"] not in done and item["path"] not in failed)
+    next_attempts = dict(attempts)
+    next_recovery = list(dict.fromkeys(recovery_paths))
+    failures = []
+    output_starved = isinstance(response_meta, dict) and bool(
+        response_meta.get("reasoning_draft")
+        or response_meta.get("finish_reason") == "length"
+        or response_meta.get("salvaged_partial"))
+    if output_starved:
+        for item in missing:
+            if item["path"] not in next_recovery:
+                next_recovery.append(item["path"])
+    retries = ()
+    if missing and len(batch) > 1:
+        midpoint = max(1, len(missing) // 2)
+        retries = tuple(part for part in (missing[:midpoint], missing[midpoint:])
+                        if part)
+    elif missing:
+        path = missing[0]["path"]
+        next_attempts[path] = next_attempts.get(path, 0) + 1
+        if next_attempts[path] < 2:
+            retries = (missing,)
+        else:
+            failures.append((
+                path,
+                "the model didn't return this file after 2 attempts — it may "
+                "be too large for one response, or the model kept proposing a "
+                "different/rejected path; simplify or split it",
+            ))
+    return (retries, tuple(next_attempts.items()), tuple(next_recovery),
+            tuple(failures))
+
+
 __all__ = ("state_path", "safe_relative_path", "resume_identity",
            "normalize_resume_state", "validate_plan_items", "parse_file_records",
-           "classify_file_records", "generation_batches", "generation_prompt")
+           "classify_file_records", "generation_batches", "generation_prompt",
+           "generation_recovery")

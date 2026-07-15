@@ -173,3 +173,36 @@ class BuildWorkflowTests(unittest.TestCase):
             task="x" * 1000, batch=plan, plan=plan, done_paths=(), context="",
             system_chars=100, single_shot_chars=2200,
             recovery_paths=()))
+
+    def test_generation_recovery_splits_and_marks_output_starved_files(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        batch = ({"path": "a.py"}, {"path": "b.py"}, {"path": "c.py"})
+        retries, attempts, recovery, failures = core.generation_recovery(
+            batch, done_paths=("a.py",), failed_paths=(),
+            response_meta={"finish_reason": "length"}, attempts={},
+            recovery_paths=())
+
+        self.assertEqual(
+            tuple(tuple(item["path"] for item in part) for part in retries),
+            (("b.py",), ("c.py",)),
+        )
+        self.assertEqual(attempts, ())
+        self.assertEqual(recovery, ("b.py", "c.py"))
+        self.assertEqual(failures, ())
+
+    def test_generation_recovery_retries_one_single_file_then_fails(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        batch = ({"path": "a.py"},)
+        first = core.generation_recovery(
+            batch, done_paths=(), failed_paths=(), response_meta={},
+            attempts={}, recovery_paths=())
+        second = core.generation_recovery(
+            batch, done_paths=(), failed_paths=(), response_meta={},
+            attempts=dict(first[1]), recovery_paths=())
+
+        self.assertEqual(first[0], (batch,))
+        self.assertEqual(first[1], (("a.py", 1),))
+        self.assertEqual(second[0], ())
+        self.assertEqual(second[1], (("a.py", 2),))
+        self.assertEqual(second[3][0][0], "a.py")
+        self.assertIn("after 2 attempts", second[3][0][1])

@@ -7868,44 +7868,26 @@ def cmd_build(args, api_key, api_url, conf):
         state["done"] = done
         state["failed"] = failed
         _save_build_state(root, state)
-        missing = [p for p in batch
-                   if p["path"] not in done
-                   and p["path"] not in {f["path"] for f in failed}]
-        if missing:
-            output_starved = (
-                isinstance(body, dict)
-                and (body.get("reasoning_draft")
-                     or body.get("finish_reason") == "length"
-                     or body.get("salvaged_partial")))
-            if output_starved:
-                recovery_paths.update(p["path"] for p in missing)
+        retries, next_attempts, next_recovery, retry_failures = (
+            _build_workflow.generation_recovery(
+                batch, done_paths=done,
+                failed_paths=(item["path"] for item in failed),
+                response_meta=body, attempts=attempts,
+                recovery_paths=recovery_paths))
+        attempts = dict(next_attempts)
+        recovery_paths = set(next_recovery)
+        failed.extend({"path": path, "reason": reason}
+                      for path, reason in retry_failures)
+        if retries:
+            queue[0:0] = list(retries)
+            retry_count = sum(len(part) for part in retries)
             if len(batch) > 1:
-                mid = max(1, len(missing) // 2)
-                for half in (missing[mid:], missing[:mid]):
-                    if half:
-                        queue.insert(0, half)
-                print(f"ambient: {len(missing)} file(s) missing/cut from that "
+                print(f"ambient: {retry_count} file(s) missing/cut from that "
                       "reply — regenerating in smaller batches "
                       "(input re-billed)", file=sys.stderr)
             else:
-                path0 = missing[0]["path"]
-                attempts[path0] = attempts.get(path0, 0) + 1
-                if attempts[path0] < 2:
-                    queue.insert(0, missing)
-                    print(f"ambient: {path0} came back incomplete — one more "
-                          "attempt", file=sys.stderr)
-                else:
-                    # Don't presume a size overflow — a single missing file
-                    # after 2 tries can also mean the model kept proposing a
-                    # rejected path or simply didn't emit it (a one-line file
-                    # can't exceed the budget, so 'split it' was misleading).
-                    failed.append({"path": path0,
-                                   "reason": "the model didn't return this "
-                                             "file after 2 attempts — it may "
-                                             "be too large for one response, "
-                                             "or the model kept proposing a "
-                                             "different/rejected path; "
-                                             "simplify or split it"})
+                print(f"ambient: {retries[0][0]['path']} came back incomplete "
+                      "— one more attempt", file=sys.stderr)
     state["failed"] = failed
     _save_build_state(root, state)
 
