@@ -185,6 +185,7 @@ from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import cli_dispatch as _cli_dispatch  # noqa: E402
+from ambient_codex import cli_entrypoint as _cli_entrypoint  # noqa: E402
 from ambient_codex import cli_parser as _cli_parser  # noqa: E402
 from ambient_codex import completion_command as _completion_command  # noqa: E402
 from ambient_codex import context_command as _context_command  # noqa: E402
@@ -288,16 +289,9 @@ def _runtime_dependencies():
     "_resolve _is_within foreign_root validate_state_root _state_dir _claim_state_dir _env_pos_int normalize_requested_max_tokens secret_backend keychain_available keychain_write keychain_delete shared_key_env_is_set resolve_key_and_backend _is_local_host resolve_api_url cmd_trust_url cmd_trust_url_reset load_config")
 
 
-
-
-
-
-
 STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
-
-
 
 
 # Completions STREAM: liveness is judged by data flow, not total duration. A
@@ -381,18 +375,9 @@ def read_config_file():
         deps=_runtime_dependencies())
 
 
-
 def keychain_read():
     return _runtime_command.keychain_read(
         deps=_runtime_dependencies())
-
-
-
-
-
-
-
-
 
 
 _KEY_PLACEHOLDER = "[AMBIENT_API_KEY]"   # _StreamRedactor mirrors this exactly
@@ -411,7 +396,6 @@ def _presentation_dependencies():
     "redact sanitize _stderr_is_tty _use_color paint _config_lock _private_dir save_config_values _split_csv curation is_hidden note_if_hidden build_banner print_welcome_panel key_paste_problem model_map resolve_model")
 
 
-
 class _StreamRedactor(_stream_redactor.StreamRedactor):
     """Facade-compatible streaming redactor with late-bound sanitization."""
 
@@ -423,27 +407,12 @@ class _StreamRedactor(_stream_redactor.StreamRedactor):
         )
 
 
-
-
-
-
-
-
 # Guidance shown wherever models are chosen; a user-set
 # note for the same id (ambient curate note) overrides, and an explicitly
 # cleared note stays cleared. Local config only — nothing fetched or sent.
 DEFAULT_MODEL_NOTES = {
     "z-ai/glm-5.2": "network capacity ramping up — selectable, improving",
 }
-
-
-
-
-
-
-
-
-
 
 
 def _set_pricing_catalog(models):
@@ -461,18 +430,11 @@ def _model_runtime_dependencies():
     "api_request _catalog_data fetch_models _as_pos_int _as_bool ready_model_ids safe_catalog model_pricing adaptive_response_format downgrade_response_format _served_model_of build_plan_rf_ladder _expected_output_tokens estimate_cost")
 
 
-
-
-
-
-
-
 # Above every price observed in the live catalog — used as the worst-case
 # price when a model's real pricing is unknown, so cost estimates never
 # under-count.
 ASSUMED_MAX_INPUT_PRICE = 2.0    # per Mtok
 ASSUMED_MAX_OUTPUT_PRICE = 8.0   # per Mtok
-
 
 
 def _get_telemetry_cache():
@@ -503,9 +465,6 @@ def _capability_dependencies():
     "_telemetry_enabled observed_cpt _effective_cpt _cost_cpt _read_caps_file _load_caps _cap_recent cap_state _try_caps_lock _write_caps record_cap")
 
 
-
-
-
 # --- Adaptive capability learning --------------------------------
 # The catalog's advertised features are a HYPOTHESIS; a model's OBSERVED
 # behavior is the truth. We record per-model outcomes for capability
@@ -519,19 +478,6 @@ CAPABILITY_PATH = os.path.join(STATE_DIR, "capabilities.json")
 CAP_RECENT_K = 4          # outcomes remembered per (model, dimension)
 CAP_FAIL_THRESHOLD = 2    # recent fails (with no recent ok) => "unreliable"
 _CAP_CACHE = None
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # --- Savings receipts --------------------------------------------
@@ -585,13 +531,7 @@ def _usage_runtime_dependencies():
     "parse_reference_price resolve_reference_price usage_cost reference_cost _savings_enabled savings_note savings_note_by_served _lock_owner_dead _fs_lock _pid_alive")
 
 
-
-
-
 _SAVINGS_CACHE = None
-
-
-
 
 
 # --- Cross-process file lock (usage ledger) --------------------
@@ -599,9 +539,6 @@ _SAVINGS_CACHE = None
 # mid-write never leaves a torn store; a bounded wait keeps it from ever
 # blocking a legitimate call.
 _LEDGER_LOCK_WAIT_S = 2.0     # bounded wait for the usage-ledger lock
-
-
-
 
 
 def _cost_dependencies():
@@ -612,14 +549,6 @@ def _cost_dependencies():
 (_lane_pricing, _fallback_enabled, _batch_fallback_alt, _fb_call_cost, _fb_alt_budget, estimate_cost_fb, estimate_cost_mr_fb, estimate_cost_mr, pick_fallback_model) = _facade_adapters.build(
     globals(), "_cost_runtime", "_cost_dependencies",
     "_lane_pricing _fallback_enabled _batch_fallback_alt _fb_call_cost _fb_alt_budget estimate_cost_fb estimate_cost_mr_fb estimate_cost_mr pick_fallback_model")
-
-
-
-
-
-
-
-
 
 
 # --- Advisory routing ------------------------------------------
@@ -639,23 +568,6 @@ def _routing_dependencies():
 (is_auto_model, _catalog_out_price, resolve_auto_model, preflight_hint, route_model, _validate_reduce_id, resolve_reduce_model, response_format_for, _model_budget_constants, _model_profile_constants, _reasoning_output_budget, _context_safe_output_cap, _context_safe_escalation_ceiling, single_shot_max_chars, _reasoning_single_shot_target, model_profile, _resolve_output_budget, apply_output_budget) = _facade_adapters.build(
     globals(), "_routing_runtime", "_routing_dependencies",
     "is_auto_model _catalog_out_price resolve_auto_model preflight_hint route_model _validate_reduce_id resolve_reduce_model response_format_for _model_budget_constants _model_profile_constants _reasoning_output_budget _context_safe_output_cap _context_safe_escalation_ceiling single_shot_max_chars _reasoning_single_shot_target model_profile _resolve_output_budget apply_output_budget")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def error_message(body):
@@ -872,7 +784,6 @@ def usage_exit(msg):
     sys.exit(EXIT_USAGE)
 
 
-
 def stream_completion(api_url, api_key, payload, timeout, on_delta=None):
     """Facade seam for the extracted dependency-injected SSE transport."""
     return _streaming.stream_completion(
@@ -971,43 +882,6 @@ def _context_dependencies():
 (read_stdin_if_piped, _stdin_read_and_decode, _read_stdin_bounded, warn_if_stdin_ignored, read_files, files_block, _chunk_ranges, code_map_budget, _sigs_python, _sigs_regex, _file_signatures, build_code_map, _py_break_lines, density_factor, _chunk_break_lines, pack_chunks, _resolve_parallel, _reduce_response_format, _map_note) = _facade_adapters.build(
     globals(), "_context_command", "_context_dependencies",
     "read_stdin_if_piped _stdin_read_and_decode _read_stdin_bounded warn_if_stdin_ignored read_files files_block _chunk_ranges code_map_budget _sigs_python _sigs_regex _file_signatures build_code_map _py_break_lines density_factor _chunk_break_lines pack_chunks _resolve_parallel _reduce_response_format _map_note")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _map_reduce_dependencies():
@@ -1305,43 +1179,6 @@ def _audit_input_dependencies():
 (extract_json, _finding_sig, _titles_match, parse_audit_object, dedupe_findings, _verdict_from, findings_reducer, _text_has_unparsed_finding, parse_prose_findings, render_findings, with_line_gutters, _repo_candidate_paths, repo_walk, _guttered_size, repo_audit_inputs, cross_file_suspects, run_cross_file_pass, git_diff_inputs) = _facade_adapters.build(
     globals(), "_audit_inputs", "_audit_input_dependencies",
     "extract_json _finding_sig _titles_match parse_audit_object dedupe_findings _verdict_from findings_reducer _text_has_unparsed_finding parse_prose_findings render_findings with_line_gutters _repo_candidate_paths repo_walk _guttered_size repo_audit_inputs cross_file_suspects run_cross_file_pass git_diff_inputs")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -1991,14 +1828,8 @@ class _Parser(argparse.ArgumentParser):
                   f"{self.prog}: error: {message}{extra}\ntry: {self.prog} -h\n")
 
 
-def add_common_flags(parser):
-    return _cli_parser.add_common_flags(
-        parser, default_timeout_s=DEFAULT_TIMEOUT_S,
-        max_parallel_chunks=MAX_PARALLEL_CHUNKS)
-
-
-def _add_best_of_flag(parser):
-    return _cli_parser.add_best_of_flag(parser, best_of_max=BEST_OF_MAX)
+(add_common_flags, _add_best_of_flag, _configure_version, _configure_models, _configure_curate, _configure_setup, _configure_link, _configure_uninstall, cmd_uninstall, _configure_cache, _configure_trust_url, _configure_usage, _configure_mode, _configure_config, _configure_control, _configure_doctor, _configure_use, _configure_ask, _configure_audit, _configure_map, _configure_code, _configure_chat, _configure_build, _configure_agent, _configure_codex, _cmd_version, _cmd_models_keyless, _cmd_trust_url_dispatch, _cmd_codex_keyless, _audit_keyless_route, _registry_handler, build_parser, _parse_args_with_stdin_dash, main, shielded_main) = _cli_entrypoint.build(
+    globals(), "add_common_flags _add_best_of_flag _configure_version _configure_models _configure_curate _configure_setup _configure_link _configure_uninstall cmd_uninstall _configure_cache _configure_trust_url _configure_usage _configure_mode _configure_config _configure_control _configure_doctor _configure_use _configure_ask _configure_audit _configure_map _configure_code _configure_chat _configure_build _configure_agent _configure_codex _cmd_version _cmd_models_keyless _cmd_trust_url_dispatch _cmd_codex_keyless _audit_keyless_route _registry_handler build_parser _parse_args_with_stdin_dash main shielded_main")
 
 
 # --- Declarative command registry -------------------------------
@@ -2017,150 +1848,6 @@ def _add_best_of_flag(parser):
 #                  (audit --install-hook) before any credentials are needed
 
 
-def _configure_version(sub):
-    return _cli_parser.configure_version(sub)
-
-
-def _configure_models(sub):
-    return _cli_parser.configure_models(sub)
-
-
-def _configure_curate(sub):
-    return _cli_parser.configure_curate(sub)
-
-
-def _configure_setup(sub):
-    return _cli_parser.configure_setup(sub)
-
-
-def _configure_link(sub):
-    return _cli_parser.configure_link(sub)
-
-
-def _configure_uninstall(sub):
-    return _cli_parser.configure_uninstall(sub, state_dir=STATE_DIR)
-
-
-def cmd_uninstall(args):
-    """Cleanly offboard Ambient Codex. Touches ONLY this install's own resources —
-    the ambient-codex keychain item, ~/.config/ambient-codex, and the ambient-codex
-    launcher — never another Ambient install's key, state, launcher, or git hooks.
-
-    Removing the plugin itself is a Codex action, so we print the command rather than
-    run it."""
-    return _maintenance_commands.run_uninstall(
-        args, _maintenance_commands.UninstallDependencies(
-            state_dir=STATE_DIR, foreign_root=foreign_root,
-            keychain_delete=keychain_delete, keychain_read=keychain_read,
-            save_config=save_config_values, command_link=cmd_link,
-            launcher_name=LAUNCHER_NAME,
-            keychain_service=KEYCHAIN_SERVICE,
-        ))
-
-
-def _configure_cache(sub):
-    return _cli_parser.configure_cache(sub)
-
-
-def _configure_trust_url(sub):
-    return _cli_parser.configure_trust_url(sub)
-
-
-def _configure_usage(sub):
-    return _cli_parser.configure_usage(sub)
-
-
-def _configure_mode(sub):
-    return _cli_parser.configure_mode(sub)
-
-
-def _configure_config(sub):
-    return _cli_parser.configure_config(sub)
-
-
-def _configure_control(sub):
-    return _cli_parser.configure_control(sub, parser_class=_Parser)
-
-
-def _configure_doctor(sub):
-    return _cli_parser.configure_doctor(sub)
-
-
-def _configure_use(sub):
-    return _cli_parser.configure_use(sub)
-
-
-def _configure_ask(sub):
-    return _cli_parser.configure_ask(
-        sub, add_common=add_common_flags, add_best_of=_add_best_of_flag)
-
-
-def _configure_audit(sub):
-    return _cli_parser.configure_audit(
-        sub, add_common=add_common_flags, add_best_of=_add_best_of_flag)
-
-
-def _configure_map(sub):
-    return _cli_parser.configure_map(sub, add_common=add_common_flags)
-
-
-def _configure_code(sub):
-    return _cli_parser.configure_code(
-        sub, add_common=add_common_flags, add_best_of=_add_best_of_flag)
-
-
-def _configure_chat(sub):
-    return _cli_parser.configure_chat(sub, add_common=add_common_flags)
-
-
-def _configure_build(sub):
-    return _cli_parser.configure_build(sub, add_common=add_common_flags)
-
-
-def _configure_agent(sub):
-    return _cli_parser.configure_agent(sub)
-
-
-def _configure_codex(sub):
-    return _cli_parser.configure_codex(sub)
-
-
-def _cmd_version(args):
-    print(f"ambient {__version__}")
-
-
-def _cmd_models_keyless(args):
-    # The catalog endpoint is unauthenticated — let a curious stranger see
-    # the live network BEFORE creating an account (pre-signup funnel).
-    conf = read_config_file()
-    key, _ = resolve_key_and_backend(conf)
-    try:
-        cmd_models(args, key or "none", resolve_api_url(conf), conf)
-    except NetworkError as err:
-        sys.exit(f"ambient [network]: {err}")
-
-
-def _cmd_trust_url_dispatch(args):
-    if args.reset:
-        cmd_trust_url_reset()
-    elif args.url:
-        cmd_trust_url(args)
-    else:
-        usage_exit("trust-url needs a URL (or --reset)")
-
-
-def _cmd_codex_keyless(args):
-    cmd_codex(args, None, None, None)
-
-
-def _audit_keyless_route(args):
-    """audit --install-hook / --uninstall-hook is pure hooks-file management
-    (7d): no key, no network — it must work before any credentials exist."""
-    if getattr(args, "install_hook", None) or getattr(args, "uninstall_hook", None):
-        return "cmd_audit_hook"
-    return None
-
-
 COMMANDS = _cli_dispatch.make_command_registry({
     "version": _configure_version, "models": _configure_models,
     "curate": _configure_curate, "setup": _configure_setup,
@@ -2174,194 +1861,6 @@ COMMANDS = _cli_dispatch.make_command_registry({
     "chat": _configure_chat, "build": _configure_build,
     "agent": _configure_agent, "codex": _configure_codex,
 })
-
-
-def _registry_handler(name):
-    """Resolve a registry handler by NAME at dispatch time, so tests that
-    monkeypatch module attributes (amb.cmd_ask = stub) keep working."""
-    return globals()[name]
-
-
-def build_parser():
-    """Construct the fully-configured top-level parser (extracted so tests and
-    main share one definition)."""
-    return _cli_dispatch.build_parser(
-        parser_class=_Parser, description=__doc__, version=__version__,
-        commands=COMMANDS)
-
-
-def _parse_args_with_stdin_dash(parser):
-    """parse_args, but rescue a lone stdin sentinel '-' that argparse's greedy
-    nargs='*' positional orphans when it TRAILS a value option — e.g.
-    `ask "prompt" -m MODEL -`, the most natural order, which otherwise errors
-    with 'unrecognized arguments: -' (stress test F03). For `ask` the '-' is
-    injected into the prompt (its handler reads stdin as extra context); for
-    every other command a lone trailing '-' is simply DROPPED — audit/map
-    already auto-read piped stdin, and code takes no stdin — so the natural
-    order never errors on any command (Codex round 2). Any OTHER leftover is
-    still a real usage error, exactly like parse_args."""
-    return _cli_dispatch.parse_args_with_stdin_dash(parser)
-
-
-def main():
-    parser = build_parser()
-
-    # Never accept a key as a command-line argument: argv lands in shell
-    # history and process listings. Refuse BEFORE argparse
-    # can echo the token back in an 'unrecognized arguments' error. `config` is
-    # covered too — none of its real values are secret-shaped, so a key-looking
-    # token there is a mistake to refuse, not to echo (Codex 2026-07-08).
-    if len(sys.argv) > 2 and sys.argv[1] in ("setup", "config", "control"):
-        _keyname = ("key", "api-key", "apikey", "ambient-api-key")
-        for tok in sys.argv[2:]:
-            # An explicit key ASSIGNMENT (`key=…`, `--api-key=…`) is never a valid
-            # arg here — refuse it regardless of the value's SHAPE, so even a short
-            # key can't be echoed by argparse's 'unrecognized arguments' error
-            # (Codex 2026-07-08).
-            if "=" in tok and tok.lstrip("-").split("=", 1)[0].strip().lower(
-            ).replace("_", "-") in _keyname:
-                sys.exit(
-                    "ambient: don't pass an API key on the command line — it lands "
-                    f"in your shell history. Run `{LAUNCHER_NAME} setup` (interactive, "
-                    f"hidden input) instead, and ROTATE that key at {KEY_CONSOLE_URL}."
-                )
-            if tok.startswith("-"):
-                # A bare flag is safe, but `--key=sk-...` smuggles the secret
-                # inside the token; inspect the value after the first '=' too,
-                # else argparse echoes it in its 'unrecognized arguments' error.
-                if "=" not in tok:
-                    continue
-                tok = tok.split("=", 1)[1]
-            if (len(tok) >= 20 and re.fullmatch(r"[A-Za-z0-9_.\-]{20,}", tok)) \
-                    or any(p.search(tok) for p in SECRET_PATTERNS):
-                sys.exit(
-                    "ambient: it looks like you passed your API key on the "
-                    "command line — it is now in your shell history. Run "
-                    f"`{LAUNCHER_NAME} setup` (interactive, hidden input) instead, and "
-                    f"ROTATE that key at {KEY_CONSOLE_URL}."
-                )
-    args = _parse_args_with_stdin_dash(parser)
-    spec = _cli_dispatch.find_command(COMMANDS, args.command)
-    if spec is not None and spec.get("pre_env"):
-        # `ambient version` must work even before HOME/config resolve.
-        _registry_handler(spec["handler"])(args)
-        return
-    if args.command is None:  # bare `ambient` → onboarding banner, not an error
-        print(build_banner())
-        return
-    # An UNRESOLVED home leaves a LEADING '~' (os.path.expanduser passthrough).
-    # Match only that — not any '~' in the path, which false-positives on
-    # Windows 8.3 short paths like C:\Users\RUNNER~1\... (a resolved home).
-    if CONFIG_PATH.startswith("~"):
-        _fail_exit(
-            args, _argv_command(), "config",
-            "cannot resolve your home directory (HOME unset). "
-            "Set HOME and retry."
-        )
-    # Foolproofing: clamp nonsensical numeric args instead of letting them run.
-    if getattr(args, "max_tokens", None) is not None:
-        if args.max_tokens < MIN_OUTPUT_TOKENS:
-            print(
-                f"ambient: --max-tokens {args.max_tokens} is too low for a reasoning "
-                f"model (it needs room to think AND answer) — raising to "
-                f"{MIN_OUTPUT_TOKENS}",
-                file=sys.stderr,
-            )
-            args.max_tokens = MIN_OUTPUT_TOKENS
-        else:
-            args.max_tokens = normalize_requested_max_tokens(args.max_tokens)
-    if getattr(args, "temperature", None) is not None:
-        t = args.temperature
-        if t != t or not (0.0 <= t <= 2.0):  # NaN or out of range
-            fixed = 0.1 if t != t else max(0.0, min(2.0, t))
-            print(
-                f"ambient: --temperature {t} is invalid — using {fixed}",
-                file=sys.stderr,
-            )
-            args.temperature = fixed
-    if getattr(args, "timeout", None) is not None and args.timeout <= 0:
-        print(
-            f"ambient: --timeout must be positive — using {DEFAULT_TIMEOUT_S}s",
-            file=sys.stderr,
-        )
-        args.timeout = DEFAULT_TIMEOUT_S
-    # Key-less commands work before any credentials exist:
-    if not spec["needs_key"]:
-        _registry_handler(spec["handler"])(args)
-        return
-    # A needs_key command may still expose a pure-local sub-mode
-    # (audit --install-hook) that must run without credentials:
-    route = spec.get("keyless_route")
-    if route:
-        alt = _registry_handler(route)(args)
-        if alt:
-            _registry_handler(alt)(args)
-            return
-    api_key, api_url, conf = load_config()
-    # Fold --progress/--no-progress + AMBIENT_PROGRESS (env, then config) into the
-    # module holder now that conf is loaded — every streaming command reaches this
-    # line before it streams, so the display gate has a resolved value.
-    _PROGRESS_DISPLAY["resolved"] = _resolve_progress_display(args, conf)
-    try:
-        _registry_handler(spec["handler"])(args, api_key, api_url, conf)
-    except ChatError as err:
-        # A map-reduce that exhausts its retries raises ChatError up here — show
-        # it as the clean classified diagnosis, not a generic internal error.
-        # A --json caller gets the machine-readable error envelope instead.
-        if _json_mode(args):
-            emit_json_error(args.command, err.category, err.diagnosis, api_key)
-        sys.exit(f"ambient [{err.category}]: {err.diagnosis}")
-    except NetworkError as err:
-        if _json_mode(args):
-            emit_json_error(args.command, "network", str(err), api_key)
-        sys.exit(
-            f"ambient [network]: {err}. Check your internet connection; if other "
-            "sites work, Ambient may be unreachable — run: ambient-codex doctor"
-        )
-
-
-def shielded_main():
-    """No raw traceback ever reaches the user: every unexpected failure becomes
-    a clean, redacted, one-line diagnosis. AMBIENT_DEBUG=1 restores tracebacks."""
-    # Windows/legacy-locale consoles default to a codepage (e.g. cp1252) that
-    # can't encode the arrows/box-drawing/CJK the CLI emits, so plain output
-    # would crash with UnicodeEncodeError. Force UTF-8 on the real streams. No-op
-    # where already UTF-8, on a non-reconfigurable stream, or under test capture.
-    for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError, OSError):
-            pass
-    try:
-        main()
-    except (KeyboardInterrupt, EOFError):
-        sys.stderr.write("\nambient: cancelled\n")
-        sys.exit(130)
-    except SystemExit:
-        raise
-    except NetworkError as err:
-        msg = (f"{err}. Check your internet connection; if other "
-               "sites work, Ambient may be unreachable — run: ambient-codex doctor")
-        _fail_exit(None, _argv_command(), "network", msg,
-                   prose=f"ambient [network]: {msg}")
-    except Exception as err:  # noqa: BLE001 — the whole point is a clean floor
-        if os.environ.get("AMBIENT_DEBUG") == "1":
-            raise
-        # Resolve the REAL key (env > Keychain > file) so redaction works even
-        # when the key is in the macOS Keychain and absent from the env file
-        #.
-        key = ""
-        try:
-            key = resolve_key_and_backend(read_config_file())[0] or ""
-        except Exception:  # noqa: BLE001
-            pass
-        detail = redact(f"{type(err).__name__}: {err}", key)[:300]
-        msg = (f"unexpected error ({detail}). Nothing was harmed. "
-               "Run 'ambient-codex doctor' to check the basics; set AMBIENT_DEBUG=1 to see "
-               "full details.")
-        # Even the last-resort floor honors the --json contract (redacted).
-        _fail_exit(None, _argv_command(), "internal", msg, api_key=key,
-                   prose=f"ambient [internal]: {msg}")
 
 
 if __name__ == "__main__":

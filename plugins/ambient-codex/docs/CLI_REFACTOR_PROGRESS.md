@@ -153,6 +153,7 @@ bugs, verification, commits, or the next action changes.
 | 5F-1 | Native MCP tool catalog | Complete | local checkpoint | `mcp/ambient_mcp_catalog.py`; all 14 strict credential-free tool schemas and their bounded prompt/path constants are isolated from stdio lifecycle and command execution while the executable preserves source-loader compatibility |
 | 5F-2 | Native MCP framing runtime | Complete | local checkpoint | `mcp/ambient_mcp_framing.py`; JSONL/content-length parsing, frame caps, immutable header accumulation, response envelopes, and sticky-EOF deadline reads are isolated behind facade-compatible functions and reader class |
 | 5F-3 | Native MCP tool execution surface | Complete | local checkpoint | `mcp/ambient_mcp_tool_handlers.py`; status/control/session-mode/model-picker/settings/key/models/doctor/usage/self-test/ask/audit handlers run over a read-only live facade view, preserving picker and subprocess patch seams while reducing the MCP executable below 800 lines |
+| 5E-3 | CLI parser and process entrypoint orchestration | Complete | local checkpoint | `cli_entrypoint.py`; parser configuration, keyless routing, registry dispatch, numeric normalization, session progress resolution, classified failures, redacted exception shielding, and uninstall handoff run over a read-only live facade view |
 
 ## Phase 0 checklist
 
