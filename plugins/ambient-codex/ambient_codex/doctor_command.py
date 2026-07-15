@@ -20,6 +20,7 @@ class DoctorDependencies:
     read_config: object
     resolve_key: object
     resolve_api_url: object
+    redact: object
     paint: object
     which: object
     keychain_available: object
@@ -43,13 +44,26 @@ def format_check_line(check, ok, detail, paint):
     return f"{tag:4}  {check:14} {detail}"
 
 
+def secret_safe_detail(detail, api_key, redact):
+    """Sanitize a diagnostic at the last boundary before terminal output."""
+    return redact(str(detail), api_key)
+
+
+def _secret_safe_reporter(api_key, deps):
+    def report(check, ok, detail):
+        safe_detail = secret_safe_detail(detail, api_key, deps.redact)
+        print(format_check_line(check, ok, safe_detail, deps.paint))
+
+    return report
+
+
 def run_doctor(_args, deps):
     conf = deps.read_config()
     api_key, backend = deps.resolve_key(conf)
     api_url = deps.resolve_api_url(conf)
-    print(f"ambient {deps.version}  ·  endpoint {api_url}", file=sys.stderr)
-    report = lambda check, ok, detail: print(  # noqa: E731
-        format_check_line(check, ok, detail, deps.paint))
+    safe_url = secret_safe_detail(api_url, api_key, deps.redact)
+    print(f"ambient {deps.version}  ·  endpoint {safe_url}", file=sys.stderr)
+    report = _secret_safe_reporter(api_key, deps)
     _report_runtime_and_config(api_key, backend, report, deps)
     models, ready = _check_catalog(api_key, api_url, report, deps)
     ok, category, detail = _check_auth(
@@ -239,4 +253,5 @@ def _report_cache(report, deps):
         report("cache", True, "empty (created on first map-reduce)")
 
 
-__all__ = ("DoctorDependencies", "format_check_line", "run_doctor")
+__all__ = ("DoctorDependencies", "format_check_line", "run_doctor",
+           "secret_safe_detail")

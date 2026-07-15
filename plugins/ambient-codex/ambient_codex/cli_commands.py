@@ -430,7 +430,7 @@ def cmd_setup(args, *, deps):
     return deps['_setup_command'].run_setup(args, deps['_setup_dependencies']())
 
 def _doctor_dependencies(*, deps):
-    return deps['_facade_adapters'].bind(deps, deps['_doctor_command'].DoctorDependencies, 'version=__version__ config_path=CONFIG_PATH launcher_name=LAUNCHER_NAME shared_api_key_env=SHARED_API_KEY_ENV api_key_env=API_KEY_ENV opencode_config_path=OPENCODE_CONFIG_PATH opencode_provider=OPENCODE_PROVIDER cache_dir=CACHE_DIR read_config=read_config_file resolve_key=resolve_key_and_backend resolve_api_url paint which=shutil.which keychain_available shared_key_env_is_set api_request network_error=NetworkError classify_error catalog_data=_catalog_data dedupe_catalog=_dedupe_catalog ready_model_ids auth_probe curation resolve_model is_auto_model is_hidden bundled_cli_path=_bundled_cli_path')
+    return deps['_facade_adapters'].bind(deps, deps['_doctor_command'].DoctorDependencies, 'version=__version__ config_path=CONFIG_PATH launcher_name=LAUNCHER_NAME shared_api_key_env=SHARED_API_KEY_ENV api_key_env=API_KEY_ENV opencode_config_path=OPENCODE_CONFIG_PATH opencode_provider=OPENCODE_PROVIDER cache_dir=CACHE_DIR read_config=read_config_file resolve_key=resolve_key_and_backend resolve_api_url redact paint which=shutil.which keychain_available shared_key_env_is_set api_request network_error=NetworkError classify_error catalog_data=_catalog_data dedupe_catalog=_dedupe_catalog ready_model_ids auth_probe curation resolve_model is_auto_model is_hidden bundled_cli_path=_bundled_cli_path')
 
 def cmd_doctor(args, *, deps):
     return deps['_doctor_command'].run_doctor(args, deps['_doctor_dependencies']())
