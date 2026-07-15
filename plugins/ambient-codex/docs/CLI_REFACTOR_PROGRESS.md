@@ -129,6 +129,7 @@ bugs, verification, commits, or the next action changes.
 | 4A-9 | Bounded audit command composition | Complete | local checkpoint | `audit_command.py`; file/git/repository intake, model routing, chunk planning, best-of/consensus, deterministic reduction, cross-file confirmation, and partial/coverage rendering moved behind immutable late-bound dependencies |
 | 4B-12 | Focused code and interactive chat composition | Complete | local checkpoint | `generation_commands.py`; task/context distillation, generation-only best-of, model routing, rolling history compaction, model switching, per-turn secret checks, streaming, and token/relative-savings receipts moved behind immutable dependencies |
 | 3G-9 | Independent map command composition | Complete | local checkpoint | `map_command.py`; bounded item gathering, per-item secret checks, memoized catalog/profile sizing, cached worker fan-out, fatal cancellation-before-gate-release, JSONL emission, and partial exit policy moved behind immutable dependencies |
+| 4B-13 | Ask, best-of, and consensus composition | Complete | local checkpoint | `ask_command.py`; stdin inclusion, secret refusal, model-aware single-shot/map-reduce selection, streaming redaction, salted resumable samples, deterministic selection, explicit-model consensus, fail-fast cancellation, partial disclosure, and token-only receipts moved behind immutable late-bound dependencies |
 
 ## Phase 0 checklist
 
