@@ -207,6 +207,7 @@ from ambient_codex import output_command as _output_command  # noqa: E402
 from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
+from ambient_codex import runtime_command as _runtime_command  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import settings_commands as _settings_commands  # noqa: E402
 from ambient_codex import setup_command as _setup_command  # noqa: E402
@@ -246,87 +247,69 @@ FOREIGN_STATE_DIRS = (
 )
 
 
-def _resolve(path):
-    """realpath so `..`, symlinks, and `/private` aliasing cannot dodge a prefix check."""
-    return _state_core.resolve(path)
-
-
-def _is_within(child, parent):
-    """True when `child` IS `parent` or lives beneath it. Prefix-safe."""
-    return _state_core.is_within(child, parent)
-
-
-def foreign_root(path):
-    """The foreign tree `path` falls inside, or None."""
-    return _state_core.foreign_root(path, FOREIGN_STATE_DIRS)
-
-
-def validate_state_root(root):
-    """Reject a state root that is not ours. Returns the root, or exits.
-
-    `AMBIENT_CODEX_HOME=~/.config/ambient` used to make this install read the other
-    install's key and rewrite its delegate mode, and `~/.config/ambient/cache` dodged an
-    exact-match check. Compare on realpath, at any depth.
-    """
-    error = _state_core.state_root_error(
-        root, FOREIGN_STATE_DIRS, STATE_MARKER, AMBIENT_CODEX_HOME_ENV
+def _runtime_dependencies():
+    names = (
+        "AMBIENT_CODEX_HOME_ENV", "API_KEY_ENV", "CONFIG_PATH",
+        "DEFAULT_API_URL", "EXIT_UNCONFIGURED", "FOREIGN_STATE_DIRS",
+        "KEYCHAIN_ACCOUNT", "KEYCHAIN_SERVICE", "KEY_CONSOLE_URL",
+        "LAUNCHER_NAME", "MAX_REQUESTED_TOKENS", "SHARED_API_KEY_ENV",
+        "STATE_DIR", "STATE_MARKER", "__version__", "_argv_command",
+        "_config_store", "_credentials_core", "_fail_exit",
+        "_is_local_host", "_state_core", "argparse", "cmd_setup",
+        "keychain_read", "os", "read_config_file", "resolve_api_url",
+        "resolve_key_and_backend", "save_config_values", "secret_backend",
+        "shutil", "subprocess", "sys", "urllib", "validate_state_root",
     )
-    if error is not None:
-        sys.exit(error)
-    return root
+    early = {
+        "AMBIENT_CODEX_HOME_ENV": AMBIENT_CODEX_HOME_ENV,
+        "EXIT_UNCONFIGURED": EXIT_UNCONFIGURED,
+        "FOREIGN_STATE_DIRS": FOREIGN_STATE_DIRS,
+        "KEYCHAIN_ACCOUNT": KEYCHAIN_ACCOUNT,
+        "MAX_REQUESTED_TOKENS": MAX_REQUESTED_TOKENS,
+        "STATE_MARKER": STATE_MARKER,
+        "_credentials_core": _credentials_core,
+        "_state_core": _state_core,
+    }
+    return _runtime_command.RuntimeDependencies.bind(
+        **{**{name: globals().get(name) for name in names}, **early})
 
 
-def _state_dir():
-    """This install's state root. AMBIENT_CODEX_HOME may relocate it, never onto another
-    Ambient install."""
-    override = os.environ.get(AMBIENT_CODEX_HOME_ENV)
-    if not override:
-        return os.path.expanduser("~/.config/ambient-codex")
-    return validate_state_root(os.path.abspath(os.path.expanduser(override)))
+def _resolve(*args, **kwargs):
+    return _runtime_command._resolve(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def _is_within(*args, **kwargs):
+    return _runtime_command._is_within(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def _claim_state_dir(conf_dir):
-    """Stamp our marker so the root is recognisably ours on a later run."""
-    return _config_store.claim_state_dir(
-        conf_dir, STATE_DIR, STATE_MARKER, __version__
-    )
+def foreign_root(*args, **kwargs):
+    return _runtime_command.foreign_root(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def validate_state_root(*args, **kwargs):
+    return _runtime_command.validate_state_root(
+        *args, deps=_runtime_dependencies(), **kwargs)
+
+def _state_dir(*args, **kwargs):
+    return _runtime_command._state_dir(
+        *args, deps=_runtime_dependencies(), **kwargs)
+
+def _claim_state_dir(*args, **kwargs):
+    return _runtime_command._claim_state_dir(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
 STATE_DIR = _state_dir()
 CONFIG_PATH = os.path.join(STATE_DIR, "env")
 USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
 
 
-def _env_pos_int(name, default, floor=1):
-    """A positive-int env override; a missing/invalid/too-small value keeps the
-    default (with a sane floor so a fat-fingered '0' can't disable a guard)."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return max(floor, int(raw))
-    except (TypeError, ValueError):
-        return default
+def _env_pos_int(*args, **kwargs):
+    return _runtime_command._env_pos_int(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-
-def normalize_requested_max_tokens(value):
-    """Apply only the CLI-wide safety ceiling.
-
-    The selected model's live profile performs the meaningful context/output
-    clamp later.  Keeping this boundary above the catalog's current frontier
-    range lets an explicit request reach that per-model resolver instead of
-    being discarded at 200,000 for every model.
-    """
-    if value is None:
-        return None
-    if value > MAX_REQUESTED_TOKENS:
-        print(
-            f"ambient: --max-tokens capped at {MAX_REQUESTED_TOKENS}",
-            file=sys.stderr,
-        )
-        return MAX_REQUESTED_TOKENS
-    return value
-
+def normalize_requested_max_tokens(*args, **kwargs):
+    return _runtime_command.normalize_requested_max_tokens(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
 # Completions STREAM: liveness is judged by data flow, not total duration. A
 # healthy generation can run for ages; silence beyond the per-op timeout
@@ -405,214 +388,56 @@ A style preference (e.g. "rename x to count") is NOT a finding — omit it."""
 
 
 def read_config_file():
-    return _config_store.read_config_file(
-        CONFIG_PATH, LAUNCHER_NAME, sys.stderr, os.name
-    )
+    return _runtime_command.read_config_file(
+        deps=_runtime_dependencies())
 
+def secret_backend(*args, **kwargs):
+    return _runtime_command.secret_backend(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def secret_backend():
-    """Which OS secret store is usable (C1): macOS Keychain, Linux libsecret
-    (secret-tool), or None → the 0600 env-file fallback. Never fails closed like
-    the old Mac-only path that silently dropped everyone else to plaintext."""
-    return _credentials_core.secret_backend(sys.platform, shutil.which)
-
-
-def keychain_available():
-    return _credentials_core.keychain_available(secret_backend())
-
+def keychain_available(*args, **kwargs):
+    return _runtime_command.keychain_available(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
 def keychain_read():
-    """Fetch THIS install's key from the OS secret store. None when absent.
+    return _runtime_command.keychain_read(
+        deps=_runtime_dependencies())
 
-    Deliberately takes no service argument: there is no supported way to point this at
-    another Ambient install's keychain item.
-    """
-    return _credentials_core.keychain_read(
-        secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
-    )
+def keychain_write(*args, **kwargs):
+    return _runtime_command.keychain_write(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def keychain_delete(*args, **kwargs):
+    return _runtime_command.keychain_delete(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def keychain_write(key):
-    """Store the key in the OS secret store, passing the secret over STDIN so it
-    never appears in any process's argv. Returns True on success."""
-    return _credentials_core.keychain_write(
-        key, secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
-    )
+def shared_key_env_is_set(*args, **kwargs):
+    return _runtime_command.shared_key_env_is_set(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def resolve_key_and_backend(*args, **kwargs):
+    return _runtime_command.resolve_key_and_backend(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def keychain_delete():
-    """Remove the stored key from the OS secret store. Returns True when the
-    key is gone (deleted or was absent) and False on a real failure — a locked
-    Keychain must not let `setup --remove` claim success while the key still
-    resolves."""
-    return _credentials_core.keychain_delete(
-        secret_backend(), subprocess.run, KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
-    )
+def _is_local_host(*args, **kwargs):
+    return _runtime_command._is_local_host(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def resolve_api_url(*args, **kwargs):
+    return _runtime_command.resolve_api_url(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def shared_key_env_is_set():
-    """True when the cross-install `AMBIENT_API_KEY` is exported. We IGNORE it."""
-    return _credentials_core.shared_key_env_is_set(
-        os.environ.get(SHARED_API_KEY_ENV)
-    )
+def cmd_trust_url(*args, **kwargs):
+    return _runtime_command.cmd_trust_url(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
+def cmd_trust_url_reset(*args, **kwargs):
+    return _runtime_command.cmd_trust_url_reset(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
-def resolve_key_and_backend(conf):
-    """Key lookup: AMBIENT_CODEX_API_KEY > Keychain > config file.
-
-    `AMBIENT_API_KEY` is deliberately NOT consulted. Every Ambient install reads that
-    name, so honouring it would hand one key to all of them — the exact coupling this
-    install exists to avoid. An explicit AMBIENT_KEY_BACKEND=file skips the Keychain so
-    `setup --file` can't be shadowed by a stale Keychain entry."""
-    return _credentials_core.resolve_key_and_backend(
-        conf, os.environ.get(API_KEY_ENV), keychain_read, secret_backend
-    )
-
-
-def _is_local_host(host):
-    """True ONLY for a loopback host. The AMBIENT_ALLOW_INSECURE local-dev
-    escape may point the key-bearing endpoint here without a recorded trust
-    decision. Deliberately NOT is_private / is_link_local / 0.0.0.0: an RFC-1918
-    or link-local address can be a REMOTE box on a LAN/VPN, and this must never
-    whitelist a non-local host (a single injected AMBIENT_API_URL would then
-    exfil the key). A non-loopback dev gateway must use `ambient-codex trust-url`.
-    Residual: a rebound `localhost` needs host-file/DNS control — a deeper
-    compromise than the injected-env-var threat this guard addresses."""
-    import ipaddress
-    h = (host or "").lower().strip("[]")   # tolerate [::1]-style IPv6 literals
-    if h == "localhost" or h.endswith(".localhost"):
-        return True
-    try:
-        return ipaddress.ip_address(h).is_loopback
-    except ValueError:
-        return False
-
-
-def resolve_api_url(conf):
-    from_env = os.environ.get("AMBIENT_API_URL")
-    api_url = (from_env or conf.get("AMBIENT_API_URL") or DEFAULT_API_URL).rstrip("/")
-    parts = urllib.parse.urlsplit(api_url)
-    host = (parts.hostname or "").lower()
-    # AMBIENT_ALLOW_INSECURE relaxes the HTTPS requirement ONLY for a LOCAL host
-    # (its documented local-dev purpose) — NEVER for a real/public host, so the
-    # Bearer key can't ride plaintext HTTP to api.ambient.xyz or an attacker's box.
-    allow_insecure_local = (os.environ.get("AMBIENT_ALLOW_INSECURE") == "1"
-                            and _is_local_host(host))
-    if parts.scheme.lower() != "https" and not allow_insecure_local:
-        _fail_exit(
-            None, _argv_command(), "config",
-            f"refusing non-HTTPS endpoint {api_url} — the key would travel "
-            "unencrypted. Use https:// (AMBIENT_ALLOW_INSECURE=1 only relaxes this "
-            "for a LOCAL endpoint like http://127.0.0.1)."
-        )
-    # HOST PINNING: the API key rides in the Authorization header of every call,
-    # so AMBIENT_API_URL is key-equivalent — an injected env var or a tampered
-    # config line pointing anywhere else is a one-call key exfil. Only Ambient
-    # hosts are trusted implicitly; anything else needs an explicit, recorded
-    # trust decision (ambient trust-url), and an ENV-sourced override needs a
-    # second env var so a single injected variable is never sufficient.
-    host = (parts.hostname or "").lower()
-    # AMBIENT_ALLOW_INSECURE bypasses host pinning ONLY for a local host (its
-    # documented local-dev purpose) — never for an arbitrary public host, so a
-    # single injected AMBIENT_API_URL=https://evil.com can't exfil the key.
-    if host == "ambient.xyz" or host.endswith(".ambient.xyz") \
-            or (os.environ.get("AMBIENT_ALLOW_INSECURE") == "1"
-                and _is_local_host(host)):
-        return api_url
-    if conf.get("AMBIENT_TRUSTED_URL") == api_url and (
-            not from_env or os.environ.get("AMBIENT_ALLOW_URL") == "1"):
-        return api_url
-    _fail_exit(
-        None, _argv_command(), "config",
-        f"refusing to send your API key to non-Ambient endpoint "
-        f"'{host or api_url}'. If this is deliberate (a self-hosted gateway), "
-        "record the trust decision first: ambient-codex trust-url <url>"
-    )
-
-
-def cmd_trust_url(args):
-    """Record an explicit trust decision for a non-Ambient endpoint. The key
-    is sent to whatever host AMBIENT_API_URL names, so this is key-equivalent
-    and demands a typed confirmation on a real terminal."""
-    url = args.url.rstrip("/")
-    parts = urllib.parse.urlsplit(url)
-    host = (parts.hostname or "").lower()
-    if parts.scheme.lower() != "https" or not host:
-        sys.exit("ambient: trust-url needs a full https:// URL")
-    if not sys.stdin.isatty():
-        sys.exit("ambient: trust-url is interactive-only (a typed confirmation "
-                 "proves a human made this decision)")
-    # M32: interactive prompts + status go to STDERR (input() defaults its
-    # prompt to stdout) so a caller capturing stdout gets clean, parseable output.
-    print(
-        f"Your Ambient API key will be sent in the Authorization header to\n"
-        f"  {host}\non EVERY future call. Only do this for a gateway you run "
-        "or fully trust.", file=sys.stderr
-    )
-    try:
-        sys.stderr.write(f"Type the hostname ({host}) to confirm: ")
-        sys.stderr.flush()
-        typed = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        sys.exit("\nambient: cancelled")
-    if typed != host:
-        sys.exit("ambient: hostname mismatch — nothing saved")
-    save_config_values({"AMBIENT_TRUSTED_URL": url, "AMBIENT_API_URL": url})
-    print(f"Trusted endpoint saved: {url}\nRevert any time: ambient-codex trust-url --reset",
-          file=sys.stderr)
-
-
-def cmd_trust_url_reset():
-    save_config_values({"AMBIENT_TRUSTED_URL": None, "AMBIENT_API_URL": None})
-    print(f"Endpoint trust cleared — back to {DEFAULT_API_URL}")
-
-
-def load_config():
-    """Read key/url/defaults, letting env vars win, preferring Keychain storage.
-    FIRST USE on a real terminal onboards inline (asks for the key, verifies,
-    shows the welcome panel, then continues the original command) instead of
-    erroring; non-interactive callers get a stable category + dedicated exit
-    code and never hang."""
-    conf = read_config_file()
-    api_key, _ = resolve_key_and_backend(conf)
-    if api_key:
-        # A13: validate the URL only when a key EXISTS to protect. A first-run
-        # user with a custom AMBIENT_API_URL but no key must reach onboarding
-        # below — not be blocked by the key-exfil refusal for a key that does
-        # not exist yet (the refusal fires again, correctly, once a key is set).
-        return api_key, resolve_api_url(conf), conf
-    # stdout.isatty matters too: `ambient ask --json > out.json` on a first
-    # run must NOT interleave the setup preamble/welcome panel into the
-    # captured file — a redirected first run gets exit 3.
-    interactive = (
-        sys.stdin.isatty() and sys.stderr.isatty() and sys.stdout.isatty()
-        and os.environ.get("AMBIENT_NO_ONBOARD") != "1"
-        and not os.environ.get("CI")
-    )
-    if interactive:
-        print(
-            "ambient: first run — no API key is configured yet. Setting one "
-            "up takes about a minute.\n",
-            file=sys.stderr,
-        )
-        cmd_setup(argparse.Namespace(
-            key_stdin=False, force=False, file=False, remove=False))
-        conf = read_config_file()
-        api_key, _ = resolve_key_and_backend(conf)
-        if api_key:
-            print("\nambient: setup complete — continuing with your original "
-                  "command.\n", file=sys.stderr)
-            return api_key, resolve_api_url(conf), conf
-    print(
-        "ambient [setup]: no API key configured.\n"
-        f"  Interactive:      {LAUNCHER_NAME} setup\n"
-        f"  Non-interactive:  export {API_KEY_ENV}=<key>   "
-        f"(or: {LAUNCHER_NAME} setup --key-stdin)\n"
-        f"  Get a key:        {KEY_CONSOLE_URL}  →  API Keys",
-        file=sys.stderr,
-    )
-    sys.exit(EXIT_UNCONFIGURED)
-
+def load_config(*args, **kwargs):
+    return _runtime_command.load_config(
+        *args, deps=_runtime_dependencies(), **kwargs)
 
 _KEY_PLACEHOLDER = "[AMBIENT_API_KEY]"   # _StreamRedactor mirrors this exactly
 _MAX_ESCAPE_HOLD = 256                   # compact a held escape past this so

@@ -139,6 +139,7 @@ bugs, verification, commits, or the next action changes.
 | 4B-14 | Resumable build-state adapters | Complete | local checkpoint | `build_state_command.py`; versioned content identity, path firewall delegation, bounded untrusted-state parsing, hash verification, restrictive atomic persistence, and cap revalidation moved behind immutable filesystem/workflow dependencies |
 | 4A-11 | Audit rendering and repository intake | Complete | local checkpoint | `audit_inputs.py`; tolerant structured/prose recovery, deterministic reduction, redacted terminal/JSON rendering, bounded repository and git-diff intake, gutter mapping, and cross-file confirmation moved behind immutable parser/repository/session dependencies |
 | 3G-11 | Bounded input and code-context composition | Complete | local checkpoint | `context_command.py`; nonblocking stdin, capped file intake, signature-only code maps, density-aware boundaries, syntax-aware Python breaks, chunk packing, parallel resolution, and reduce-format policy moved behind immutable intake/chunking dependencies |
+| 2E | Runtime state, credential, and trusted-backend composition | Complete | local checkpoint | `runtime_command.py`; foreign-root refusal, marker ownership, environment normalization, native keychain identity, shared-key precedence, local/custom backend trust, and fail-closed configuration loading moved behind immutable late-bound state/credential dependencies |
 
 ## Phase 0 checklist
 
