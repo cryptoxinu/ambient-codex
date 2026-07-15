@@ -418,19 +418,43 @@ class TestMcpAdapter(unittest.TestCase):
         self.assertEqual(argv[-3:], ["control", "--json", "--offline"])
         self.assertIn("codex-native", result["content"][0]["text"])
 
-    def test_setters_route_through_control_subcommands(self):
+    def test_mode_is_session_scoped_while_other_setters_use_control_subcommands(self):
         mcp = load_mcp()
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok\n", stderr="")
         with mock.patch.object(mcp.subprocess, "run", return_value=completed) as run:
-            mcp.call_tool("ambient_set_mode", {"state": "takeover"})
+            mode = mcp.call_tool("ambient_set_mode", {"state": "takeover"})
             mcp.call_tool("ambient_set_model", {"model": "z-ai/glm-5.2", "lane": "code"})
             mcp.call_tool("ambient_set_config", {"name": "fallback", "value": "on"})
             mcp.call_tool("ambient_set_config", {"name": "fallback", "unset": True})
+        self.assertFalse(mode["isError"])
+        self.assertEqual(mcp.SESSION.mode, "takeover")
+        self.assertIn("This Codex session only", mode["content"][0]["text"])
         calls = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(calls[0][-3:], ["control", "mode", "takeover"])
-        self.assertEqual(calls[1][-5:], ["control", "model", "--code", "--", "z-ai/glm-5.2"])
-        self.assertEqual(calls[2][-5:], ["control", "setting", "fallback", "--", "on"])
-        self.assertEqual(calls[3][-4:], ["control", "setting", "fallback", "--unset"])
+        self.assertEqual(calls[0][-5:], ["control", "model", "--code", "--", "z-ai/glm-5.2"])
+        self.assertEqual(calls[1][-5:], ["control", "setting", "fallback", "--", "on"])
+        self.assertEqual(calls[2][-4:], ["control", "setting", "fallback", "--unset"])
+
+    def test_control_reports_the_live_session_mode_not_persisted_mode(self):
+        mcp = load_mcp()
+        mcp.SESSION.mode = "takeover"
+        payload = {
+            "schema_version": 1,
+            "mode": "off",
+            "mode_options": [
+                {"state": state, "current": state == "off"}
+                for state in ("off", "on", "takeover")
+            ],
+        }
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(payload), stderr="")
+        with mock.patch.object(mcp.subprocess, "run", return_value=completed):
+            result = mcp.call_tool("ambient_control", {"offline": True})
+        snapshot = json.loads(result["content"][0]["text"])
+        self.assertEqual(snapshot["mode"], "takeover")
+        self.assertEqual(
+            [option["state"] for option in snapshot["mode_options"] if option["current"]],
+            ["takeover"],
+        )
 
     def test_ask_and_audit_cli_arguments_cannot_be_reinterpreted_as_flags(self):
         mcp = load_mcp()

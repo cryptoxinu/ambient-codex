@@ -376,15 +376,15 @@ class TestPickModeTool(unittest.TestCase):
         self.mcp.SESSION.protocol_version = "2025-06-18"
         self.mcp.SESSION.stdout = io.BytesIO()
 
-    def test_accept_persists_the_chosen_mode(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="off"), \
-             mock.patch.object(self.mcp, "elicit",
+    def test_accept_arms_the_ambient_session_without_persisting_config(self):
+        with mock.patch.object(self.mcp, "elicit",
                                return_value={"action": "accept",
                                              "content": {"state": "takeover"}}), \
-             mock.patch.object(self.mcp, "run_ambient",
-                               return_value={"content": [], "isError": False}) as run:
-            self.mcp.pick_mode_tool({})
-        run.assert_called_once_with(["control", "mode", "takeover"])
+             mock.patch.object(self.mcp, "run_ambient") as run:
+            out = self.mcp.pick_mode_tool({})
+        run.assert_not_called()
+        self.assertEqual(self.mcp.SESSION.mode, "takeover")
+        self.assertIn("Ambient session is ON", out["content"][0]["text"])
 
     def test_schema_offers_the_three_modes(self):
         captured = {}
@@ -393,49 +393,48 @@ class TestPickModeTool(unittest.TestCase):
             captured["schema"] = schema
             return {"action": "cancel"}
 
-        with mock.patch.object(self.mcp, "current_mode", return_value="on"), \
-             mock.patch.object(self.mcp, "elicit", side_effect=fake):
+        self.mcp.SESSION.mode = "on"
+        with mock.patch.object(self.mcp, "elicit", side_effect=fake):
             self.mcp.pick_mode_tool({})
         self.assertEqual(captured["schema"]["properties"]["state"]["enum"],
                          ["off", "on", "takeover"])
+        self.assertEqual(captured["schema"]["properties"]["state"]["enumNames"][2],
+                         "Ambient session")
 
     def test_cancel_changes_nothing(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="on"), \
-             mock.patch.object(self.mcp, "elicit", return_value={"action": "cancel"}), \
+        self.mcp.SESSION.mode = "on"
+        with mock.patch.object(self.mcp, "elicit", return_value={"action": "cancel"}), \
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
         text = out["content"][0]["text"]
         self.assertIn("Mode unchanged", text)
-        self.assertIn("1. off", text)
-        self.assertIn("2. on", text)
-        self.assertIn("3. takeover", text)
+        self.assertIn("1. Normal Codex", text)
+        self.assertIn("2. Delegate", text)
+        self.assertIn("3. Ambient session", text)
         self.assertIn("ambient_set_mode", text)
 
     def test_no_picker_returns_a_numbered_menu(self):
         self.mcp.SESSION.client_capabilities = {}
-        with mock.patch.object(self.mcp, "current_mode", return_value="off"), \
-             mock.patch.object(self.mcp, "run_ambient") as run:
+        with mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
         text = out["content"][0]["text"]
-        self.assertIn("1. off", text)
+        self.assertIn("1. Normal Codex", text)
         self.assertIn("ambient_set_mode", text)
 
     def test_timeout_or_auto_cancel_returns_the_numbered_menu(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="off"), \
-             mock.patch.object(self.mcp, "elicit", return_value=None), \
+        with mock.patch.object(self.mcp, "elicit", return_value=None), \
              mock.patch.object(self.mcp, "run_ambient") as run:
             out = self.mcp.pick_mode_tool({})
         run.assert_not_called()
         text = out["content"][0]["text"]
         self.assertIn("Mode unchanged", text)
-        self.assertIn("1. off", text)
+        self.assertIn("1. Normal Codex", text)
         self.assertIn("ambient_set_mode", text)
 
     def test_a_bogus_state_is_refused(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="off"), \
-             mock.patch.object(self.mcp, "elicit",
+        with mock.patch.object(self.mcp, "elicit",
                                return_value={"action": "accept",
                                              "content": {"state": "evil"}}), \
              mock.patch.object(self.mcp, "run_ambient") as run:

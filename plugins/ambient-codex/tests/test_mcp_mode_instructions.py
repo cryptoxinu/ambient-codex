@@ -1,10 +1,4 @@
-"""The delegate/takeover contract must resurface every session.
-
-Codex registers no lifecycle hooks for this plugin by default (a default hook forces a
-hook-trust review on a clean install), so `initialize` is the only per-session hook we
-have. The mode is read from THIS install's env, never the shared ~/.config/ambient the
-other Ambient install owns.
-"""
+"""The native Ambient mode is isolated to one Codex/MCP session."""
 import importlib.util
 import os
 import tempfile
@@ -74,29 +68,31 @@ class TestSessionInstructions(unittest.TestCase):
         self.mcp = load_mcp()
 
     def test_off_mode_keeps_the_base_instructions(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="off"):
-            self.assertEqual(self.mcp.session_instructions(),
-                             self.mcp.SERVER_INSTRUCTIONS)
+        self.assertEqual(self.mcp.session_instructions(), self.mcp.SERVER_INSTRUCTIONS)
 
-    def test_takeover_announces_itself(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="takeover"):
-            text = self.mcp.session_instructions()
-        self.assertIn("TAKEOVER is ON", text)
-        self.assertIn("ambient-codex control mode off", text)
+    def test_ambient_session_announces_direct_ambient_work(self):
+        self.mcp.SESSION.mode = "takeover"
+        text = self.mcp.session_instructions()
+        self.assertIn("Ambient session is ON", text)
+        self.assertIn("direct Ambient chat", text)
+        self.assertIn("task-specific CLI lanes", text)
+        self.assertIn("fresh Codex session starts in normal mode", text)
         self.assertIn("bundled Ambient CLI", text)  # base contract preserved
 
     def test_delegate_announces_itself(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="on"):
-            text = self.mcp.session_instructions()
+        self.mcp.SESSION.mode = "on"
+        text = self.mcp.session_instructions()
         self.assertIn("delegate mode is ON", text)
 
-    def test_initialize_carries_the_mode(self):
-        with mock.patch.object(self.mcp, "current_mode", return_value="takeover"):
-            response = self.mcp.handle_request({
-                "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": "2025-06-18", "capabilities": {}},
-            })
-        self.assertIn("TAKEOVER is ON", response["result"]["instructions"])
+    def test_initialize_resets_the_mode_for_a_fresh_session(self):
+        self.mcp.SESSION.mode = "takeover"
+        response = self.mcp.handle_request({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}},
+        })
+        self.assertEqual(self.mcp.SESSION.mode, "off")
+        self.assertEqual(response["result"]["instructions"],
+                         self.mcp.SERVER_INSTRUCTIONS)
 
     def test_initialize_never_shells_out(self):
         """A slow CLI must not blow Codex's MCP startup_timeout_sec."""

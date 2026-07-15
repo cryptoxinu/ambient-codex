@@ -39,9 +39,9 @@ The two can be installed side by side.
 
 **Each install holds its own API key.** Ambient Codex never reads another install's
 keychain item or config file, not even to offer a convenience, so you run
-`ambient-codex setup` and enter a key for this install. Everything else — model lanes,
-delegate/takeover mode, curation, settings, and usage history — is
-per-install too.
+`ambient-codex setup` and enter a key for this install. Model lanes, curation,
+settings, and usage history are per-install too; native Codex operating mode is
+deliberately per-session.
 
 `AMBIENT_CODEX_HOME` relocates this install's state root. It refuses to point at
 another Ambient install's directory, or at any directory already holding an Ambient
@@ -229,9 +229,6 @@ Model and settings management:
 ```bash
 ./bin/ambient control
 ./bin/ambient control --json
-./bin/ambient control mode on
-./bin/ambient control mode takeover
-./bin/ambient control mode off
 ./bin/ambient control model moonshotai/kimi-k2.7-code --chat
 ./bin/ambient control model z-ai/glm-5.2 --code
 ./bin/ambient control setting fallback on
@@ -273,27 +270,23 @@ out of the agent working tree.
 - `hooks/session-start.sh` remains an opt-in script for local experiments; it is
   not wired into the public plugin by default.
 
-## Delegate And Takeover Modes
+## Codex Session Modes
 
-`control mode on` means Ambient should handle token-heavy code writing and bulk
-model work. Codex writes the brief, runs Ambient, reviews output, runs tests, and
-integrates.
+Use **change mode** in Codex rather than a terminal mode command. The native MCP
+server holds this choice in memory only, so it cannot leak into another project or
+silently change a later conversation.
 
-`control mode takeover` means substantive reasoning and generation should route
-through Ambient as much as safely possible. Codex still keeps secrets, destructive
-operations, security-critical work, and final verification local.
+- **Normal Codex**: Ambient runs only when you ask for it.
+- **Delegate**: Ambient handles token-heavy audits, code, and bulk work; Codex
+  remains the usual chat experience.
+- **Ambient session**: Ambient is the direct chat and work engine through the
+  Codex interface. It handles conversation, orchestration, code, builds, audits,
+  and bulk reading. Codex stays only as the safe local bridge for credentials,
+  untrusted-output validation, and destructive or security-critical boundaries.
 
-The selected mode is saved until you turn it off and applies immediately in the
-current conversation. The public plugin intentionally installs no automatic
-session hook, so in a new Codex thread invoke `$ambient` once to reload the saved
-mode before continuing ordinary chat. This keeps clean installs free of hidden
-lifecycle behavior and hook-trust prompts.
-
-Exit either mode with:
-
-```bash
-./bin/ambient control mode off
-```
+Choose Normal Codex to end either active mode. A fresh Codex session begins in
+Normal Codex mode automatically. Model defaults and settings remain persistent;
+the operating mode does not.
 
 ## Model Rules
 

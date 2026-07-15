@@ -8323,7 +8323,7 @@ CONTROL_SETTING_NAMES = ("streaming", "fallback", "savings")
 CONTROL_MODE_OPTIONS = (
     ("off", "Off", "Codex works normally; Ambient runs only when you ask."),
     ("on", "Delegate", "Codex plans and reviews; Ambient handles audits, builds, and large asks."),
-    ("takeover", "Takeover", "Ambient-first for substantive work; Codex still handles safety and final review."),
+    ("takeover", "Ambient session", "Ambient is the direct chat and work engine for this session."),
 )
 
 CONTROL_WORKFLOWS = (
@@ -8340,7 +8340,7 @@ CONTROL_CHAT_ACTIONS = (
     ("browse available models", "view serving and on-demand models without changing a default"),
     ("change chat/review model", "override the model for asks and audits only"),
     ("change code/build model", "override the model for code, builds, and agent work only"),
-    ("change mode", "choose off / delegate / takeover"),
+    ("change mode", "choose normal Codex, delegate, or an Ambient session"),
     ("change settings", "edit streaming, fallback, and optional savings"),
 )
 

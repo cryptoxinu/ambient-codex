@@ -59,7 +59,8 @@ class TestCodexNativeIsolation(unittest.TestCase):
         for needle in forbidden:
             self.assertNotIn(needle, text)
         self.assertIn("ambient_control", text)
-        self.assertIn("control mode off", text)
+        self.assertIn("ambient_set_mode", text)
+        self.assertIn("fresh Codex session", text)
 
     def test_skill_defaults_to_text_menus_not_native_pickers(self):
         text = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(encoding="utf-8")
@@ -259,15 +260,18 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertIn("exactly once", text)
         self.assertIn("must not claim whole-repository coverage", text)
 
-    def test_takeover_docs_explain_new_thread_reactivation(self):
+    def test_ambient_session_docs_explain_fresh_session_reset(self):
         skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
             encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        for text in (skill, readme):
-            self.assertIn("new Codex thread", text)
-            self.assertIn("`$ambient`", text)
+        self.assertIn("fresh Codex session starts in Normal\nCodex mode", skill)
+        self.assertIn("Ambient session", skill)
+        self.assertIn("new Codex thread", readme)
+        self.assertIn("`$ambient`", readme)
+        self.assertIn("## Codex Session Modes", readme)
+        self.assertIn("fresh Codex session begins in\nNormal Codex mode", readme)
         self.assertNotIn(
-            "Delegate mode persists across sessions until", skill)
+            "mode setting persists on disk", skill)
 
 
 if __name__ == "__main__":

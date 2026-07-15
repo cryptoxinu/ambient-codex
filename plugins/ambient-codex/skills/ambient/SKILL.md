@@ -1,6 +1,6 @@
 ---
 name: ambient
-description: Use Ambient from Codex for token-saving delegation, second-opinion audits, build briefs, repository maps, model routing, setup guidance, usage checks, and takeover sessions. Invoke when the user says ambient, use ambient, ask ambient, audit with ambient, build with ambient, save tokens, get a second opinion, route work to cheaper frontier/open models, or manage Ambient settings.
+description: Use Ambient from Codex for direct Ambient sessions, token-saving delegation, second-opinion audits, build briefs, repository maps, model routing, setup guidance, and usage checks. Invoke when the user says ambient, use ambient, ask ambient, audit with ambient, build with ambient, save tokens, get a second opinion, route work to cheaper frontier/open models, or manage Ambient settings.
 ---
 
 # Ambient Codex
@@ -23,7 +23,7 @@ missing, show the First Run block below and stop.
 | Intent | Action |
 |---|---|
 | Status or bare `$ambient` | Call MCP `ambient_control`; render the compact control panel below. |
-| Change mode | Show `1. off`, `2. on / delegate`, `3. takeover`; then call `ambient_set_mode`. |
+| Change mode | Show `1. Normal Codex`, `2. Delegate`, `3. Ambient session`; then call `ambient_set_mode`. Modes are session-only. |
 | Set a shared/chat-review/code-build model | Get `ambient_control` or `ambient_models`; show serving models plus `browse available models`; then call `ambient_set_model` with `both`, `chat`, or `code`. |
 | Named setting | Call `ambient_set_config`; otherwise show current settings and ask which value to set. |
 | Key status/removal | Call `ambient_key`. Setup/rotation must happen in the user's terminal. |
@@ -55,7 +55,7 @@ For bare `$ambient`, setup completion, or “Ambient settings”:
 4. Expose these controls once: `set one model for all work` (sets both
    defaults), `browse available models` (does not change a default), `change chat/review model`
    (asks and audits), `change code/build model` (code, builds, and agent work),
-   `change mode`, and `change settings`.
+   `change mode` (Normal Codex / Delegate / Ambient session), and `change settings`.
 5. Expose these workflows once: `audit this diff`, `audit this repo`,
    `build <task>`, `ask Ambient <question>`, `diagnose Ambient`, and
    `show Ambient usage`. Audit is a workflow, not a mode.
@@ -63,11 +63,11 @@ For bare `$ambient`, setup completion, or “Ambient settings”:
 
 Always end the panel with a usable next action.
 
-## Delegate And Takeover
+## Delegate And Ambient Session
 
 When mode is `on`, delegate token-heavy audits, bulk reading, code drafts, and
-builds. Keep trivial edits, sensitive auth/crypto/secrets work, destructive or
-production operations, and final decisions with Codex.
+builds. Keep trivial edits and sensitive, destructive, or production operations
+with Codex.
 
 For delegated implementation:
 
@@ -79,19 +79,24 @@ For delegated implementation:
 4. Retry a reasonable transient failure once. If the same brief fails twice,
    finish locally and report the fallback.
 
-When mode is `takeover`, begin substantive replies with:
+When mode is `takeover` (shown to the user as **Ambient session**), the user is
+talking directly to Ambient through the Codex interface. Route conversation and
+orchestration through `ask`, focused code through `code`, multi-file work through
+`build`, reviews through `audit`, and bulk reading through `map`. Return Ambient's
+answer rather than replacing it with separate Codex reasoning. Keep only key
+handling, outbound-secret checks, untrusted-output validation, destructive actions,
+and security-critical boundaries local.
 
-`Ambient Takeover ON - running substantive work through Ambient; use ambient-codex control mode off to stop.`
+Do not force repository work, multi-file implementation, or oversized input through
+`ask`. Select the task-specific CLI lane and let its selected model profile derive
+context capacity, reasoning/output budget, chunk boundaries, and map-reduce
+compaction. Preserve partial/coverage signals rather than turning a truncated result
+into a clean answer.
 
-Route conversation/explanations through `ask`, code through `build`/`code`,
-reviews through `audit`, and bulk reading through `map`. Keep outbound secret
-checks, destructive actions, security-critical implementation, migrations,
-production actions, and final verification with Codex.
-
-The mode setting persists on disk until bundled `control mode off` and applies
-immediately after this skill reads or sets it. The public plugin has no default
-lifecycle hook; in a new Codex thread invoke `$ambient` once to reload the saved
-mode before expecting delegate/takeover routing.
+Native mode is held only in the current MCP connection: `ambient_set_mode` takes
+effect immediately, `off` ends it, and every fresh Codex session starts in Normal
+Codex mode. Never persist this mode through bundled `control mode`; model defaults
+and settings remain persistent separately.
 
 ## Long Jobs And Partial Results
 

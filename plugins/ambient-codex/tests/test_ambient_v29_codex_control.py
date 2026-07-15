@@ -120,8 +120,8 @@ class ControlSnapshotTests(ControlCase):
         self.assertEqual(data["models"]["serving_count"], 1)
         self.assertIn(
             {"state": "takeover",
-             "label": "Takeover",
-             "description": "Ambient-first for substantive work; Codex still handles safety and final review.",
+             "label": "Ambient session",
+             "description": "Ambient is the direct chat and work engine for this session.",
              "current": False},
             data["mode_options"],
         )
@@ -175,7 +175,7 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("Mode", out)
         self.assertIn("Modes:", out)
         self.assertIn("Delegate", out)
-        self.assertIn("Ambient-first", out)
+        self.assertIn("direct chat and work engine", out)
         self.assertIn("Workflows:", out)
         self.assertIn("ambient-codex control model MODEL --chat", out)
         self.assertNotIn("spend-cap", out)
