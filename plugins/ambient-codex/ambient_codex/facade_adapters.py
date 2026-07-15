@@ -45,7 +45,9 @@ def install(namespace, module_name, dependencies_name, specification):
     pairs = _parse(specification)
     adapters = build(
         namespace, module_name, dependencies_name, specification)
-    for (public_name, _target_name), adapter in zip(pairs, adapters, strict=True):
+    if len(pairs) != len(adapters):
+        raise RuntimeError("facade adapter cardinality mismatch")
+    for (public_name, _target_name), adapter in zip(pairs, adapters):
         namespace[public_name] = adapter
     return tuple(public_name for public_name, _target_name in pairs)
 

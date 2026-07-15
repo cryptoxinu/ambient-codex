@@ -42,6 +42,27 @@ class StreamRedactor:
             return len(value) if "\x1b\\" in tail[2:] else index
         return len(value)
 
+    @staticmethod
+    def _needs_sanitizing(value):
+        """Return whether ``redact`` must scan this already-stable text.
+
+        Ordinary provider deltas overwhelmingly contain printable text. Avoid
+        running the full ANSI/control regex pipeline for every tiny safe delta;
+        boundary-sensitive escapes remain in ``_raw`` and every control-bearing
+        stable segment still goes through the canonical sanitizer.
+        """
+        for character in value:
+            codepoint = ord(character)
+            if (codepoint < 9 or 11 <= codepoint <= 31
+                    or 127 <= codepoint <= 159):
+                return True
+        return False
+
+    def _sanitize_stable(self, value):
+        if not value or not self._needs_sanitizing(value):
+            return value
+        return self._redact(value, "")
+
     def feed(self, piece):
         self._raw += piece
         cut = self._stable_len(self._raw)
@@ -49,7 +70,7 @@ class StreamRedactor:
         if len(self._raw) > self._max_escape_hold:
             self._raw = self._raw[:2] + self._raw[-self._escape_keep_tail:]
         if stable_raw:
-            self._san += self._redact(stable_raw, "")
+            self._san += self._sanitize_stable(stable_raw)
         return self._emit(hold=self._keep)
 
     def _raw_commit_len(self, segment, redacted_target):
@@ -72,7 +93,7 @@ class StreamRedactor:
         return raw_index
 
     def _emit(self, hold):
-        redacted = (self._redact(self._san, self._key)
+        redacted = (self._san.replace(self._key, self._placeholder)
                     if self._key else self._san)
         target = len(redacted) - hold if hold else len(redacted)
         if target <= 0:
@@ -80,14 +101,14 @@ class StreamRedactor:
         raw_index = self._raw_commit_len(self._san, target)
         if raw_index <= 0:
             return ""
-        output = (self._redact(self._san[:raw_index], self._key)
+        output = (self._san[:raw_index].replace(self._key, self._placeholder)
                   if self._key else self._san[:raw_index])
         self._san = self._san[raw_index:]
         return output
 
     def flush(self):
         if self._raw:
-            self._san += self._redact(self._raw, "")
+            self._san += self._sanitize_stable(self._raw)
             self._raw = ""
         return self._emit(hold=0)
 

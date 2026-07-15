@@ -26,6 +26,24 @@ class StreamRedactorTests(unittest.TestCase):
         self.assertNotIn(key, output)
         self.assertNotIn("\x1b", output)
 
+    def test_plain_chunks_avoid_repeated_full_sanitizer_scans(self):
+        core = importlib.import_module("ambient_codex.stream_redactor")
+        key = "ambient_test_secret_abcdefghijklmnopqrstuvwxyz"
+        calls = []
+
+        def redact(text, secret):
+            calls.append((text, secret))
+            sanitized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+            return (sanitized.replace(secret, "[REDACTED]")
+                    if secret else sanitized)
+
+        stream = core.StreamRedactor(key, redact)
+        output = "".join(stream.feed("token ") for _ in range(1000))
+        output += stream.flush()
+
+        self.assertEqual(output, "token " * 1000)
+        self.assertLessEqual(len(calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
