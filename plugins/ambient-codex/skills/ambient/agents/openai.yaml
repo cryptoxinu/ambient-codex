@@ -1,8 +1,8 @@
 interface:
-  display_name: "Ambient"
-  short_description: "Control Ambient models, modes, audits, and delegated work."
+  display_name: "Ambient Codex (Beta)"
+  short_description: "Use Ambient models directly from Codex."
   brand_color: "#1F6FEB"
-  default_prompt: "Use $ambient to open the native control panel, pick models, audit this diff, or delegate a token-heavy build through Ambient."
+  default_prompt: "Use $ambient for this task."
 
 dependencies:
   tools:

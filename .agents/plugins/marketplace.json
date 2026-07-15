@@ -1,7 +1,7 @@
 {
   "name": "ambient-codex",
   "interface": {
-    "displayName": "Ambient Codex"
+    "displayName": "Ambient Codex (Beta)"
   },
   "plugins": [
     {

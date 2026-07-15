@@ -2,7 +2,7 @@
 
 All notable changes to `ambient-codex`.
 
-## Unreleased (1.10.0)
+## 1.10.1 - 2026-07-15
 
 - Disabled the default elapsed-time generation wall. Progressing streams may run
   indefinitely, while connection-silence and meaningful-output stall detection
@@ -12,6 +12,12 @@ All notable changes to `ambient-codex`.
 - Clarified takeover's production boundary: Codex owns plugins, connectors,
   scaffolding, security, and verification; Ambient owns primary bounded generation.
   Codex does not proxy its private tool surface into Ambient.
+- Published concise beta installation and feature guides under official Ambient
+  branding, with repository-level license, security, contribution, and conduct
+  policies.
+- Added CodeQL, immutable GitHub Action pins, Dependabot updates, and issue/pull
+  request templates for the public repository.
+- Refreshed the threat model and release privacy scan for the decomposed runtime.
 
 ## 1.10.0 - 2026-07-14
 
