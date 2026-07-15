@@ -196,7 +196,9 @@ class InternalConfigWriteTests(unittest.TestCase):
                         td, mock.Mock(), None, abort, time.time, lambda _: None
                     ):
                         self.fail("entered without a lock")
-            self.assertIn("cannot open config lock", str(raised.exception))
+            expected = ("config is locked" if os.name == "nt"
+                        else "cannot open config lock")
+            self.assertIn(expected, str(raised.exception))
 
             lock_path.write_text("live", encoding="utf-8")
             with mock.patch.object(
