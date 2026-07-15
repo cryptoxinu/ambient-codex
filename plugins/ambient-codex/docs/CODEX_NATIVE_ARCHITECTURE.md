@@ -19,6 +19,22 @@ Ambient Codex is intentionally hybrid:
 This split is not an implementation detail. It is the production boundary for
 the plugin.
 
+### Codex tool boundary
+
+Ambient inference does not inherit Codex's plugins, MCP servers, browser session,
+Sites integration, private connectors, or approval surface. Codex remains the
+control plane: it reads repository and tool instructions, initializes tool-owned
+scaffolding, filters outbound context, formulates a bounded brief, and performs
+local review and verification. Ambient is the generation plane: it receives the
+bounded task through `ask`, `code`, `build`, `audit`, `map`, or `agent run` and
+returns untrusted text or file artifacts.
+
+This is deliberate. Proxying the full Codex tool surface into an external model
+would widen the secret and authorization boundary, make approval semantics
+ambiguous, and depend on a tool-call protocol Ambient does not currently accept.
+Takeover therefore means Ambient is the primary conversational and generation
+engine, not that Codex disappears or hands its credentials and plugins to Ambient.
+
 ## Why Not MCP-Only
 
 MCP is the right Codex-native control surface, but it is the wrong place to put
@@ -145,6 +161,29 @@ terminal-native:
 Codex may invoke the CLI through shell tools, but it must call the bundled binary
 from the plugin root. Ambient output is untrusted external model/API data until
 Codex reviews it, verifies claims, and runs the relevant tests.
+
+### Long-job continuation
+
+Codex-launched heavy commands use `--no-progress` by default so display-only
+heartbeats do not pollute the main transcript. This does not disable transport
+silence detection, meaningful-output stall detection, adaptive build recovery,
+partial-result signaling, or checkpointing.
+
+The job runs once in a background terminal. Codex resumes that same terminal with
+the host's longest safe blocking wait and a small output cap. A host wait interval
+is only a continuation boundary; it is never a job deadline and must never kill or
+relaunch Ambient. If the host yields before completion, Codex re-enters the same
+wait without commentary or a separate `ps`/`pgrep` observer loop.
+
+There is no default elapsed-time generation wall. A stream may run as long as it
+continues making meaningful progress. Connection silence and lack of meaningful
+growth remain bounded because they indicate a wedged transport rather than slow
+valid work. Operators can opt into an absolute wall with
+`AMBIENT_HARD_WALL_S`; the default is disabled.
+
+A dedicated Codex subagent is not used merely as a timer. Official Codex behavior
+gives each subagent its own model context, which adds token use. Subagents remain
+appropriate only for genuinely independent parallel work.
 
 ## Hooks Policy
 

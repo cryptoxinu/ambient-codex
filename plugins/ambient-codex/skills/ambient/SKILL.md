@@ -87,6 +87,16 @@ answer rather than replacing it with separate Codex reasoning. Keep only key
 handling, outbound-secret checks, untrusted-output validation, destructive actions,
 and security-critical boundaries local.
 
+Codex is the control plane and Ambient is the generation plane.
+Ambient cannot call Codex plugins, MCP tools, browser sessions, Sites, or private
+connectors. Codex may
+read applicable repo/tool skills, initialize tool-owned scaffolding, collect bounded
+context, and formulate the acceptance contract before dispatch. Then Ambient must do
+the primary requested generation through the task-specific lane; Codex reviews,
+tests, integrates, and uses its plugins around that result.
+Do not proxy Codex's tool surface, credentials, or connector access into an Ambient
+prompt.
+
 For a short conversational `ask`, call Ambient immediately without a
 routing/checking preamble. After a successful result, return Ambient's answer
 verbatim unless a local safety boundary requires a concise warning. Do not narrate
@@ -108,28 +118,38 @@ and settings remain persistent separately.
 ## Long Jobs And Partial Results
 
 Do not wrap long Ambient commands in a shell timeout. The CLI has progress-aware
-stall detection.
+stall detection, and a progressing stream has no elapsed-time wall by default.
 
-1. Start the bundled command once in a background terminal and retain its session id.
-   The command, not Codex, owns its progress-aware wait and recovery loop.
+1. Start the bundled command once in a background terminal, retain its session id,
+   and add `--no-progress` unless the user explicitly asks to see CLI heartbeats.
+   That flag hides display-only progress; it does not weaken silence, no-progress,
+   transport, partial-result, or recovery guards.
 2. Send one concise running update. Do not repeat the launch command, full brief,
    prior terminal output, or a routing/status explanation in chat.
-3. Do not call a foreground wait or repeatedly inspect a healthy background
-   terminal just to prove it is still running. A healthy job must not emit a chat
-   update on an ordinary liveness check. Leave it alone until the host reports its
-   terminal result, the user asks for status, or there is a real stall, partial,
-   failure, or material state change. Never send messages such as “waited for
-   background terminal,” “still generating,” or “continuing normally.”
-4. If the user explicitly asks for status, make one bounded, output-capped
+3. Resume the same process only through a blocking terminal continuation, using the
+   maximum host-safe wait interval and a small output cap.
+   If the host yields while the process is still healthy, immediately re-enter that
+   same wait without new narration, planning, command inspection, or liveness shell
+   calls. This continuation is not a job timeout and must never stop or relaunch the
+   process.
+4. A healthy job must not emit a chat
+   update on an ordinary continuation. Only surface a real stall, partial result,
+   failure, completion, user-requested status, or other material state change.
+   Never send messages such as “waited for background terminal,” “still generating,”
+   or “continuing normally.” Codex may render unavoidable terminal cards; do not add
+   assistant narration that repeats their command, full brief, or output.
+5. If the user explicitly asks for status, make one bounded, output-capped
    inspection and summarize only the new state; do not paste the command or brief.
-   Do not create an autonomous Codex polling loop, scheduled status chatter, or a
-   second monitoring terminal. The host may render an unavoidable launch or final
-   tool card; do not add assistant narration that duplicates it.
-5. Never cancel a healthy Ambient job to save Codex tokens or because it has not
-   finished yet. Stop it only on the user's request or the CLI's actual failure/
-   stall signal.
-6. Parse the final envelope, not the first JSON-looking line.
-7. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
+   Do not create a second monitoring terminal or run `ps`/`pgrep` observer loops.
+6. Never cancel from elapsed wall-clock time. Never cancel a healthy Ambient job to
+   save Codex tokens or because it has not finished yet. Stop it only on the user's
+   request or the CLI's actual failure/stall signal. `--timeout` is an inactivity
+   boundary, not a total runtime cap.
+7. Do not spawn a Codex subagent solely to wait for Ambient; subagents add another
+   model context and consume more tokens. Use one only for genuinely independent work
+   that can proceed in parallel, such as a separate review or test investigation.
+8. Parse the final envelope, not the first JSON-looking line.
+9. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
    invocation. Report usable partial output and every coverage gap.
 
 Build uses record-framed JSONL and `.ambient-build.json` so complete files survive

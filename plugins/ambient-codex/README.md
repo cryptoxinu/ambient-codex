@@ -280,9 +280,17 @@ silently change a later conversation.
 - **Delegate**: Ambient handles token-heavy audits, code, and bulk work; Codex
   remains the usual chat experience.
 - **Ambient session**: Ambient is the direct chat and work engine through the
-  Codex interface. It handles conversation, orchestration, code, builds, audits,
-  and bulk reading. Codex stays only as the safe local bridge for credentials,
-  untrusted-output validation, and destructive or security-critical boundaries.
+  Codex interface. Ambient handles conversation and primary generation for code,
+  builds, audits, and bulk reading. Codex remains the control plane for repository
+  instructions, plugin/MCP/browser/Sites access, local setup, credentials,
+  untrusted-output validation, tests, and destructive or security-critical
+  boundaries. Ambient does not inherit Codex's plugins or private connectors.
+
+For long Codex-managed Ambient work, the bundled CLI runs once in a background
+terminal with display-only progress silenced. Codex waits on that same process
+without an elapsed-time cancellation deadline; connection silence and genuine
+no-progress stalls remain detected. Host-rendered terminal cards may still show
+the command because that UI belongs to Codex rather than the plugin.
 
 Choose Normal Codex to end either active mode. A fresh Codex session begins in
 Normal Codex mode automatically. Model defaults and settings remain persistent;

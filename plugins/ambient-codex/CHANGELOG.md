@@ -2,6 +2,17 @@
 
 All notable changes to `ambient-codex`.
 
+## Unreleased (1.10.0)
+
+- Disabled the default elapsed-time generation wall. Progressing streams may run
+  indefinitely, while connection-silence and meaningful-output stall detection
+  remain active; operators can still opt into `AMBIENT_HARD_WALL_S`.
+- Codex-managed long jobs now use display-quiet CLI progress and blocking terminal
+  continuation semantics. Host wait intervals never cancel or relaunch Ambient.
+- Clarified takeover's production boundary: Codex owns plugins, connectors,
+  scaffolding, security, and verification; Ambient owns primary bounded generation.
+  Codex does not proxy its private tool surface into Ambient.
+
 ## 1.10.0 - 2026-07-14
 
 ### Cost/savings display is off by default

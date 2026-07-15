@@ -292,11 +292,27 @@ class TestCodexNativeIsolation(unittest.TestCase):
     def test_ambient_session_long_jobs_do_not_create_chatty_poll_loops(self):
         skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
             encoding="utf-8")
-        self.assertIn("Do not call a foreground wait", skill)
+        self.assertIn("blocking terminal continuation", skill)
+        self.assertIn("maximum host-safe wait interval", skill)
+        self.assertIn("not a job timeout", skill)
         self.assertIn("must not emit a chat\n   update", skill)
-        self.assertIn("terminal result, the user asks for status", skill)
+        self.assertIn("Never cancel from elapsed wall-clock time", skill)
         self.assertIn("material state change", skill)
         self.assertIn("Do not repeat the launch command", skill)
+
+    def test_codex_heavy_jobs_silence_display_only_progress(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("add `--no-progress`", skill)
+        self.assertIn("does not weaken", skill)
+
+    def test_takeover_keeps_codex_tools_outside_ambient_boundary(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("Ambient cannot call Codex plugins", skill)
+        self.assertIn("Codex is the control plane", skill)
+        self.assertIn("Ambient is the generation plane", skill)
+        self.assertIn("Do not proxy Codex's tool surface", skill)
 
 
 if __name__ == "__main__":
