@@ -111,16 +111,25 @@ Do not wrap long Ambient commands in a shell timeout. The CLI has progress-aware
 stall detection.
 
 1. Start the bundled command once in a background terminal and retain its session id.
-2. Send one concise running update. Do not copy the full brief, command, or prior
-   terminal output into chat.
-3. Poll only for liveness at a bounded interval while it runs. Report only state
-   changes, substantive progress, a stall/partial signal, or completion; never
-   narrate repeated waiting/polling checks.
-4. Never cancel a healthy Ambient job to save Codex tokens or because it has not
+   The command, not Codex, owns its progress-aware wait and recovery loop.
+2. Send one concise running update. Do not repeat the launch command, full brief,
+   prior terminal output, or a routing/status explanation in chat.
+3. Do not call a foreground wait or repeatedly inspect a healthy background
+   terminal just to prove it is still running. A healthy job must not emit a chat
+   update on an ordinary liveness check. Leave it alone until the host reports its
+   terminal result, the user asks for status, or there is a real stall, partial,
+   failure, or material state change. Never send messages such as “waited for
+   background terminal,” “still generating,” or “continuing normally.”
+4. If the user explicitly asks for status, make one bounded, output-capped
+   inspection and summarize only the new state; do not paste the command or brief.
+   Do not create an autonomous Codex polling loop, scheduled status chatter, or a
+   second monitoring terminal. The host may render an unavoidable launch or final
+   tool card; do not add assistant narration that duplicates it.
+5. Never cancel a healthy Ambient job to save Codex tokens or because it has not
    finished yet. Stop it only on the user's request or the CLI's actual failure/
    stall signal.
-5. Parse the final envelope, not the first JSON-looking line.
-6. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
+6. Parse the final envelope, not the first JSON-looking line.
+7. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
    invocation. Report usable partial output and every coverage gap.
 
 Build uses record-framed JSONL and `.ambient-build.json` so complete files survive

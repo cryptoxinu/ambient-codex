@@ -284,10 +284,19 @@ class TestCodexNativeIsolation(unittest.TestCase):
         skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
             encoding="utf-8")
         self.assertIn("one concise running update", skill)
-        self.assertIn("state\n   changes", skill)
+        self.assertIn("material state change", skill)
         self.assertIn("Never cancel a healthy Ambient job", skill)
-        self.assertIn("Do not copy the full brief", skill)
+        self.assertIn("full brief", skill)
         self.assertIn("adaptive recovery signal", skill)
+
+    def test_ambient_session_long_jobs_do_not_create_chatty_poll_loops(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("Do not call a foreground wait", skill)
+        self.assertIn("must not emit a chat\n   update", skill)
+        self.assertIn("terminal result, the user asks for status", skill)
+        self.assertIn("material state change", skill)
+        self.assertIn("Do not repeat the launch command", skill)
 
 
 if __name__ == "__main__":
