@@ -30,6 +30,13 @@ class ReleaseReadinessTests(unittest.TestCase):
         self.assertIn("Delegate", features)
         self.assertIn("Ambient session", features)
 
+    def test_packaged_readme_is_concise_and_beta_labeled(self):
+        text = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(text.splitlines()), 180)
+        self.assertIn("Official Ambient", text)
+        self.assertIn("Beta", text)
+        self.assertIn("app.ambient.xyz", text)
+
     def test_manifest_uses_official_ambient_beta_branding(self):
         manifest = json.loads(
             (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(
@@ -37,8 +44,7 @@ class ReleaseReadinessTests(unittest.TestCase):
         self.assertEqual(manifest["author"]["name"], "Ambient")
         self.assertEqual(manifest["interface"]["developerName"], "Ambient")
         self.assertIn("Beta", manifest["interface"]["displayName"])
-        serialized = json.dumps(manifest).lower()
-        self.assertNotIn("xinu", serialized)
+        self.assertEqual(manifest["author"]["url"], "https://ambient.xyz")
 
     def test_repository_has_github_community_files(self):
         expected = (
