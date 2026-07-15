@@ -176,6 +176,7 @@ from ambient_codex import build_apply as _build_apply  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
+from ambient_codex import cli_dispatch as _cli_dispatch  # noqa: E402
 from ambient_codex import cli_parser as _cli_parser  # noqa: E402
 from ambient_codex import code_workflow as _code_workflow  # noqa: E402
 from ambient_codex import launcher as _launcher  # noqa: E402
@@ -9583,53 +9584,19 @@ def _audit_keyless_route(args):
     return None
 
 
-COMMANDS = (
-    {"name": "version", "needs_key": False, "pre_env": True,
-     "configure": _configure_version, "handler": "_cmd_version"},
-    {"name": "models", "needs_key": False,
-     "configure": _configure_models, "handler": "_cmd_models_keyless"},
-    {"name": "curate", "needs_key": False,
-     "configure": _configure_curate, "handler": "cmd_curate"},
-    {"name": "setup", "needs_key": False,
-     "configure": _configure_setup, "handler": "cmd_setup"},
-    {"name": "link", "needs_key": False,
-     "configure": _configure_link, "handler": "cmd_link"},
-    {"name": "uninstall", "needs_key": False,
-     "configure": _configure_uninstall, "handler": "cmd_uninstall"},
-    {"name": "cache", "needs_key": False,
-     "configure": _configure_cache, "handler": "cmd_cache"},
-    {"name": "trust-url", "needs_key": False,
-     "configure": _configure_trust_url, "handler": "_cmd_trust_url_dispatch"},
-    {"name": "usage", "needs_key": False,
-     "configure": _configure_usage, "handler": "cmd_usage"},
-    {"name": "mode", "needs_key": False,
-     "configure": _configure_mode, "handler": "cmd_mode"},
-    {"name": "config", "needs_key": False,
-     "configure": _configure_config, "handler": "cmd_config"},
-    {"name": "control", "needs_key": False,
-     "configure": _configure_control, "handler": "cmd_control"},
-    {"name": "doctor", "needs_key": False,
-     "configure": _configure_doctor, "handler": "cmd_doctor"},
-    {"name": "use", "needs_key": True,
-     "configure": _configure_use, "handler": "cmd_use"},
-    {"name": "ask", "needs_key": True,
-     "configure": _configure_ask, "handler": "cmd_ask"},
-    {"name": "audit", "needs_key": True,
-     "keyless_route": "_audit_keyless_route",
-     "configure": _configure_audit, "handler": "cmd_audit"},
-    {"name": "map", "needs_key": True,
-     "configure": _configure_map, "handler": "cmd_map"},
-    {"name": "code", "needs_key": True,
-     "configure": _configure_code, "handler": "cmd_code"},
-    {"name": "chat", "needs_key": True,
-     "configure": _configure_chat, "handler": "cmd_chat"},
-    {"name": "build", "needs_key": True,
-     "configure": _configure_build, "handler": "cmd_build"},
-    {"name": "agent", "needs_key": True,
-     "configure": _configure_agent, "handler": "cmd_agent"},
-    {"name": "codex", "needs_key": False,
-     "configure": _configure_codex, "handler": "_cmd_codex_keyless"},
-)
+COMMANDS = _cli_dispatch.make_command_registry({
+    "version": _configure_version, "models": _configure_models,
+    "curate": _configure_curate, "setup": _configure_setup,
+    "link": _configure_link, "uninstall": _configure_uninstall,
+    "cache": _configure_cache, "trust-url": _configure_trust_url,
+    "usage": _configure_usage, "mode": _configure_mode,
+    "config": _configure_config, "control": _configure_control,
+    "doctor": _configure_doctor, "use": _configure_use,
+    "ask": _configure_ask, "audit": _configure_audit,
+    "map": _configure_map, "code": _configure_code,
+    "chat": _configure_chat, "build": _configure_build,
+    "agent": _configure_agent, "codex": _configure_codex,
+})
 
 
 def _registry_handler(name):
@@ -9641,17 +9608,9 @@ def _registry_handler(name):
 def build_parser():
     """Construct the fully-configured top-level parser (extracted so tests and
     main share one definition)."""
-    parser = _Parser(
-        prog="ambient", description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--version", "-V", action="version",
-                        version=f"ambient {__version__}")
-    sub = parser.add_subparsers(dest="command", required=False,
-                                metavar="<command>", parser_class=_Parser)
-    for _spec in COMMANDS:
-        _spec["configure"](sub)
-    return parser
+    return _cli_dispatch.build_parser(
+        parser_class=_Parser, description=__doc__, version=__version__,
+        commands=COMMANDS)
 
 
 def _parse_args_with_stdin_dash(parser):
@@ -9664,15 +9623,7 @@ def _parse_args_with_stdin_dash(parser):
     already auto-read piped stdin, and code takes no stdin — so the natural
     order never errors on any command (Codex round 2). Any OTHER leftover is
     still a real usage error, exactly like parse_args."""
-    args, extras = parser.parse_known_args()
-    if extras == ["-"]:
-        if isinstance(getattr(args, "prompt", None), list):
-            if "-" not in args.prompt:
-                args.prompt.append("-")   # ask: honor the stdin sentinel
-        # else: a redundant '-' on a command that doesn't use it — drop it.
-    elif extras:
-        parser.error("unrecognized arguments: " + " ".join(extras))
-    return args
+    return _cli_dispatch.parse_args_with_stdin_dash(parser)
 
 
 def main():
@@ -9713,7 +9664,7 @@ def main():
                     f"ROTATE that key at {KEY_CONSOLE_URL}."
                 )
     args = _parse_args_with_stdin_dash(parser)
-    spec = next((s for s in COMMANDS if s["name"] == args.command), None)
+    spec = _cli_dispatch.find_command(COMMANDS, args.command)
     if spec is not None and spec.get("pre_env"):
         # `ambient version` must work even before HOME/config resolve.
         _registry_handler(spec["handler"])(args)

@@ -118,6 +118,7 @@ bugs, verification, commits, or the next action changes.
 | 5B-2 | Launcher ownership checks | Complete | local checkpoint | `launcher.py`; injected symlink/shim ownership predicates preserve facade filesystem patch seams |
 | 5C-1 | Large workflow parser construction | Complete | local checkpoint | `cli_parser.py`; shared model/progress flags plus audit/map/build parsers are module-owned with facade wrappers preserving monkeypatch seams |
 | 5C-2 | Remaining command parser construction | Complete | local checkpoint | `cli_parser.py`; control, setup, configuration, chat/code/ask, agent, and utility parsers are module-owned while dynamic state and custom error-parser seams remain facade-injected |
+| 5C-3 | Immutable command registry and parse orchestration | Complete | local checkpoint | `cli_dispatch.py`; frozen command definitions, validated parser binding, top-level parser construction, lookup, and non-mutating stdin-sentinel recovery are module-owned |
 
 ## Phase 0 checklist
 
