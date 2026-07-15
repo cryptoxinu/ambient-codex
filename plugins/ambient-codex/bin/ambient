@@ -175,6 +175,7 @@ from ambient_codex import agent_config as _agent_config  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
+from ambient_codex import code_workflow as _code_workflow  # noqa: E402
 from ambient_codex import launcher as _launcher  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
@@ -6978,17 +6979,7 @@ def cmd_code(args, api_key, api_url, conf):
                 # above `single`; proceeding would 400 the paid-for generation
                 # call. Clamp with an honest marker.
                 context = context[:room] + "\n[ambient: context truncated to fit]"
-    user_content = task if not context else f"{task}\n\nContext files:\n\n{context}"
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a senior software engineer. Produce complete, correct, "
-                "production-quality code. Include brief usage notes. No placeholders."
-            ),
-        },
-        {"role": "user", "content": user_content},
-    ]
+    messages = _code_workflow.final_messages(task, context)
     # 7a: --best-of applies to the final GENERATION call only (any brief/
     # context distillation above stays a single pass — sampling diversity
     # buys nothing on extraction). Validated at the TOP of cmd_code;
