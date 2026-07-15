@@ -167,6 +167,7 @@ from ambient_codex.records import (  # noqa: E402
 )
 from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
+from ambient_codex import capability_runtime as _capability_runtime  # noqa: E402
 from ambient_codex import catalog_command as _catalog_command  # noqa: E402
 from ambient_codex import ask_command as _ask_command  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
@@ -709,48 +710,53 @@ def model_pricing(*args, **kwargs):
     return _model_runtime.model_pricing(
         *args, deps=_model_runtime_dependencies(), **kwargs)
 
-def _telemetry_enabled():
-    """AMBIENT_TELEMETRY=off|0|false|no keeps the static token constants."""
-    return (os.environ.get("AMBIENT_TELEMETRY", "").strip().lower()
-            not in ("off", "0", "false", "no"))
+def _get_telemetry_cache():
+    return _TELEMETRY_CPT_CACHE
 
 
-def observed_cpt(model):
-    """Per-model OBSERVED chars-per-token from the local usage ledger — a
-    recent-weighted EWMA over records that carry both the input char count
-    and a REAL (non-estimated) prompt_tokens figure — or None when there is
-    no usable history (callers then fall back to EXACTLY the static
-    CHARS_PER_TOKEN default, so a fresh install is byte-identical). Every
-    sample and the result are clamped to [TELEMETRY_CPT_MIN,
-    TELEMETRY_CPT_MAX] so a corrupt ledger can never skew budgets. The
-    ledger is read ONCE per process (memoized) — model_profile sits on the
-    hot path and must not re-hit the disk per call."""
+def _set_telemetry_cache(value):
     global _TELEMETRY_CPT_CACHE
-    value, _TELEMETRY_CPT_CACHE = _telemetry_core.observed_cpt(
-        model, _telemetry_enabled(), USAGE_PATH, _TELEMETRY_CPT_CACHE,
-        TELEMETRY_CPT_MIN, TELEMETRY_CPT_MAX, TELEMETRY_EWMA_ALPHA,
+    _TELEMETRY_CPT_CACHE = value
+
+
+def _get_cap_cache():
+    return _CAP_CACHE
+
+
+def _set_cap_cache(value):
+    global _CAP_CACHE
+    _CAP_CACHE = value
+
+
+def _capability_dependencies():
+    return _capability_runtime.CapabilityDependencies.bind(
+        CAPABILITY_PATH=CAPABILITY_PATH, CAP_FAIL_THRESHOLD=CAP_FAIL_THRESHOLD, CAP_RECENT_K=CAP_RECENT_K,
+        CHARS_PER_TOKEN=CHARS_PER_TOKEN, TELEMETRY_CPT_MAX=TELEMETRY_CPT_MAX, TELEMETRY_CPT_MIN=TELEMETRY_CPT_MIN,
+        TELEMETRY_EWMA_ALPHA=TELEMETRY_EWMA_ALPHA, USAGE_PATH=USAGE_PATH, _cap_recent=_cap_recent,
+        _load_caps=_load_caps, _read_caps_file=_read_caps_file, _telemetry_core=_telemetry_core,
+        _telemetry_enabled=_telemetry_enabled, _try_caps_lock=_try_caps_lock, _write_caps=_write_caps,
+        fcntl=fcntl, get_cap_cache=_get_cap_cache, get_telemetry_cache=_get_telemetry_cache,
+        json=json, observed_cpt=observed_cpt, os=os,
+        set_cap_cache=_set_cap_cache, set_telemetry_cache=_set_telemetry_cache, tempfile=tempfile,
+        time=time,
     )
-    return value
 
 
-def _effective_cpt(model):
-    """The chars-per-token figure for SIZING `model`'s budget (how much content
-    fits): the ledger-observed EWMA when real usage history exists (self-
-    calibrating token math — smarter with use), else EXACTLY the static
-    CHARS_PER_TOKEN default so a no-history run never shifts by a byte."""
-    return observed_cpt(model) or CHARS_PER_TOKEN
+def _telemetry_enabled(*args, **kwargs):
+    return _capability_runtime._telemetry_enabled(
+        *args, deps=_capability_dependencies(), **kwargs)
 
+def observed_cpt(*args, **kwargs):
+    return _capability_runtime.observed_cpt(
+        *args, deps=_capability_dependencies(), **kwargs)
 
-def _cost_cpt(model):
-    """The chars-per-token figure for COST / SPEND-GATE math. Telemetry may only
-    make the gate MORE conservative, never less: a higher observed cpt (fewer
-    tokens per char) would LOWER the estimated input tokens and could let a run
-    the static gate would block slip through, so the cost path clamps cpt to at
-    most the static default (min(observed, default)). A lower observed cpt (a
-    model that really uses MORE tokens per char) still tightens the gate. With
-    no history this is exactly CHARS_PER_TOKEN — byte-identical to before."""
-    return min(observed_cpt(model) or CHARS_PER_TOKEN, CHARS_PER_TOKEN)
+def _effective_cpt(*args, **kwargs):
+    return _capability_runtime._effective_cpt(
+        *args, deps=_capability_dependencies(), **kwargs)
 
+def _cost_cpt(*args, **kwargs):
+    return _capability_runtime._cost_cpt(
+        *args, deps=_capability_dependencies(), **kwargs)
 
 # --- Adaptive capability learning --------------------------------
 # The catalog's advertised features are a HYPOTHESIS; a model's OBSERVED
@@ -767,146 +773,33 @@ CAP_FAIL_THRESHOLD = 2    # recent fails (with no recent ok) => "unreliable"
 _CAP_CACHE = None
 
 
-def _read_caps_file():
-    """Fresh read of the capability store from disk (no memo). Missing/corrupt
-    → {} (learning restarts clean, never an error)."""
-    try:
-        with open(CAPABILITY_PATH, encoding="utf-8") as fh:
-            raw = json.load(fh)
-        return raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        return {}
+def _read_caps_file(*args, **kwargs):
+    return _capability_runtime._read_caps_file(
+        *args, deps=_capability_dependencies(), **kwargs)
 
+def _load_caps(*args, **kwargs):
+    return _capability_runtime._load_caps(
+        *args, deps=_capability_dependencies(), **kwargs)
 
-def _load_caps():
-    """The learned capability store, read ONCE per process (memoized). Disabled
-    telemetry yields an empty table (no history)."""
-    global _CAP_CACHE
-    if _CAP_CACHE is not None:
-        return _CAP_CACHE
-    _CAP_CACHE = _read_caps_file() if _telemetry_enabled() else {}
-    return _CAP_CACHE
+def _cap_recent(*args, **kwargs):
+    return _capability_runtime._cap_recent(
+        *args, deps=_capability_dependencies(), **kwargs)
 
+def cap_state(*args, **kwargs):
+    return _capability_runtime.cap_state(
+        *args, deps=_capability_dependencies(), **kwargs)
 
-def _cap_recent(model, dim):
-    """The last-K outcomes for (model, dim) as a list of 0/1, or [] if none/
-    malformed — the one place that tolerates a hand-edited or corrupt store.
-    Guards EVERY layer (a `{"m": "bad"}` model entry must not crash the audit
-    path that calls cap_state)."""
-    model_rec = _load_caps().get(model)
-    if not isinstance(model_rec, dict):
-        return []
-    rec = model_rec.get(dim)
-    if not isinstance(rec, dict):
-        return []
-    recent = rec.get("recent")
-    if not isinstance(recent, list):
-        return []
-    return [1 if x else 0 for x in recent][-CAP_RECENT_K:]
+def _try_caps_lock(*args, **kwargs):
+    return _capability_runtime._try_caps_lock(
+        *args, deps=_capability_dependencies(), **kwargs)
 
+def _write_caps(*args, **kwargs):
+    return _capability_runtime._write_caps(
+        *args, deps=_capability_dependencies(), **kwargs)
 
-def cap_state(model, dim):
-    """Learned state for (model, dimension): 'ok' | 'unreliable' | 'unknown'.
-    'unknown' when learning is off or there is no history (the caller then
-    tries the optimistic path). Hysteresis keyed on the MOST RECENT outcome so
-    a stale success can't mask fresh failures: the latest attempt succeeded =>
-    'ok' (recovered — models improve); the latest failed AND the last
-    CAP_FAIL_THRESHOLD attempts all failed => 'unreliable'; otherwise
-    'unknown'."""
-    if not model or not _telemetry_enabled():
-        return "unknown"
-    recent = _cap_recent(model, dim)
-    if not recent:
-        return "unknown"
-    if recent[-1] == 1:
-        return "ok"
-    if len(recent) >= CAP_FAIL_THRESHOLD and not any(recent[-CAP_FAIL_THRESHOLD:]):
-        return "unreliable"
-    return "unknown"
-
-
-def _try_caps_lock(conf_dir):
-    """Best-effort NON-BLOCKING exclusive lock (POSIX flock) for the capability
-    store, so a telemetry write never hangs. Returns an fd on success, else None
-    (caller proceeds unlocked). Where fcntl is absent (Windows) we do NOT use an
-    O_EXCL lock file — its unlink-on-release races with a concurrent holder
-    (Codex round 4) — and simply run unlocked; capability learning is
-    best-effort and a rare lost outcome self-heals."""
-    if fcntl is None:
-        return None
-    lock_path = os.path.join(conf_dir, ".caps.lock")
-    try:
-        fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return fd
-    except OSError:
-        try:
-            os.close(fd)
-        except (OSError, NameError, UnboundLocalError):
-            pass
-        return None
-
-
-def _write_caps(table):
-    """Atomic rewrite (mkstemp + replace, 0600) — same discipline as the
-    reservation/cache stores; a crash mid-write never leaves a torn file."""
-    d = os.path.dirname(CAPABILITY_PATH)
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".caps-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(table, fh)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, CAPABILITY_PATH)
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def record_cap(model, dim, ok):
-    """Append one real outcome (ok: bool) for (model, dimension) and persist.
-    Best-effort and fully swallowed on error — a QA/telemetry write must NEVER
-    break a real result the user is waiting on. No-op when learning is off."""
-    if not model or not _telemetry_enabled():
-        return
-    global _CAP_CACHE
-    lock_fd = None
-    try:
-        conf_dir = os.path.dirname(CAPABILITY_PATH)
-        os.makedirs(conf_dir, exist_ok=True)
-        # NON-BLOCKING lock: a telemetry write must NEVER hang the real result a
-        # caller is waiting on (Codex round 2: the blocking config lock could
-        # stall record_cap). If a sibling holds it, we skip the lock and do a
-        # best-effort read-modify-write — at worst one outcome races, never a
-        # hang. Re-read fresh from disk so a held lock's writer isn't clobbered
-        # when we DID get the lock.
-        lock_fd = _try_caps_lock(conf_dir)
-        table = _read_caps_file()
-        model_rec = dict(table.get(model) if isinstance(table.get(model), dict) else {})
-        dim_rec = model_rec.get(dim)
-        dim_rec = dict(dim_rec) if isinstance(dim_rec, dict) else {}
-        prior = dim_rec.get("recent")
-        recent = [1 if x else 0 for x in prior] if isinstance(prior, list) else []
-        recent.append(1 if ok else 0)
-        dim_rec["recent"] = recent[-CAP_RECENT_K:]
-        dim_rec["updated"] = time.time()
-        model_rec[dim] = dim_rec
-        table[model] = model_rec
-        _write_caps(table)
-        _CAP_CACHE = table
-    except Exception:
-        pass  # never propagate a telemetry failure into the caller
-    finally:
-        if lock_fd is not None:
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_UN)
-                os.close(lock_fd)
-            except OSError:
-                pass
-
+def record_cap(*args, **kwargs):
+    return _capability_runtime.record_cap(
+        *args, deps=_capability_dependencies(), **kwargs)
 
 def adaptive_response_format(*args, **kwargs):
     return _model_runtime.adaptive_response_format(

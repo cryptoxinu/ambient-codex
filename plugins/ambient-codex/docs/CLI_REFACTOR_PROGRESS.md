@@ -142,6 +142,7 @@ bugs, verification, commits, or the next action changes.
 | 2E | Runtime state, credential, and trusted-backend composition | Complete | local checkpoint | `runtime_command.py`; foreign-root refusal, marker ownership, environment normalization, native keychain identity, shared-key precedence, local/custom backend trust, and fail-closed configuration loading moved behind immutable late-bound state/credential dependencies |
 | 2F | Terminal, curation, and lane-default composition | Complete | local checkpoint | `presentation_command.py`; key/control-code redaction, terminal sanitization/color, locked atomic config writes, immutable curation merges, hidden-model notes, welcome/status copy, and phase-aware lane defaults moved behind immutable late-bound presentation/config dependencies |
 | 3A-2 | Catalog and capability runtime composition | Complete | local checkpoint | `model_runtime.py`; retried catalog transport, untrusted field normalization, pricing memo handoff, adaptive structured-output ladders, served-model validation, and conservative reasoning-aware output estimates moved behind immutable late-bound transport/model dependencies |
+| 3E-2 | Telemetry and capability persistence | Complete | local checkpoint | `capability_runtime.py`; observed token EWMA, conservative sizing/cost calibration, recoverable capability hysteresis, nonblocking cross-process writes, atomic 0600 persistence, and fail-open telemetry updates moved behind immutable dependencies with explicit facade cache callbacks |
 
 ## Phase 0 checklist
 
