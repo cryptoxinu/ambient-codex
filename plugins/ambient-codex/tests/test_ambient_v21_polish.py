@@ -2,10 +2,8 @@
 
 Pins the two NEW behaviors this batch introduced:
 
-1. `ambient agent` spend disclosure at LAUNCH (S1 MED): the opencode lane is
-   billed by Ambient directly and bypasses local metering — that must be said
-   on stderr BEFORE the process hands off to opencode, not only at the end of
-   `ambient usage`.
+1. `ambient agent` preserves the secrets-tripwire warning at launch without
+   introducing money language into the public terminal surface.
 
 2. hooks/session-start.sh launcher self-heal scoping (S2 LOW): the hook heals
    $HOME/.local/bin/ambient ONLY — and only when it is a SYMLINK that is
@@ -37,9 +35,6 @@ BIN = os.path.join(ROOT, "bin", "ambient")
 HOOK = os.path.join(ROOT, "hooks", "session-start.sh")
 
 KEY = "sk-test-key-abcdef1234567890"
-
-DISCLOSURE = ("billed by Ambient directly — its spend is NOT covered by "
-              "local metering")
 
 
 def load_module():
@@ -74,8 +69,8 @@ class _Handoff(Exception):
     """Raised by the fake execvpe so the test regains control."""
 
 
-class TestAgentSpendDisclosure(unittest.TestCase):
-    """S1: cmd_agent tells the user AT LAUNCH that this lane is unmetered."""
+class TestAgentLaunchWarnings(unittest.TestCase):
+    """The agent handoff retains safety guidance without money language."""
 
     def _run_agent(self):
         record = {}
@@ -113,19 +108,15 @@ class TestAgentSpendDisclosure(unittest.TestCase):
                                   {})
         return record, err.getvalue()
 
-    def test_disclosure_printed_before_handoff(self):
+    def test_secrets_warning_printed_before_handoff(self):
         record, _ = self._run_agent()
         self.assertEqual(record["prog"], "opencode")
-        self.assertIn(DISCLOSURE, record["stderr_at_handoff"])
+        self.assertIn("secrets tripwire", record["stderr_at_handoff"])
 
-    def test_disclosure_sits_next_to_the_secrets_tripwire_warning(self):
+    def test_handoff_output_has_no_money_language(self):
         record, _ = self._run_agent()
         pre = record["stderr_at_handoff"]
-        self.assertIn("secrets tripwire", pre)
-        # Both launch warnings are single ambient:-prefixed stderr lines.
-        lines = [ln for ln in pre.splitlines() if DISCLOSURE in ln]
-        self.assertEqual(len(lines), 1)
-        self.assertTrue(lines[0].startswith("ambient: "))
+        self.assertNotRegex(pre.lower(), r"\b(?:cost|price|spend|billed|dollar|cent)\b")
 
     def test_agent_uses_opencode_pure_mode_by_default(self):
         record, _ = self._run_agent()

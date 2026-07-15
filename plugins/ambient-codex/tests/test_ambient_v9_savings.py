@@ -479,7 +479,8 @@ class TestUsageSavings(unittest.TestCase):
         with usage_env(records, offline=True):
             text = run_usage(usage_args())
         self.assertIn("ambient-codex agent", text)
-        self.assertIn("not visible to local metering", text)
+        self.assertIn("not included in local usage totals", text)
+        self.assertNotRegex(text.lower(), r"\b(?:cost|price|spend|billed|dollar|cent)\b")
 
     def test_old_ledger_shape_still_parses(self):
         now = int(time.time())

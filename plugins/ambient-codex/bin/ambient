@@ -24,8 +24,7 @@ Commands:
   agent     [args…]    Interactive agentic terminal on Ambient (opencode TUI)
   doctor               Diagnose: bad key vs out-of-funds vs model availability
                        vs your network vs Ambient itself — names the culprit
-  usage     [--days]   Local token-usage summary + a relative savings % vs a
-                       frontier reference (never a plan-specific dollar figure)
+  usage     [--days]   Local token-usage summary and optional relative savings
   control              Codex-native control panel: status, mode, models, key,
                        settings, doctor, usage (also exposed through MCP)
   mode      [on|off]   Delegate mode toggle (no arg = status). When ON, Codex
@@ -897,7 +896,7 @@ Do work
 
 Keep it healthy
   ambient-codex doctor     pinpoint key / funds / model-availability / network trouble
-  ambient-codex usage      local spend summary (--days N)
+  ambient-codex usage      local token summary (--days N)
   ambient-codex mode on|off|takeover   delegate / full-takeover mode for Codex
 
 {status}
@@ -935,7 +934,7 @@ def print_welcome_panel(models, where, probe_detail, conf, funds_issue=False):
   Manage:
     ambient-codex models         what's serving (READY) right now
     ambient-codex use            pick your sticky default model
-    ambient-codex usage          local spend estimate
+    ambient-codex usage          local token summary
     ambient-codex doctor         one-command diagnosis when anything fails
     ambient-codex link           put `ambient` on your PATH
     ambient-codex setup --force  rotate/replace your key · --remove deletes it
@@ -9288,9 +9287,8 @@ def cmd_usage(args):
     # Savings compare frontier vs the FULLY-priced subset only — partial
     # models are in `grand` (spend honesty) but never in the saving.
     grand_saved = grand_frontier - priced_cost
-    unmetered_note = ("`ambient-codex agent` spend is billed by Ambient but not "
-                      "visible to local metering — these totals cover only "
-                      "ambient CLI calls")
+    unmetered_note = ("`ambient-codex agent` activity is not included in local "
+                      "usage totals — these totals cover only ambient CLI calls")
     if getattr(args, "json", False):
         # Relative % savings only — NO dollar figures and NO per-token
         # reference prices (founder policy: billing is plan-dependent).
@@ -9347,9 +9345,8 @@ def cmd_usage(args):
         print(f"note: {est_records} estimated record(s) — token counts "
               "approximated locally (stream sent no usage object), not exact.")
     if show_savings and approx_ref:
-        print(f"note: {approx_ref} record(s) predate stored reference "
-              "pricing — their frontier figures use the current "
-              "AMBIENT_REFERENCE_PRICE (approx).")
+        print(f"note: {approx_ref} record(s) use the current comparison "
+              "baseline (approx).")
     print(f"note: {unmetered_note}.")
 
 
@@ -9655,13 +9652,6 @@ def cmd_agent(args, api_key, api_url, conf):
     print(
         "ambient: the agent reads files itself — the secrets tripwire does "
         "NOT cover this lane; keep .env/credentials out of its working tree.",
-        file=sys.stderr,
-    )
-    # Spend honesty at LAUNCH, not just in `ambient usage`: this lane hands
-    # the key to opencode, so nothing flows through local metering.
-    print(
-        "ambient: this agentic lane is billed by Ambient directly — its "
-        "spend is NOT covered by local metering.",
         file=sys.stderr,
     )
     # The key is passed to opencode via its process environment — the standard
