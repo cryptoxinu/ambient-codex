@@ -119,6 +119,7 @@ bugs, verification, commits, or the next action changes.
 | 5C-1 | Large workflow parser construction | Complete | local checkpoint | `cli_parser.py`; shared model/progress flags plus audit/map/build parsers are module-owned with facade wrappers preserving monkeypatch seams |
 | 5C-2 | Remaining command parser construction | Complete | local checkpoint | `cli_parser.py`; control, setup, configuration, chat/code/ask, agent, and utility parsers are module-owned while dynamic state and custom error-parser seams remain facade-injected |
 | 5C-3 | Immutable command registry and parse orchestration | Complete | local checkpoint | `cli_dispatch.py`; frozen command definitions, validated parser binding, top-level parser construction, lookup, and non-mutating stdin-sentinel recovery are module-owned |
+| 5D-1 | Mode, settings, and native control orchestration | Complete | local checkpoint | `settings_commands.py`; injected keyless mode/config/control commands, immutable native snapshots, whitelist-bound writes, and no-money model projections are module-owned while facade patch seams remain adapters |
 
 ## Phase 0 checklist
 

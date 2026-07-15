@@ -192,6 +192,7 @@ from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
+from ambient_codex import settings_commands as _settings_commands  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import streaming as _streaming  # noqa: E402
 from ambient_codex import transport as _transport  # noqa: E402
@@ -7942,27 +7943,14 @@ def cmd_build(args, api_key, api_url, conf):
 def cmd_mode(args):
     """Delegate-mode flag — an ordered level: off < on < takeover (takeover
     implies delegate). Works without credentials (config-file only)."""
-    if args.state in ("on", "off", "takeover"):
-        save_config_values({"AMBIENT_DELEGATE": args.state})
-        if args.state == "takeover":
-            print("Ambient Takeover: ON — Codex will route substantive work (chat, "
-                  "questions, building, reviews) through Ambient for the heavy "
-                  "model work. Codex still coordinates safety, review, and final "
-                  "integration.\n"
-                  "Turn it off any time:  ambient-codex control mode off   "
-                  "(or ask Codex to use Ambient off)")
-        else:
-            print(f"Ambient delegate mode: {args.state.upper()}")
-        return
-    conf = read_config_file()
-    ns = argparse.Namespace(model=None)
-    api_key, backend = resolve_key_and_backend(conf)
-    print(f"delegate={(conf.get('AMBIENT_DELEGATE') or 'off').lower()}")
-    print(f"chat_model={resolve_model(ns, conf, 'chat')}")
-    print(f"code_model={resolve_model(ns, conf, 'code')}")
-    print(
-        f"key={f'configured ({backend})' if api_key else f'MISSING (run: {LAUNCHER_NAME} setup)'}"
-    )
+    return _settings_commands.run_mode(
+        args, _settings_commands.ModeDependencies(
+            save_config=save_config_values,
+            read_config=read_config_file,
+            resolve_key=resolve_key_and_backend,
+            resolve_model=resolve_model,
+            launcher_name=LAUNCHER_NAME,
+        ))
 
 
 # ── ambient config: one clean home for user settings (no env editing) ──────
@@ -7974,7 +7962,7 @@ def cmd_mode(args):
 # value: it can only be set via `ambient-codex setup` (hidden input, user's terminal).
 def _config_fmt_num(x):
     """5.0 → '5', 1.5 → '1.5' — clean display of an often-integral float."""
-    return str(int(x)) if float(x).is_integer() else str(x)
+    return _settings_commands.format_number(x)
 
 
 def _config_norm_bool(raw):
@@ -7982,19 +7970,12 @@ def _config_norm_bool(raw):
     Stored as the literal on/off, which every boolean reader reads identically:
     PROGRESS/FLEET treat off/0/false/no as off (else on); FALLBACK treats
     1/on/true as on, and 'off' is outside that set → off."""
-    v = str(raw).strip().lower()
-    if v in ("on", "true", "1", "yes"):
-        return "on"
-    if v in ("off", "false", "0", "no"):
-        return "off"
-    raise ValueError("expected on or off")
+    return _settings_commands.normalize_bool(raw)
 
 
 def _config_norm_price(raw):
     """A frontier reference price ('in/out' pair like 3/15, or one blended figure)."""
-    if parse_reference_price(str(raw).strip()) is None:
-        raise ValueError("expected an in/out pair like 3/15, or one number")
-    return str(raw).strip()
+    return _settings_commands.normalize_price(raw, parse_reference_price)
 
 
 # Whitelist: friendly name → (env key, validator/normalizer, default, current
@@ -8022,16 +8003,13 @@ _CONFIG_BY_NAME = {s["name"]: s for s in CONFIG_SETTINGS}
 
 
 def _config_names():
-    return ", ".join(s["name"] for s in CONFIG_SETTINGS)
+    return _settings_commands.config_names(CONFIG_SETTINGS)
 
 
 def _config_env_shadow_note(env):
     """Warn (once, on stderr) when an exported env var will shadow the file write —
     so a user who sets a value but sees no change understands the precedence."""
-    if os.environ.get(env) is not None:
-        print(f"note: {env} is set in your environment — it overrides the config "
-              "file, so this change takes effect only after you unset that env var.",
-              file=sys.stderr)
+    return _settings_commands.env_shadow_note(env, os.environ)
 
 
 def _config_redact(text):
@@ -8040,101 +8018,40 @@ def _config_redact(text):
     spaces/unicode, a vendor-format secret, a long opaque token — is replaced with a
     placeholder, so nothing secret-shaped can ever reach stderr (Codex 2026-07-08:
     a whitelist of safe SHAPE beats a blocklist of secret shapes)."""
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,30}", text) \
-            and not any(p.search(text) for p in SECRET_PATTERNS):
-        return text
-    return "<unrecognized>"
+    return _settings_commands.redact_unknown(text, SECRET_PATTERNS)
 
 
 def _config_curation_summary(conf):
     """Zero-network: whether any curation is configured (no catalog fetch)."""
-    keys = ("AMBIENT_MODELS_ALLOW", "AMBIENT_MODELS_HIDE",
-            "AMBIENT_MODELS_SHOW", "AMBIENT_MODEL_NOTES")
-    return "customized" if any(os.environ.get(k) or conf.get(k) for k in keys) \
-        else "default (all shown)"
+    return _settings_commands.curation_summary(conf, os.environ)
 
 
 def _config_print_status():
     """The `ambient-codex config` table. Two aligned blocks: settings OWNED by other
     commands (pointers, not duplicated), then the config-owned knobs. Purely local
     reads — the API key VALUE is never printed, only its backend."""
-    conf = read_config_file()
-    key, backend = resolve_key_and_backend(conf)
-    ns = argparse.Namespace(model=None)
-    key_state = f"configured ({backend})" if key else f"MISSING — run: {LAUNCHER_NAME} setup"
-    owned = [
-        ("API key", key_state, f"{LAUNCHER_NAME} setup --force / --remove"),
-        ("Model · chat", resolve_model(ns, conf, "chat"), f"{LAUNCHER_NAME} use"),
-        ("Model · code", resolve_model(ns, conf, "code"), f"{LAUNCHER_NAME} use --code"),
-        ("Delegate mode", (conf.get("AMBIENT_DELEGATE") or "off").lower(),
-         f"{LAUNCHER_NAME} mode on|takeover|off"),
-        ("Curation", _config_curation_summary(conf), f"{LAUNCHER_NAME} curate"),
-    ]
-    rows = []
-    for s in CONFIG_SETTINGS:
-        val = s["current"](conf)
-        if os.environ.get(s["env"]) is not None:
-            val += "  (env override)"
-        rows.append((s["name"], val, f"ambient-codex config set {s['name']} {s['how']}"))
-    allrows = owned + rows
-    lw = max(len(r[0]) for r in allrows) + 2
-    vw = max(len(str(r[1])) for r in allrows) + 2
+    return _settings_commands.print_config_status(_settings_dependencies())
 
-    def emit(block):
-        for label, val, how in block:
-            print(f"  {label:<{lw}}{str(val):<{vw}}{how}")
-    print("Ambient settings\n")
-    emit(owned)
-    print()
-    emit(rows)
-    print("\n  reset any knob to its default:  ambient-codex config unset <name>")
+
+def _settings_dependencies():
+    return _settings_commands.ConfigDependencies(
+        settings=CONFIG_SETTINGS,
+        save_config=save_config_values,
+        read_config=read_config_file,
+        resolve_key=resolve_key_and_backend,
+        resolve_model=resolve_model,
+        usage_error=usage_exit,
+        launcher_name=LAUNCHER_NAME,
+        secret_patterns=SECRET_PATTERNS,
+        environ=os.environ,
+    )
 
 
 def cmd_config(args):
     """User settings in one place — no env vars, no hand-editing the config file.
     Keyless (config-only, no network). `ambient-codex config` shows everything; `set`/
     `unset` change one whitelisted knob."""
-    verb = getattr(args, "verb", None) or "status"
-    if verb == "status":
-        _config_print_status()
-        return
-    name = getattr(args, "name", None)
-    if not name:
-        usage_exit(f"config {verb} needs a setting name (one of: {_config_names()})")
-    # A setting name never contains '=' or a secret. Split at '=' so a fat-fingered
-    # `set key=<SECRET>` is read as the name `key` (the value part is dropped, never
-    # echoed), and redact any secret-looking name before it could reach stderr
-    # (Codex 2026-07-08 — the unknown-setting error must not leak a mistyped key).
-    bare = name.split("=", 1)[0].strip()
-    if bare.lower().replace("_", "-") in ("key", "api-key", "apikey", "ambient-api-key"):
-        usage_exit(
-            f"the API key isn't a config value — rotate it with `{LAUNCHER_NAME} setup "
-            f"--force`, remove it with `{LAUNCHER_NAME} setup --remove` (hidden input, in "
-            "your OWN terminal). It never passes through config.")
-    setting = _CONFIG_BY_NAME.get(bare.lower())
-    if setting is None:
-        usage_exit(
-            f"unknown setting '{_config_redact(bare)}'. Valid: {_config_names()}. "
-            "(Model → ambient-codex use · delegate mode → ambient-codex mode · curation → "
-            f"{LAUNCHER_NAME} curate · endpoint → {LAUNCHER_NAME} trust-url · key → {LAUNCHER_NAME} setup)")
-    env = setting["env"]
-    value = getattr(args, "value", None)
-    if verb == "unset":
-        if value is not None:
-            usage_exit(f"config unset {setting['name']} takes no value")
-        save_config_values({env: None})
-        print(f"{setting['name']} → back to default ({setting['default']})")
-        _config_env_shadow_note(env)
-        return
-    if value is None:   # verb == "set"
-        usage_exit(f"config set {setting['name']} needs a value ({setting['how']})")
-    try:
-        normalized = setting["validate"](value)
-    except ValueError as err:
-        usage_exit(f"invalid value for {setting['name']}: {err}")
-    save_config_values({env: normalized})
-    print(f"{setting['name']} = {normalized}")
-    _config_env_shadow_note(env)
+    return _settings_commands.run_config(args, _settings_dependencies())
 
 
 # ── ambient control: Codex-native settings panel and safe state router ─────
@@ -8204,292 +8121,76 @@ def _control_catalog(conf, include_all=False, offline=False):
     local endpoint setting is unsafe. If endpoint validation refuses the URL, we
     skip model fetching instead of sending a key anywhere unexpected.
     """
-    if offline:
-        return []
-    api_key, _backend = resolve_key_and_backend(conf)
-    try:
-        api_url = resolve_api_url(conf)
-    except SystemExit:
-        return []
-    models = [m for m in _dedupe_catalog(safe_catalog(api_url, api_key or "none"))
-              if isinstance(m, dict) and m.get("id")]
-    models.sort(key=lambda m: (not _as_bool(m.get("is_ready")), m.get("id") or ""))
-    if include_all:
-        return models
-    allow, hide, show, _notes = curation(conf)
-    visible = [m for m in models if not is_hidden(m["id"], allow, hide, show)]
-    return visible or models
+    return _settings_commands.control_catalog(
+        conf, _control_dependencies(), include_all, offline)
 
 
 def _control_settings(conf):
-    control_settings = [setting for setting in CONFIG_SETTINGS
-                        if setting["name"] in CONTROL_SETTING_NAMES]
-    return [{
-        "name": setting["name"],
-        "value": setting["current"](conf),
-        "default": setting["default"],
-        "env": setting["env"],
-        "env_override": os.environ.get(setting["env"]) is not None,
-        "syntax": setting["how"],
-    } for setting in control_settings]
+    return _settings_commands.control_settings(conf, _control_dependencies())
 
 
 def _control_setting_names():
-    return ", ".join(CONTROL_SETTING_NAMES)
+    return _settings_commands.control_setting_names(CONTROL_SETTING_NAMES)
 
 
 def _control_model_item(model, chat_default, code_default, hidden_ids, notes):
-    model_id = model["id"]
-    return {
-        "id": model_id,
-        "name": model.get("name"),
-        "ready": _as_bool(model.get("is_ready")),
-        "context_length": model.get("context_length"),
-        "max_output_length": model.get("max_output_length"),
-        "features": model.get("supported_features") or [],
-        "is_chat_default": model_id == chat_default,
-        "is_code_default": model_id == code_default,
-        "hidden": model_id in hidden_ids,
-        "note": notes.get(model_id) or None,
-    }
+    return _settings_commands.control_model_item(
+        model, chat_default, code_default, hidden_ids, notes, _as_bool)
 
 
 def _control_snapshot(include_all=False, offline=False):
-    conf = read_config_file()
-    api_key, backend = resolve_key_and_backend(conf)
-    ns = argparse.Namespace(model=None)
-    chat_default = resolve_model(ns, conf, "chat")
-    code_default = resolve_model(ns, conf, "code")
-    mode = (conf.get("AMBIENT_DELEGATE") or "off").lower()
-    models = _control_catalog(conf, include_all=include_all, offline=offline)
-    allow, hide, show, notes = curation(conf)
-    hidden_ids = {m["id"] for m in models if is_hidden(m["id"], allow, hide, show)}
-    items = [_control_model_item(m, chat_default, code_default, hidden_ids, notes)
-             for m in models]
-    serving = [m for m in items if m["ready"]]
-    return {
-        "schema_version": 1,
-        "surface": "codex-native",
-        "version": __version__,
-        "key": {"configured": bool(api_key), "backend": backend if api_key else None},
-        "mode": mode,
-        "mode_options": [
-            {
-                "state": state,
-                "label": label,
-                "description": description,
-                "current": state == mode,
-            }
-            for state, label, description in CONTROL_MODE_OPTIONS
-        ],
-        "defaults": {"chat": chat_default, "code": code_default},
-        "settings": _control_settings(conf),
-        "curation": {
-            "summary": _config_curation_summary(conf),
-            "allow": allow,
-            "hide": hide,
-            "show": show,
-        },
-        "models": {
-            "available": bool(items),
-            "serving_count": len(serving),
-            "total_count": len(items),
-            "items": items,
-        },
-        "chat_actions": [
-            {"phrase": phrase, "description": description}
-            for phrase, description in CONTROL_CHAT_ACTIONS
-        ],
-        "workflows": [
-            {"phrase": phrase, "description": description}
-            for phrase, description in CONTROL_WORKFLOWS
-        ],
-        "actions": list(CONTROL_ACTIONS),
-    }
+    return _settings_commands.control_snapshot(
+        _control_dependencies(), include_all, offline)
 
 
 def _control_print_status(payload):
-    key = payload["key"]
-    key_state = f"configured ({key['backend']})" if key["configured"] else \
-        f"MISSING — get a key at {KEY_CONSOLE_URL}, then run: {LAUNCHER_NAME} setup"
-    print("Ambient Codex Control")
-    print("Native surface: Codex plugin bundle")
-    print(f"API key: {key_state}")
-    print(f"Mode: {payload['mode']}")
-    print(f"Chat model: {payload['defaults']['chat']}")
-    print(f"Code model: {payload['defaults']['code']}")
-    print("\nModes:")
-    for option in payload["mode_options"]:
-        suffix = " (current)" if option["current"] else ""
-        print(f"  {option['state']:<8} {option['label']:<9} "
-              f"{option['description']}{suffix}")
-    print("\nSettings:")
-    for setting in payload["settings"]:
-        suffix = " (env override)" if setting["env_override"] else ""
-        print(f"  {setting['name']:<16} {setting['value']}{suffix}")
-    print(f"\nCuration: {payload['curation']['summary']}")
-    models = payload["models"]
-    if models["available"]:
-        print(f"\nServing models right now: {models['serving_count']} of "
-              f"{models['total_count']} shown")
-        for model in models["items"][:8]:
-            state = "serving" if model["ready"] else "on demand"
-            marks = []
-            if model["is_chat_default"]:
-                marks.append("chat")
-            if model["is_code_default"]:
-                marks.append("code")
-            label = f" ({', '.join(marks)})" if marks else ""
-            print(f"  {model['id']} - {state}{label}")
-        if models["total_count"] > 8:
-            print(f"  ... {models['total_count'] - 8} more; run: ambient-codex models")
-    else:
-        print("\nServing models right now: unavailable in this status view")
-    print("\nWorkflows:")
-    for workflow in payload["workflows"]:
-        print(f"  {workflow['phrase']:<24} {workflow['description']}")
-    print("\nIn Codex chat, say:")
-    workflow_phrases = {workflow["phrase"] for workflow in payload["workflows"]}
-    control_actions = tuple(
-        action for action in payload["chat_actions"]
-        if action["phrase"] not in workflow_phrases
-    )
-    control_width = max(24, *(len(action["phrase"]) + 2 for action in control_actions))
-    for action in control_actions:
-        print(f"  {action['phrase']:<{control_width}}{action['description']}")
-    print("  (workflow commands are listed above)")
-    print("\nActions:")
-    for action in payload["actions"]:
-        print(f"  {action}")
+    return _settings_commands.print_control_status(
+        payload, _control_dependencies())
 
 
 def _control_print_key_status():
-    conf = read_config_file()
-    api_key, backend = resolve_key_and_backend(conf)
-    if api_key:
-        print(f"API key: configured ({backend})")
-        print(f"Rotate: {LAUNCHER_NAME} setup --force")
-        print(f"Remove: {LAUNCHER_NAME} setup --remove")
-    else:
-        print("API key: MISSING")
-        print(f"  1. Get a key at {KEY_CONSOLE_URL}")
-        print(f"  2. Run in your terminal:  {LAUNCHER_NAME} setup")
+    return _settings_commands.print_control_key_status(
+        _control_dependencies())
 
 
 def _control_setup_instruction(action):
-    cmd = (f"{LAUNCHER_NAME} setup --force" if action == "rotate"
-           else f"{LAUNCHER_NAME} setup --remove" if action == "remove"
-           else f"{LAUNCHER_NAME} setup")
-    verb = {"rotate": "rotate your key", "remove": "remove your key"}.get(
-        action, "add your key")
-    print(f"To {verb}, run this in your own terminal:")
-    print(f"  {cmd}")
-    if action not in ("rotate", "remove"):
-        print(f"Get a key first at: {KEY_CONSOLE_URL}")
-    print("The key is entered privately (hidden input, verified locally) — it never "
-          "enters chat, MCP arguments, process argv, or logs.")
+    return _settings_commands.control_setup_instruction(
+        action, _control_dependencies())
 
 
 def _control_key(args):
-    action = getattr(args, "key_action", None) or "status"
-    if action == "status":
-        _control_print_key_status()
-        return
-    if action == "remove":
-        cmd_setup(argparse.Namespace(
-            key_stdin=False, force=False, file=False, remove=True))
-        return
-    force = action == "rotate"
-    if not sys.stdin.isatty():
-        _control_setup_instruction(action)
-        return
-    cmd_setup(argparse.Namespace(
-        key_stdin=False, force=force, file=getattr(args, "file", False),
-        remove=False))
+    return _settings_commands.control_key(args, _control_dependencies())
 
 
 def _control_model(args):
-    conf = read_config_file()
-    api_key, _backend = resolve_key_and_backend(conf)
-    api_url = resolve_api_url(conf)
-    cmd_use(argparse.Namespace(
-        model_id=getattr(args, "model_id", None),
-        chat=getattr(args, "chat", False),
-        code=getattr(args, "code", False),
-        all=getattr(args, "all", False),
-        yes=True,
-    ), api_key or "none", api_url, conf)
+    return _settings_commands.control_model(args, _control_dependencies())
 
 
 def _control_setting(args):
-    name = (getattr(args, "name", None) or "").strip().lower()
-    if name not in CONTROL_SETTING_NAMES:
-        usage_exit(
-            f"unknown control setting '{_config_redact(name)}'. Valid: "
-            f"{_control_setting_names()}. Advanced settings live under "
-            f"`{LAUNCHER_NAME} config`.")
-    value = getattr(args, "value", None)
-    if getattr(args, "unset", False):
-        cmd_config(argparse.Namespace(verb="unset", name=name, value=None))
-        return
-    if value is None:
-        usage_exit("control setting needs a value, or pass --unset")
-    cmd_config(argparse.Namespace(verb="set", name=name, value=value))
+    return _settings_commands.control_setting(args, _control_dependencies())
 
 
 def _control_menu(args):
-    if not sys.stdin.isatty():
-        payload = _control_snapshot(
-            include_all=getattr(args, "all_models", False),
-            offline=getattr(args, "offline", False))
-        _control_print_status(payload)
-        return
-    while True:
-        print("\nAmbient Codex Control")
-        print("  1. Status")
-        print("  2. Mode")
-        print("  3. Chat model")
-        print("  4. Code model")
-        print("  5. API key")
-        print("  6. Setting")
-        print("  7. Doctor")
-        print("  8. Usage")
-        print("  0. Exit")
-        choice = input("Select: ").strip()
-        if choice in ("0", "q", "quit", "exit"):
-            return
-        if choice == "1":
-            _control_print_status(_control_snapshot())
-        elif choice == "2":
-            state = input("Mode (off/on/takeover): ").strip().lower()
-            if state in ("off", "on", "takeover"):
-                cmd_mode(argparse.Namespace(state=state))
-            else:
-                print("cancelled - expected off, on, or takeover")
-        elif choice == "3":
-            _control_model(argparse.Namespace(
-                model_id=None, chat=True, code=False, all=False))
-        elif choice == "4":
-            _control_model(argparse.Namespace(
-                model_id=None, chat=False, code=True, all=False))
-        elif choice == "5":
-            action = input("Key action (status/setup/rotate/remove): ").strip().lower()
-            if action in ("status", "setup", "add", "rotate", "remove"):
-                _control_key(argparse.Namespace(key_action=action, file=False))
-            else:
-                print("cancelled - expected status, setup, rotate, or remove")
-        elif choice == "6":
-            print("Settings: " + _control_setting_names())
-            name = input("Name: ").strip()
-            value = input("Value (blank to unset): ").strip()
-            _control_setting(argparse.Namespace(
-                name=name, value=value or None, unset=not bool(value)))
-        elif choice == "7":
-            cmd_doctor(argparse.Namespace())
-        elif choice == "8":
-            cmd_usage(argparse.Namespace(days=30, json=False))
-        else:
-            print("unknown choice")
+    return _settings_commands.control_menu(args, _control_dependencies())
+
+
+def _control_dependencies():
+    return _settings_commands.ControlDependencies(
+        version=__version__, key_console_url=KEY_CONSOLE_URL,
+        launcher_name=LAUNCHER_NAME, mode_options=CONTROL_MODE_OPTIONS,
+        workflows=CONTROL_WORKFLOWS, chat_actions=CONTROL_CHAT_ACTIONS,
+        actions=CONTROL_ACTIONS, setting_names=CONTROL_SETTING_NAMES,
+        settings=CONFIG_SETTINGS, environ=os.environ,
+        read_config=read_config_file, resolve_key=resolve_key_and_backend,
+        resolve_model=resolve_model, resolve_api_url=resolve_api_url,
+        safe_catalog=safe_catalog, dedupe_catalog=_dedupe_catalog,
+        as_bool=_as_bool, curation=curation, is_hidden=is_hidden,
+        config_curation_summary=_config_curation_summary,
+        config_redact=_config_redact, usage_error=usage_exit,
+        command_setup=cmd_setup, command_use=cmd_use,
+        command_config=cmd_config, command_mode=cmd_mode,
+        command_doctor=cmd_doctor, command_usage=cmd_usage,
+    )
 
 
 def cmd_control(args):
@@ -8499,40 +8200,7 @@ def cmd_control(args):
     a key, change local mode/settings, and browse the public catalog before first
     setup. It never accepts API key material as an argument.
     """
-    action = getattr(args, "control_action", None) or "status"
-    if action == "status":
-        payload = _control_snapshot(
-            include_all=getattr(args, "all_models", False),
-            offline=getattr(args, "offline", False))
-        if getattr(args, "json", False):
-            print(json.dumps(payload, indent=2))
-        else:
-            _control_print_status(payload)
-        return
-    if action == "menu":
-        _control_menu(args)
-        return
-    if action == "mode":
-        cmd_mode(argparse.Namespace(state=getattr(args, "state", None)))
-        return
-    if action == "model":
-        _control_model(args)
-        return
-    if action == "key":
-        _control_key(args)
-        return
-    if action == "setting":
-        _control_setting(args)
-        return
-    if action == "doctor":
-        cmd_doctor(argparse.Namespace())
-        return
-    if action == "usage":
-        cmd_usage(argparse.Namespace(
-            days=getattr(args, "days", 30),
-            json=getattr(args, "json", False)))
-        return
-    usage_exit(f"unknown control action: {action}")
+    return _settings_commands.run_control(args, _control_dependencies())
 
 
 SETUP_PREAMBLE = f"""Ambient setup — one-time key configuration
