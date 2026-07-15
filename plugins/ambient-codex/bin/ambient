@@ -7895,40 +7895,16 @@ def cmd_build(args, api_key, api_url, conf):
             records = []
         else:
             records = _parse_file_records(content)
-        want_set = set(want)
-        got = {}
-        for f in records:
-            if not isinstance(f.get("content"), str):
-                continue
-            try:
-                rel = safe_relpath(str(f.get("path", "")), root)
-            except ValueError as why:
-                failed.append({"path": str(f.get("path")),
-                               "reason": f"unsafe path: {why}"})
-                continue
-            if rel not in plan_paths:
-                # The reviewed plan is the contract: refuse any path the user
-                # never approved. Surface it as a drop, not a hard failure, so a
-                # fully delivered approved plan still succeeds.
-                if rel not in dropped:
-                    dropped.append(rel)
-                continue
-            if rel not in want_set or rel in done:
-                continue
-            try:
-                content_bytes = f["content"].encode("utf-8")
-            except UnicodeEncodeError:
-                continue
-            if len(content_bytes) > args.max_file_bytes:
-                failed.append({"path": rel,
-                               "reason": f"file exceeds --max-file-bytes "
-                                         f"({args.max_file_bytes:,})"})
-                continue
-            if rel in got:
-                continue
-            got[rel] = f["content"]
-        if got and isinstance(body, dict) and body.get("salvaged_partial"):
-            got.pop(next(reversed(got)))
+        accepted, rejected, unplanned = _build_workflow.classify_file_records(
+            records, wanted_paths=want, plan_paths=plan_paths,
+            done_paths=done, root=root, max_file_bytes=args.max_file_bytes,
+            salvaged_partial=(isinstance(body, dict)
+                               and bool(body.get("salvaged_partial"))),
+            safe_relpath=safe_relpath)
+        got = dict(accepted)
+        failed.extend({"path": path, "reason": reason}
+                      for path, reason in rejected)
+        dropped.extend(path for path in unplanned if path not in dropped)
         if failed and got:
             failed = [item for item in failed if item.get("path") not in got]
         for rel, body_text in got.items():

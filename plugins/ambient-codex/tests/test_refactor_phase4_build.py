@@ -1,5 +1,6 @@
 """Phase 4 contracts for resumable build workflow policies."""
 
+import copy
 import importlib
 import re
 import tempfile
@@ -105,3 +106,32 @@ class BuildWorkflowTests(unittest.TestCase):
         wrapped = core.parse_file_records(
             '{"files":[{"path":"c.py","content":"C"}]}')
         self.assertEqual(wrapped, [{"path": "c.py", "content": "C"}])
+
+    def test_file_record_classification_is_bounded_immutable_and_salvage_safe(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        records = [
+            {"path": "a.py", "content": "A"},
+            {"path": "extra.py", "content": "extra"},
+            {"path": "../escape.py", "content": "unsafe"},
+            {"path": "large.py", "content": "12345"},
+            {"path": "a.py", "content": "duplicate"},
+            {"path": "tail.py", "content": "T"},
+        ]
+        before = copy.deepcopy(records)
+
+        accepted, failures, dropped = core.classify_file_records(
+            records, wanted_paths=("a.py", "large.py", "tail.py"),
+            plan_paths=("a.py", "large.py", "tail.py"), done_paths=(),
+            root="/build", max_file_bytes=4, salvaged_partial=True,
+            safe_relpath=lambda path, root: (
+                (_ for _ in ()).throw(ValueError("escape"))
+                if path.startswith("../") else path),
+        )
+
+        self.assertEqual(records, before)
+        self.assertEqual(accepted, (("a.py", "A"),))
+        self.assertEqual(failures, (
+            ("../escape.py", "unsafe path: escape"),
+            ("large.py", "file exceeds --max-file-bytes (4)"),
+        ))
+        self.assertEqual(dropped, ("extra.py",))

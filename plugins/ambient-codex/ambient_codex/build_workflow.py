@@ -221,5 +221,43 @@ def parse_file_records(text):
     return files
 
 
+def classify_file_records(records, *, wanted_paths, plan_paths, done_paths,
+                          root, max_file_bytes, salvaged_partial,
+                          safe_relpath):
+    """Classify untrusted generated files without mutating workflow state."""
+    wanted, planned, done = set(wanted_paths), set(plan_paths), set(done_paths)
+    accepted, failures, dropped, seen = [], [], [], set()
+    for record in records:
+        if not isinstance(record, dict) or not isinstance(
+                record.get("content"), str):
+            continue
+        raw_path = str(record.get("path", ""))
+        try:
+            relative = safe_relpath(raw_path, root)
+        except ValueError as error:
+            failures.append((raw_path, f"unsafe path: {error}"))
+            continue
+        if relative not in planned:
+            if relative not in dropped:
+                dropped.append(relative)
+            continue
+        if relative not in wanted or relative in done or relative in seen:
+            continue
+        try:
+            content_bytes = record["content"].encode("utf-8")
+        except UnicodeEncodeError:
+            continue
+        if len(content_bytes) > max_file_bytes:
+            failures.append(
+                (relative, f"file exceeds --max-file-bytes ({max_file_bytes:,})"))
+            continue
+        accepted.append((relative, record["content"]))
+        seen.add(relative)
+    if accepted and salvaged_partial:
+        accepted.pop()
+    return tuple(accepted), tuple(failures), tuple(dropped)
+
+
 __all__ = ("state_path", "safe_relative_path", "resume_identity",
-           "normalize_resume_state", "validate_plan_items", "parse_file_records")
+           "normalize_resume_state", "validate_plan_items", "parse_file_records",
+           "classify_file_records")
