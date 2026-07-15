@@ -147,6 +147,7 @@ bugs, verification, commits, or the next action changes.
 | 3D-3 | Routing, profile, and output-budget composition | Complete | local checkpoint | `routing_runtime.py`; advisory concrete-model preservation, serving/fit-aware auto selection, explicit reduce-model validation, catalog-derived profiles, observed density sizing, context-safe output clamps, and escalation ceilings moved behind immutable routing/model-policy dependencies |
 | 5A-7 | Private savings and usage lock composition | Complete | local checkpoint | `usage_runtime.py`; percentage-only opt-in receipts, facade-owned memoization, conservative reference math, and bounded cross-platform stale-owner ledger locking moved behind immutable dependencies without exposing monetary values |
 | 5A-8 | Bounded streaming redaction | Complete | local checkpoint | `stream_redactor.py`; split credentials and incomplete terminal escapes are held independently, sanitized across provider chunk boundaries, and emitted in linear time through the existing facade class seam |
+| 3B-4 | Immutable completion session state | Complete | local checkpoint | `session_state.py`; frozen transport sessions, weak write-once catalog sidecars, complete request-knob capture, model-policy budget copies, and bounded retry-state transitions are independent of CLI parsing and preserve late-bound facade test seams |
 
 ## Phase 0 checklist
 

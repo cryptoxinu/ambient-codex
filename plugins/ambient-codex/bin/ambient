@@ -76,7 +76,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import weakref
 import time
 import urllib.error
 import urllib.parse
@@ -214,6 +213,7 @@ from ambient_codex import routing as _routing_core  # noqa: E402
 from ambient_codex import routing_runtime as _routing_runtime  # noqa: E402
 from ambient_codex import runtime_command as _runtime_command  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
+from ambient_codex import session_state as _session_state  # noqa: E402
 from ambient_codex import settings_commands as _settings_commands  # noqa: E402
 from ambient_codex import setup_command as _setup_command  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
@@ -1215,43 +1215,11 @@ def stream_completion(api_url, api_key, payload, timeout, on_delta=None):
     )
 
 
-# Per-Session catalog memo kept OUTSIDE the frozen value object so a Session
-# stays fully immutable (no interior-mutable field). Keyed weakly by Session
-# identity (eq=False → identity hash), so entries vanish when the Session is
-# collected. Reads/writes for a given Session are serialized by its own
-# _catalog_lock; distinct Sessions touch distinct keys (GIL-atomic dict ops).
-_SESSION_CATALOG = weakref.WeakKeyDictionary()
+class Session(_session_state.Session):
+    """Facade session whose catalog loader remains late-bound for tests."""
 
-
-@dataclasses.dataclass(frozen=True, eq=False)
-class Session:
-    """Transport context for the engine: ONE frozen object in
-    place of the (api_key, api_url, conf) triple threaded loose through every
-    engine call. `transport` is an injectable stream_completion-compatible
-    callable — None means "resolve the module-level stream_completion at call
-    time" so existing test monkeypatching keeps working. `catalog()` memoizes
-    ONE safe_catalog fetch per Session (write-once cache cell; the instance
-    itself is immutable — no field is ever reassigned)."""
-
-    api_url: str
-    api_key: str
-    conf: dict = dataclasses.field(default_factory=dict)
-    transport: object = None  # callable(api_url, api_key, payload, timeout,
-    #                           on_delta=None) -> (status, body)
-    _catalog_lock: object = dataclasses.field(
-        default_factory=threading.Lock, repr=False, compare=False)
-
-    def catalog(self):
-        """Model catalog, fetched AT MOST once per Session (degrades to []
-        exactly like safe_catalog — a degraded [] is memoized too, so a
-        Session never turns one logical fetch into a retry storm). The memo
-        lives in the module-level _SESSION_CATALOG (keyed by this Session) so
-        the Session itself never mutates a field."""
-        with self._catalog_lock:
-            if self not in _SESSION_CATALOG:
-                _SESSION_CATALOG[self] = safe_catalog(
-                    self.api_url, self.api_key)
-            return _SESSION_CATALOG[self]
+    def _load_catalog(self):
+        return safe_catalog(self.api_url, self.api_key)
 
 
 def _session_or(session, api_key, api_url, conf=None):
@@ -1264,127 +1232,22 @@ def _session_or(session, api_key, api_url, conf=None):
     return Session(api_url=api_url, api_key=api_key, conf=conf or {})
 
 
-DEFAULT_BUDGET_ESCALATIONS = 1
-MAX_BUDGET_ESCALATIONS = 2
-
-
-@dataclasses.dataclass(frozen=True)
-class RequestSpec:
-    """The ENGINE's frozen request-knob carrier: every knob the
-    engine (complete/chat/run_map_reduce/run_one_audit/_best_of_chat/
-    _ask_consensus/run_cross_file_pass + the helpers they call) reads off the
-    request. Built ONCE from the parsed argparse.Namespace at the cmd_*
-    boundary via from_args; every variant (retry budget shrink/escalation,
-    --fallback re-derivation, SACRED _no_fallback workers, best-of cache
-    salts) is a dataclasses.replace — argparse.Namespace never travels inside
-    the engine and nothing is ever mutated in place.
-
-    ⛔ DEFAULT PARITY: each field's default MUST equal the default the engine
-    used when it read the knob off a raw Namespace (getattr(args, X, D) → D;
-    argparse-owned flags → their add_common_flags default). from_args builds
-    fields via getattr(args, name, field-default), so a Namespace lacking a
-    knob behaves exactly like the old getattr read by construction."""
-
-    max_tokens: object = None            # argparse default (auto-sized later)
-    temperature: float = 0.1             # argparse default
-    timeout: int = DEFAULT_TIMEOUT_S     # argparse default
-    response_format: object = None       # getattr(..., None) everywhere
-    system: object = None                # getattr(..., None) (ask/chat)
-    raw: bool = False                    # argparse store_true
-    json: bool = False                   # getattr(..., False)
-    format: object = None                # getattr(..., None) (_json_mode)
-    allow_partial: bool = False          # getattr(..., False)
-    allow_cost: bool = False             # getattr(..., False) (spend gates)
-    yes: bool = False                    # getattr(..., False) (spend gates)
-    parallel: object = None              # getattr(..., None) (_resolve_parallel)
-    no_cache: bool = False               # getattr(..., False)
-    cache_ttl: object = None             # getattr(..., None)
-    fallback: bool = False               # getattr(..., False)
-    consensus: object = None             # argparse default (ask --consensus)
-    _no_fallback: bool = False           # getattr(..., False) — SACRED guard
-    _auto_budget: bool = False           # getattr(..., False)
-    _cache_salt: object = None           # getattr(..., None) — best-of lanes
-    escalation_ceiling: int = MAX_AUTO_BUDGET_TOKENS  # getattr default
-    # Build generation is the sole lane that raises this to two. A second
-    # escalation is justified only after a model spent a full first retry on
-    # reasoning without emitting a file; every other lane preserves one retry.
-    max_budget_escalations: int = DEFAULT_BUDGET_ESCALATIONS
-    # True (default) = SINGLE-CALL lane — complete()
-    # re-gates a live --fallback swap per call (main thread; sys.exit on a
-    # refusal is correct). Fan-out workers (map/consensus/best-of) set False:
-    # their batch gate already reserved the swap exposure UP FRONT
-    # (fallback-aware estimates), and a per-worker gate cannot compose with
-    # concurrent fan-out — the same-process fleet reservation REFRESHES to
-    # max(batch, one alt) instead of adding (N alt swaps under-reserved
-    # N-fold), and a refusal would SystemExit inside a pool thread.
-    gate_fallback: bool = True           # getattr(..., True)
-
-    @classmethod
-    def from_args(cls, args):
-        """Normalize an argparse.Namespace (or an existing RequestSpec —
-        passed through untouched) to a frozen RequestSpec. Field defaults
-        double as the getattr defaults, so missing Namespace attributes
-        resolve exactly as the engine's old getattr reads did."""
-        if isinstance(args, cls):
-            return args
-        return cls(**{f.name: getattr(args, f.name, f.default)
-                      for f in dataclasses.fields(cls)})
-
+class RequestSpec(_session_state.RequestSpec):
     def with_output_budget(self, profile, input_chars=None):
-        """Frozen twin of apply_output_budget: a NEW spec with max_tokens/
-        _auto_budget/escalation_ceiling resolved for `profile` (same
-        _resolve_output_budget core — the two carriers can never drift)."""
-        resolved, auto = _resolve_output_budget(
-            self.max_tokens, profile, input_chars)
-        ceiling = _context_safe_escalation_ceiling(
-            profile, input_chars, _effective_cpt(profile.model))
-        return dataclasses.replace(
-            self, max_tokens=resolved, _auto_budget=auto,
-            escalation_ceiling=max(resolved, ceiling))
+        return self.with_budget_policy(
+            profile, input_chars,
+            resolve_output_budget=_resolve_output_budget,
+            context_safe_escalation_ceiling=_context_safe_escalation_ceiling,
+            effective_cpt=_effective_cpt,
+        )
 
 
-@dataclasses.dataclass(frozen=True)
-class AttemptState:
-    """ONE attempt of complete()'s retry/fallback ladder.
-    Immutable: every guard (stall retry, budget shrink, model fallback,
-    budget escalation) computes the NEXT attempt via dataclasses.replace —
-    never by mutating shared state. The four flags are INDEPENDENT and only
-    ever flip False→True, so the ladder is bounded by construction."""
-
-    model: str
-    messages: list
-    spec: RequestSpec # per-attempt frozen knobs (replaced per variant)
-    stall_retried: bool = False
-    budget_escalations: int = 0
-    fallback_retried: bool = False
-    budget_shrunk: bool = False
-    attempt_no: int = 0
-
-
-# Hard ceiling on normal calls: the initial attempt + one retry per independent
-# guard flag. Build generation may add one more output escalation, still capped
-# by MAX_BUDGET_ESCALATIONS in _budget_escalation_limit().
-MAX_COMPLETE_ATTEMPTS = 5
-
-
-def _reasoning_str(*vals):
-    """First non-empty STRING among candidate reasoning fields, stripped. An
-    untrusted response may carry a scalar `reasoning`/`reasoning_content`
-    (e.g. 1) — `(v or "").strip()` would AttributeError on it."""
-    for v in vals:
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return ""
-
-
-def _budget_escalation_limit(value):
-    """Clamp an internal retry policy to the small, safe engine maximum."""
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = DEFAULT_BUDGET_ESCALATIONS
-    return max(DEFAULT_BUDGET_ESCALATIONS,
-               min(MAX_BUDGET_ESCALATIONS, parsed))
+AttemptState = _session_state.AttemptState
+DEFAULT_BUDGET_ESCALATIONS = _session_state.DEFAULT_BUDGET_ESCALATIONS
+MAX_BUDGET_ESCALATIONS = _session_state.MAX_BUDGET_ESCALATIONS
+MAX_COMPLETE_ATTEMPTS = _session_state.MAX_COMPLETE_ATTEMPTS
+_reasoning_str = _session_state.reasoning_str
+_budget_escalation_limit = _session_state.budget_escalation_limit
 
 
 def _completion_dependencies():
