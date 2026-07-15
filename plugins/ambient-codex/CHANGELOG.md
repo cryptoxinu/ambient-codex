@@ -2,6 +2,11 @@
 
 All notable changes to `ambient-codex`.
 
+## 1.10.2 - 2026-07-15
+
+- Removed secret-tainted diagnostic data flows identified by CodeQL.
+- Constrained doctor output to fixed categories and sanitized local metadata.
+
 ## 1.10.1 - 2026-07-15
 
 - Disabled the default elapsed-time generation wall. Progressing streams may run
