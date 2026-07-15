@@ -126,6 +126,7 @@ from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import audit_command as _audit_command  # noqa: E402
 from ambient_codex import audit_hook_command as _audit_hook_command  # noqa: E402
 from ambient_codex import audit_inputs as _audit_inputs  # noqa: E402
+from ambient_codex import audit_prompts as _audit_prompts  # noqa: E402
 from ambient_codex import audit_prose as _audit_prose  # noqa: E402
 from ambient_codex import audit_planning as _audit_planning  # noqa: E402
 from ambient_codex import agent_config as _agent_config  # noqa: E402
@@ -297,16 +298,7 @@ def progress_display_enabled():
 # moves in Phase 2. All numeric tuning inputs come from ambient_codex.constants.
 _TELEMETRY_CPT_CACHE = None
 
-AUDIT_SYSTEM_PROMPT = """You are an adversarial senior code reviewer giving a second opinion.
-Audit for real correctness, security, race, data-loss, error-handling, and edge-case defects.
-Severity: CRITICAL is exploitable/data-loss/normal-use crash; HIGH is a wrong realistic result;
-MEDIUM is an uncommon edge case; LOW is latent risk. Mark confidence HIGH only with an exact
-triggering input, otherwise LOW; retain low-confidence findings without overstating them.
-Use supplied gutters as file:line (diffs: nearest @@ new-file line). Give severity,
-confidence, location, defect, concrete input/state → wrong outcome, and fix; rank severe
-first, never style. If sound, say so. End with SHIP / FIX FIRST / NEEDS WORK. Example format:
-HIGH (confidence: HIGH) — pay.py:88 — off-by-one; bal=100, transfer(100) skips debit but
-credits destination; fix comparison/input. The example is format only, not a bug to seek."""
+AUDIT_SYSTEM_PROMPT = _audit_prompts.AUDIT_SYSTEM_PROMPT
 
 
 def read_config_file():

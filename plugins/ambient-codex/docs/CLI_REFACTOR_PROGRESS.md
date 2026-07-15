@@ -157,6 +157,7 @@ bugs, verification, commits, or the next action changes.
 | 5E-4 | CLI command-composition adapter surface | Complete | local checkpoint | `cli_commands.py`; 117 context/output/catalog/ask/map/audit/generation/build/settings/control/setup/doctor/usage/launcher/agent adapters preserve facade patch seams through a read-only live namespace while all domain implementations remain in focused modules |
 | 5E-5 | API client and completion facade surface | Complete | local checkpoint | `client_facade.py`; classified auth probing, secret refusal, retry/cache/usage adapters, quiet SSE transport, frozen session normalization, bounded completion dispatch, and chat rendering preserve live facade seams and reduce `bin/ambient` below 800 lines |
 | 5E-6 | Cross-version facade and streaming fast path | Complete | local checkpoint | Python 3.8-compatible adapter installation preserves explicit cardinality validation; safe printable streaming deltas bypass repeated full regex scans while control-bearing segments and boundary-split secrets retain canonical sanitization |
+| 5E-7 | Immutable audit prompt ownership | Complete | local checkpoint | `audit_prompts.py`; the complete pre-refactor severity, confidence, line-gutter, failure-scenario, fix, no-style, and verdict contract is restored verbatim outside the thin facade |
 
 ## Phase 0 checklist
 
