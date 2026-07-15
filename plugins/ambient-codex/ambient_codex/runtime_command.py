@@ -323,6 +323,20 @@ def cmd_trust_url_reset(deps=None):
     print(f"Endpoint trust cleared — back to {DEFAULT_API_URL}")
 
 
+def exit_unconfigured(launcher_name, api_key_env, key_console_url, exit_code,
+                      sys_module):
+    """Exit with constant setup guidance; this boundary never accepts a key."""
+    print(
+        "ambient [setup]: no API key configured.\n"
+        f"  Interactive:      {launcher_name} setup\n"
+        f"  Non-interactive:  export {api_key_env}=<key>   "
+        f"(or: {launcher_name} setup --key-stdin)\n"
+        f"  Get a key:        {key_console_url}  →  API Keys",
+        file=sys_module.stderr,
+    )
+    sys_module.exit(exit_code)
+
+
 def load_config(deps=None):
     """Read key/url/defaults, letting env vars win, preferring Keychain storage.
     FIRST USE on a real terminal onboards inline (asks for the key, verifies,
@@ -370,12 +384,5 @@ def load_config(deps=None):
             print("\nambient: setup complete — continuing with your original "
                   "command.\n", file=sys.stderr)
             return api_key, resolve_api_url(conf), conf
-    print(
-        "ambient [setup]: no API key configured.\n"
-        f"  Interactive:      {LAUNCHER_NAME} setup\n"
-        f"  Non-interactive:  export {API_KEY_ENV}=<key>   "
-        f"(or: {LAUNCHER_NAME} setup --key-stdin)\n"
-        f"  Get a key:        {KEY_CONSOLE_URL}  →  API Keys",
-        file=sys.stderr,
-    )
-    sys.exit(EXIT_UNCONFIGURED)
+    exit_unconfigured(
+        LAUNCHER_NAME, API_KEY_ENV, KEY_CONSOLE_URL, EXIT_UNCONFIGURED, sys)
