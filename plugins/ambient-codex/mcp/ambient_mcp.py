@@ -12,12 +12,11 @@ import json
 import os
 import queue
 import re
-import threading
 import time
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 _MCP_DIR = str(Path(__file__).resolve().parent)
 if _MCP_DIR not in sys.path:
@@ -25,6 +24,7 @@ if _MCP_DIR not in sys.path:
 from ambient_mcp_catalog import (  # noqa: E402
     MAX_PATHS, MAX_PROMPT_CHARS, MAX_SYSTEM_CHARS, TOOLS,
 )
+import ambient_mcp_framing as _framing  # noqa: E402
 
 
 SERVER_NAME = "ambient-codex"
@@ -847,25 +847,36 @@ def call_tool(name: str, arguments: Any) -> Dict[str, Any]:
     return handler(args)
 
 
-def response_result(request_id: Any, result: Dict[str, Any]) -> Dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-
-def response_error(request_id: Any, code: int, message: str) -> Dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+JsonRpcPayload = _framing.JsonRpcPayload
+FramedPayload = _framing.FramedPayload
+response_result = _framing.response_result
+response_error = _framing.response_error
+is_notification = _framing.is_notification
+read_headers = _framing.read_headers
+parse_header_line = _framing.parse_header_line
+parse_payload_bytes = _framing.parse_payload_bytes
+write_message = _framing.write_message
 
 
 def requested_protocol_version(request: Dict[str, Any]) -> str:
-    params = request.get("params")
-    if isinstance(params, dict):
-        version = params.get("protocolVersion")
-        if isinstance(version, str) and version.strip():
-            return version
-    return PROTOCOL_VERSION
+    return _framing.requested_protocol_version(request, PROTOCOL_VERSION)
 
 
-def is_notification(request: Dict[str, Any]) -> bool:
-    return "id" not in request
+def read_message(stream) -> Optional[FramedPayload]:
+    return _framing.read_message(stream, max_frame_bytes=MAX_FRAME_BYTES)
+
+
+class MessageReader(_framing.MessageReader):
+    def __init__(self, stream) -> None:
+        super().__init__(stream, message_reader=read_message)
+
+
+
+
+
+
+
+
 
 
 def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -914,72 +925,16 @@ def handle_request(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                               redact(f"ambient MCP internal error: {exc}"))
 
 
-def read_headers(stream, first_line: bytes) -> Dict[str, str]:
-    headers = parse_header_line(first_line, {})
-    while True:
-        line = stream.readline()
-        if line == b"":
-            return headers
-        stripped = line.strip()
-        if not stripped:
-            return headers
-        headers = parse_header_line(line, headers)
 
 
-def parse_header_line(line: bytes, headers: Dict[str, str]) -> Dict[str, str]:
-    key, sep, value = line.strip().decode("ascii").partition(":")
-    if not sep:
-        raise ValueError(f"invalid MCP header line: {key}")
-    return {**headers, key.lower(): value.strip()}
 
 
-JsonRpcPayload = Union[Dict[str, Any], List[Any]]
-FramedPayload = Dict[str, Any]
 
 
-def parse_payload_bytes(body: bytes) -> JsonRpcPayload:
-    payload = json.loads(body.decode("utf-8"))
-    if not isinstance(payload, (dict, list)):
-        raise ValueError("JSON-RPC message must be an object or batch array")
-    return payload
 
 
-def read_message(stream) -> Optional[FramedPayload]:
-    while True:
-        first_line = stream.readline()
-        if first_line == b"":
-            return None
-        stripped = first_line.strip()
-        if stripped:
-            break
-    if stripped.startswith((b"{", b"[")):
-        return {"payload": parse_payload_bytes(stripped), "framing": "jsonl"}
-    headers = read_headers(stream, first_line)
-    raw_length = headers.get("content-length")
-    if raw_length is None:
-        raise ValueError("missing Content-Length header")
-    if not raw_length.isdigit():
-        raise ValueError("Content-Length must be a decimal integer")
-    length = int(raw_length)
-    if length <= 0:
-        raise ValueError("Content-Length must be greater than zero")
-    if length > MAX_FRAME_BYTES:
-        raise ValueError(f"Content-Length exceeds {MAX_FRAME_BYTES} bytes")
-    body = stream.read(length)
-    if len(body) != length:
-        raise ValueError("incomplete MCP message body")
-    return {"payload": parse_payload_bytes(body), "framing": "content-length"}
 
 
-def write_message(stream, payload: JsonRpcPayload, *, framing: str) -> None:
-    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    if framing == "jsonl":
-        stream.write(body + b"\n")
-        stream.flush()
-        return
-    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-    stream.write(header + body)
-    stream.flush()
 
 
 # Trees another Ambient install (or its host agent) owns. Kept in step with
@@ -1061,55 +1016,6 @@ def is_response(payload: JsonRpcPayload) -> bool:
             and ("result" in payload or "error" in payload))
 
 
-class MessageReader:
-    """Pump stdin on a thread so a blocked picker can still be given up on.
-
-    `select()` is not usable here: it polls the file descriptor, but `read_message`
-    reads through a BufferedReader, so a batched write from the client can leave a
-    complete message sitting in Python's buffer while the fd reports "not ready".
-    `select` also cannot poll pipes on Windows. A reader thread sidesteps both, and
-    turns "wait with a deadline" into an ordinary `Queue.get(timeout=...)`.
-    """
-
-    _EOF = object()
-
-    def __init__(self, stream) -> None:
-        self._queue: "queue.Queue[Any]" = queue.Queue()
-        self._eof = threading.Event()
-        self._thread = threading.Thread(target=self._pump, args=(stream,), daemon=True)
-        self._thread.start()
-
-    def _pump(self, stream) -> None:
-        while True:
-            try:
-                framed = read_message(stream)
-            except Exception:  # noqa: BLE001 - a bad frame ends the stream, not the process
-                self._eof.set()
-                self._queue.put(self._EOF)
-                return
-            if framed is None:
-                self._eof.set()
-                self._queue.put(self._EOF)
-                return
-            self._queue.put(framed)
-
-    def at_eof(self) -> bool:
-        """True once the stream is finished AND everything read has been handed out."""
-        return self._eof.is_set() and self._queue.empty()
-
-    def get(self, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        """Next framed message; None on EOF. Raises queue.Empty on timeout.
-
-        EOF is STICKY. The pump enqueues one sentinel and dies, so a single reader
-        used to be able to consume it and leave the next caller blocked forever on an
-        empty queue behind a dead thread — exactly what happened when the client
-        closed stdin while a picker was open: elicit() ate the sentinel and serve()'s
-        unbounded get() never returned.
-        """
-        if self.at_eof():
-            return None
-        item = self._queue.get(timeout=timeout)
-        return None if item is self._EOF else item
 
 
 def elicit(message: str, requested_schema: Dict[str, Any],
