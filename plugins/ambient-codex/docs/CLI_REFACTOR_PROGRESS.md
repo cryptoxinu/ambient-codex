@@ -93,6 +93,7 @@ bugs, verification, commits, or the next action changes.
 | 4A-5 | Cross-file confirmation candidate selection | Complete | `a19af95` | `audit_core.py`; bounded, ordered candidate selection extracted with facade seam |
 | 4A-6 | Audit object + cross-file merge policy | Complete | `c04adf1`→`6748c14`→`785174e` | `audit_core.py`; JSON/prose selection, bounded file inputs, and incomplete coverage merge extracted |
 | 4A-7 | Audit rendering normalization + verdict policy | Complete | local checkpoint | `audit_core.py`; immutable file/line normalization and conservative effective verdict extracted |
+| 4A-8 | Audit prose recovery grammar | Complete | `b6f6dc5` | `audit_prose.py`; bounded recovery, false-positive guards, and parser facade extracted |
 | 4B-1 | Interactive chat history policy | Complete | `f3b816d` | `chat_workflow.py`; immutable, recent-first prompt-budget trimming extracted |
 | 4B-2 | Build resume identity + state path | Complete | `1a10931`→`743948a` | `build_workflow.py`; version-sensitive deterministic identity and scoped path extracted |
 | 4B-3 | Build resume-state validation | Complete | local checkpoint | `build_workflow.py`; immutable bounded plan/done validation delegates through the existing facade path firewall |
@@ -1421,15 +1422,17 @@ RULE (Codex-audited, HIGH `--json` cost leak fixed); the ENTIRE spend-cap /
 gate / fleet-reservation subsystem DELETED (so 2D3c + 2D4 are gone); 2D3b-1 cost
 math extracted. All CI-green incl Windows.
 
-CURRENT: Phase 3's primitive checkpoints and Phase 4's audit-core checkpoints
-are complete; the large remaining seams are map-reduce orchestration, prose
-recovery/generation workflows, integrations, and facade reduction (including
-deferred `savings_note*`). Execute each RED-first, ≤5 files, with the full local
-gate and Codex audit at each phase boundary. The final model matrix rerun is
-retained at `/tmp/ambient-codex-model-matrix-final-rerun/summary.txt`: **50
-passed, 0 failed, 1 intentional skip**, including every serving model's real
-ask/audit/code flow and the Codex-facing control/MCP workflow. Public money
-display remains prohibited; savings are opt-in and relative-only.
+CURRENT: Phase 3 is complete and Phase 4 audit parsing now lives in focused
+modules (including prose recovery). Next: move the bounded generation workflows
+(`cmd_code`, then safe build orchestration seams), followed by integrations and
+facade reduction (including deferred `savings_note*`). Execute each RED-first,
+≤5 files, with the full local gate and Codex audit at each phase boundary. The
+current model matrix rerun is retained at
+`/tmp/ambient-codex-model-matrix-current-rerun/summary.txt`: **50 passed, 0
+failed, 1 intentional skip**, including every catalog model's availability path,
+every serving model's real ask/audit/code flow, and the Codex-facing control/MCP
+workflow. Public money display remains prohibited; savings are opt-in and
+relative-only.
 
 T5 backup cleanup: NO-OP — only the bundle+tarball safety net exists at
 `/Users/z/ambient-codex-backups/pre-refactor-8104930/` (KEEP); no redundant
