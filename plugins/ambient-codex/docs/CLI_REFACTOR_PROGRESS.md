@@ -143,6 +143,7 @@ bugs, verification, commits, or the next action changes.
 | 2F | Terminal, curation, and lane-default composition | Complete | local checkpoint | `presentation_command.py`; key/control-code redaction, terminal sanitization/color, locked atomic config writes, immutable curation merges, hidden-model notes, welcome/status copy, and phase-aware lane defaults moved behind immutable late-bound presentation/config dependencies |
 | 3A-2 | Catalog and capability runtime composition | Complete | local checkpoint | `model_runtime.py`; retried catalog transport, untrusted field normalization, pricing memo handoff, adaptive structured-output ladders, served-model validation, and conservative reasoning-aware output estimates moved behind immutable late-bound transport/model dependencies |
 | 3E-2 | Telemetry and capability persistence | Complete | local checkpoint | `capability_runtime.py`; observed token EWMA, conservative sizing/cost calibration, recoverable capability hysteresis, nonblocking cross-process writes, atomic 0600 persistence, and fail-open telemetry updates moved behind immutable dependencies with explicit facade cache callbacks |
+| 3D-2 | Fallback-aware estimate composition | Complete | local checkpoint | `cost_runtime.py`; private conservative lane estimates, explicit fallback eligibility, context-fit alternate selection, per-call/per-chunk pricing uplift, reduce-lane accounting, and unknown-price upper bounds moved behind immutable model/config dependencies without changing public no-money output |
 
 ## Phase 0 checklist
 
