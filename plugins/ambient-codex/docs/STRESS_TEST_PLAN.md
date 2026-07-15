@@ -19,6 +19,7 @@ bash -n hooks/session-start.sh
 These may spend Ambient credit.
 
 ```bash
+cd ../..
 bash tools/stress_test.sh
 AMB_NO_LIVE=1 bash tools/stress_test.sh
 bash tools/model_matrix.sh

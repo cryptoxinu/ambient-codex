@@ -26,9 +26,10 @@ python3 -m unittest discover -s tests -t . -q
 bash -n hooks/session-start.sh
 ```
 
-Optional live batteries, which can spend Ambient credit:
+Optional live batteries, run from the repository root:
 
 ```bash
+cd ../..
 bash tools/stress_test.sh
 bash tools/model_matrix.sh
 ```
@@ -49,6 +50,7 @@ or MCP server, not through another local Ambient install.
 
 ```bash
 python3 -m unittest tests.test_release_readiness tests.test_refactor_phase2_secrets -q
+cd ../..
 AMB_NO_LIVE=1 bash tools/stress_test.sh
 ```
 

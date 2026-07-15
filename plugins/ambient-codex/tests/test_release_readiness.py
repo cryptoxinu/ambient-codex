@@ -72,6 +72,11 @@ class ReleaseReadinessTests(unittest.TestCase):
                 with self.subTest(workflow=workflow.name, action=action):
                     self.assertRegex(action, immutable)
 
+    def test_live_release_tools_are_not_in_the_installed_plugin(self):
+        self.assertFalse((PLUGIN_ROOT / "tools").exists())
+        self.assertTrue((REPO_ROOT / "tools" / "stress_test.sh").is_file())
+        self.assertTrue((REPO_ROOT / "tools" / "model_matrix.sh").is_file())
+
     def test_current_threat_model_has_no_removed_runtime_controls(self):
         text = (REPO_ROOT / "ambient-codex-threat-model.md").read_text(
             encoding="utf-8")

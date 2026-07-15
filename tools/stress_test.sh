@@ -4,11 +4,12 @@
 # a key-leak tripwire, and pathological-input robustness checks — all under a
 # SANDBOX HOME so the operator's real config is never touched.
 #
-# Usage:  bash tools/stress_test.sh                 # full battery (spends a small amount of Ambient credit)
-#         AMB_NO_LIVE=1 bash tools/stress_test.sh   # offline checks only (no spend)
+# Usage:  bash tools/stress_test.sh                 # full battery (uses Ambient API credit)
+#         AMB_NO_LIVE=1 bash tools/stress_test.sh   # offline checks only
 #         AMB=/path/to/bin/ambient bash tools/stress_test.sh
 set -u
-AMB="${AMB:-$(cd "$(dirname "$0")/.." && pwd)/bin/ambient}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AMB="${AMB:-$REPO_ROOT/plugins/ambient-codex/bin/ambient}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 PASS=0; FAIL=0; SKIP=0

@@ -10,7 +10,8 @@
 #
 # Usage: bash tools/model_matrix.sh
 set -u
-AMB="${AMB:-$(cd "$(dirname "$0")/.." && pwd)/bin/ambient}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AMB="${AMB:-$REPO_ROOT/plugins/ambient-codex/bin/ambient}"
 WORK="${AMBIENT_MATRIX_WORK:-$(mktemp -d)}"
 mkdir -p "$WORK"
 if [ -z "${AMBIENT_MATRIX_WORK:-}" ]; then
@@ -147,7 +148,7 @@ run bash -c "echo sk-bogus-but-plausible-key-000000 | \"$AMB\" setup --key-stdin
   && pass "setup live-rejects a bogus key cleanly" || fail "setup bogus key" "rc=$RC"
 
 echo "--- git lanes: --staged and --diff in a real repo (live) ---"
-REPO="$WORK/repo"; mkdir -p "$REPO"; cd "$REPO"
+REPO="$WORK/repo"; mkdir -p "$REPO"; cd "$REPO" || exit
 git init -q; git config user.email m@x; git config user.name m
 printf 'def f(a, b):\n    return a + b\n' > app.py; git add app.py; git commit -qm base
 printf 'def f(a, b):\n    return a / b  # changed\n' > app.py; git add app.py
@@ -159,7 +160,7 @@ assert d['kind']=='audit' and 'verdict' in d" 2>/dev/null \
   && pass "audit --staged returns a verdict" || fail "audit --staged" "$(head -c 150 "$OUT")"
 run wk "$AMB" audit --diff no-such-ref --yes
 [ $RC -ne 0 ] && grep -qi "git diff failed" "$OUT" && pass "audit --diff bad ref fails honestly" || fail "diff bad ref" "rc=$RC"
-cd - >/dev/null
+cd - >/dev/null || exit
 
 echo "--- ask -s / code -f / build --plan-only / consensus --json (live) ---"
 run wk "$AMB" ask "What is 2+2? Reply with just the number." -s "You are terse." --yes
