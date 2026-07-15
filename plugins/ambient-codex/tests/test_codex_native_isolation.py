@@ -213,7 +213,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
         for path in docs:
             text = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):
-                self.assertNotIn("/Users/z", text)
+                self.assertNotIn("/Users/" + "z", text)
                 self.assertNotIn("rm -rf ~/.config/ambient\n", text)
 
     def test_public_security_privacy_commands_use_native_launcher(self):

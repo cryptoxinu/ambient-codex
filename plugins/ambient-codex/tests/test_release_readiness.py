@@ -87,6 +87,16 @@ class ReleaseReadinessTests(unittest.TestCase):
             with self.subTest(removed=removed):
                 self.assertNotIn(removed, text)
 
+    def test_public_markdown_has_no_personal_home_path(self):
+        markdown = list(REPO_ROOT.glob("*.md"))
+        markdown.extend((REPO_ROOT / "docs").glob("*.md"))
+        markdown.extend(PLUGIN_ROOT.glob("*.md"))
+        markdown.extend((PLUGIN_ROOT / "docs").glob("*.md"))
+        personal_path = "/Users/" + "z"
+        for path in markdown:
+            with self.subTest(path=str(path.relative_to(REPO_ROOT))):
+                self.assertNotIn(personal_path, path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

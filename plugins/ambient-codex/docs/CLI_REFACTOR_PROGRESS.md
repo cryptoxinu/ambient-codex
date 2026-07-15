@@ -27,7 +27,7 @@ bugs, verification, commits, or the next action changes.
 - GitHub CI baseline: run `29103164093`, fully green across lint/coverage,
   plugin/no-Node, Linux/macOS/Windows, and Python 3.8/3.10/3.12/3.13.
 - Local backup root, outside the working repository:
-  `/Users/z/ambient-codex-backups/pre-refactor-8104930/`.
+  `$HOME/ambient-codex-backups/pre-refactor-8104930/`.
 - Full-history bundle: `ambient-codex-full-history.bundle`.
   SHA-256: `b389c8b9b5020762c3819c1fa7969f21fc9994084c964deedc1b0fbbbdcfcc6b`.
 - Exact source archive: `ambient-codex-source-8104930.tar.gz`.
@@ -1502,5 +1502,5 @@ Final verification on code-bearing head `6de64b7`:
   amount. Both live batteries' credential tripwires pass.
 
 T5 backup cleanup remains a no-op: the bundle and source tarball under
-`/Users/z/ambient-codex-backups/pre-refactor-8104930/` are the intentional
+`$HOME/ambient-codex-backups/pre-refactor-8104930/` are the intentional
 rollback safety net and must be kept.

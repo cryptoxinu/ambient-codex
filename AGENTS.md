@@ -24,8 +24,10 @@ This repository is a standalone Codex-native fork of the Ambient plugin work.
 Run these from `plugins/ambient-codex` before marking implementation phases complete:
 
 ```bash
-python3 /Users/z/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .
 python3 -m unittest discover -s tests -t . -q
 ```
 
-For skill changes, also run the Codex skill validator from `/Users/z/.codex/skills/.system/skill-creator/scripts/quick_validate.py` when available.
+For skill changes, also run the Codex skill validator from
+`$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py` when available.

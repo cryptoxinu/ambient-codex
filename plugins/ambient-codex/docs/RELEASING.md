@@ -10,6 +10,7 @@ Update all version surfaces together:
 - `.codex-plugin/plugin.json`
 - `pyproject.toml`
 - `bin/ambient` `__version__`
+- `mcp/ambient_mcp.py` `SERVER_VERSION`
 - `CHANGELOG.md`
 
 ## Gates
@@ -44,13 +45,34 @@ python3 -m unittest tests.test_codex_native_isolation -q
 Expected result is green. Ambient Codex should route through its bundled binary
 or MCP server, not through another local Ambient install.
 
-## Secret Scan
+## Privacy And Secret Scan
 
 ```bash
-grep -RniE 'api[_-]?key=|Authorization: Bearer|amb_[A-Za-z0-9]' . --exclude-dir=.git
+python3 -m unittest tests.test_release_readiness tests.test_refactor_phase2_secrets -q
+AMB_NO_LIVE=1 bash tools/stress_test.sh
 ```
 
-Only variable names, docs, or synthetic test values should match.
+The repository history must use GitHub noreply commit addresses. Public Markdown
+must contain no personal home path, private email, phone number, security code,
+or live credential. Credential-shaped values are allowed only as clearly fake
+security fixtures covered by the tests above.
+
+## Source Archive Hygiene
+
+The release is source-only: no compiled executable, vendored dependency, default
+hook, local state, key file, cache, or symlink belongs in the archive.
+
+```bash
+tmp="$(mktemp -d)"
+git archive HEAD | tar -x -C "$tmp"
+find "$tmp" -type l -print
+find "$tmp" -type f -perm -111 -print
+rm -rf "$tmp"
+```
+
+The executable list should contain only the documented Python/shell entrypoints.
+CodeQL, the full immutable-action CI matrix, and branch protection must be green
+before tagging.
 
 ## Install Verification
 
