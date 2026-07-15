@@ -131,6 +131,7 @@ bugs, verification, commits, or the next action changes.
 | 3G-9 | Independent map command composition | Complete | local checkpoint | `map_command.py`; bounded item gathering, per-item secret checks, memoized catalog/profile sizing, cached worker fan-out, fatal cancellation-before-gate-release, JSONL emission, and partial exit policy moved behind immutable dependencies |
 | 4B-13 | Ask, best-of, and consensus composition | Complete | local checkpoint | `ask_command.py`; stdin inclusion, secret refusal, model-aware single-shot/map-reduce selection, streaming redaction, salted resumable samples, deterministic selection, explicit-model consensus, fail-fast cancellation, partial disclosure, and token-only receipts moved behind immutable late-bound dependencies |
 | 5D-7 | Catalog, default selection, and curation commands | Complete | local checkpoint | `catalog_command.py`; sanitized serving/on-demand presentation, branded-alias deduplication, explicit/interactive lane-default selection, atomic curation merges, hidden-default continuity, and pre-key browsing moved behind immutable late-bound dependencies |
+| 3B-3 | Bounded completion state machine | Complete | local checkpoint | `completion_command.py`; immutable retry state, context-safe budget shrinking/escalation, reasoning salvage, stall retry, explicit fallback disclosure, served-model accounting, and hard attempt ceilings moved behind an immutable late-bound transport/session boundary |
 
 ## Phase 0 checklist
 
