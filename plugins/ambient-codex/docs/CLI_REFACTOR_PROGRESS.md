@@ -116,6 +116,7 @@ bugs, verification, commits, or the next action changes.
 | 5A-5 | Usage summary rendering | Complete | local checkpoint | `usage_report.py`; public JSON and terminal lines are derived from private aggregates while savings stays opt-in and monetary values remain absent |
 | 5B-1 | Agent provider + command construction | Complete | local checkpoint | `agent_config.py`; immutable namespaced provider merge and credential-free OpenCode argv construction preserve facade-controlled environment/process ownership |
 | 5B-2 | Launcher ownership checks | Complete | local checkpoint | `launcher.py`; injected symlink/shim ownership predicates preserve facade filesystem patch seams |
+| 5C-1 | Large workflow parser construction | Complete | local checkpoint | `cli_parser.py`; shared model/progress flags plus audit/map/build parsers are module-owned with facade wrappers preserving monkeypatch seams |
 
 ## Phase 0 checklist
 
