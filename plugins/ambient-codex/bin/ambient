@@ -171,12 +171,14 @@ from ambient_codex import catalog_command as _catalog_command  # noqa: E402
 from ambient_codex import ask_command as _ask_command  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import audit_command as _audit_command  # noqa: E402
+from ambient_codex import audit_hook_command as _audit_hook_command  # noqa: E402
 from ambient_codex import audit_prose as _audit_prose  # noqa: E402
 from ambient_codex import audit_planning as _audit_planning  # noqa: E402
 from ambient_codex import agent_config as _agent_config  # noqa: E402
 from ambient_codex import agent_command as _agent_command  # noqa: E402
 from ambient_codex import build_apply as _build_apply  # noqa: E402
 from ambient_codex import build_command as _build_command  # noqa: E402
+from ambient_codex import build_state_command as _build_state_command  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
@@ -3988,174 +3990,36 @@ AMBIENT_HOOK_MARKER = "# ambient-codex audit hook v1"
 LEGACY_AMBIENT_HOOK_MARKERS = ()  # never claim another install's hook
 
 
+def _audit_hook_dependencies():
+    return _audit_hook_command.AuditHookDependencies.bind(
+        AMBIENT_HOOK_MARKER=AMBIENT_HOOK_MARKER, LAUNCHER_NAME=LAUNCHER_NAME,
+        LEGACY_AMBIENT_HOOK_MARKERS=LEGACY_AMBIENT_HOOK_MARKERS,
+        EXIT_USAGE=EXIT_USAGE, _bundled_cli_path=_bundled_cli_path,
+        _fail_exit=_fail_exit, _git_hooks_dir=_git_hooks_dir,
+        _hook_is_ours=_hook_is_ours, _render_hook=_render_hook,
+        contextlib=contextlib, os=os, shlex=shlex, shutil=shutil, sys=sys,
+        tempfile=tempfile, subprocess=subprocess, usage_exit=usage_exit,
+    )
+
+
 def _render_hook(name):
-    """The fixed git-hook script for `name` (pre-commit|pre-push). Threshold
-    (documented in the script itself): BLOCK only on verdict "FIX FIRST"
-    (CRITICAL/HIGH findings); AMBIENT_HOOK_MODE=warn makes it report-only.
-    Everything else — audit unavailable, unconfigured, nothing staged,
-    network down — FAILS OPEN: a review hook must never brick commits."""
-    if name == "pre-commit":
-        audit_args = "--staged --json"
-        what = "staged diff"
-        bypass = "git commit --no-verify"
-    else:
-        audit_args = '--diff "@{u}...HEAD" --json'
-        what = "outgoing commits (upstream...HEAD)"
-        bypass = "git push --no-verify"
-    # Resolve THIS install's CLI, never a bare `ambient` on PATH: that name may
-    # belong to a different Ambient install, whose key, model lanes, and usage
-    # ledger the hook would then silently use. The versioned plugin cache dir
-    # moves on every update, so prefer the stable `ambient-codex` launcher and
-    # fall back to the absolute path recorded at install time.
-    bundled = shlex.quote(_bundled_cli_path())
-    return f"""#!/bin/sh
-{AMBIENT_HOOK_MARKER} ({name})
-# Installed by: {LAUNCHER_NAME} audit --install-hook {name}
-# FIXED script - it only RUNS `ambient-codex audit` on the {what}
-# and reads the verdict; it never contains or executes model output.
-#
-# Threshold: BLOCKS only on verdict "FIX FIRST" (CRITICAL/HIGH findings).
-#   AMBIENT_HOOK_MODE=warn      report findings but never block
-#   bypass once:                {bypass}
-#   uninstall:                  ambient-codex audit --uninstall-hook {name}
-AMBIENT_BIN=""
-if command -v ambient-codex >/dev/null 2>&1; then
-    AMBIENT_BIN=ambient-codex
-elif [ -x {bundled} ]; then
-    AMBIENT_BIN={bundled}
-else
-    echo "ambient-hook: ambient-codex not found - skipping audit" >&2
-    exit 0
-fi
-out=$("$AMBIENT_BIN" audit {audit_args} --yes 2>/dev/null)
-rc=$?
-if [ -z "$out" ]; then
-    echo "ambient-hook: audit produced no output (rc=$rc) - skipping (fail-open)" >&2
-    exit 0
-fi
-printf '%s\\n' "$out"
-if printf '%s' "$out" | grep -q '"verdict": "FIX FIRST"'; then
-    if [ "$AMBIENT_HOOK_MODE" = "warn" ]; then
-        echo "ambient-hook: verdict FIX FIRST - warn-only mode (AMBIENT_HOOK_MODE=warn), not blocking" >&2
-        exit 0
-    fi
-    echo "ambient-hook: verdict FIX FIRST - blocking. Bypass once: {bypass}; report-only: AMBIENT_HOOK_MODE=warn" >&2
-    exit 1
-fi
-exit 0
-"""
+    return _audit_hook_command._render_hook(
+        name, deps=_audit_hook_dependencies())
 
 
 def _git_hooks_dir(args):
-    """Absolute hooks dir of the CURRENT repo (worktree-aware via
-    `git rev-parse --git-path hooks`); clean usage error outside a repo."""
-    try:
-        proc = subprocess.run(["git", "rev-parse", "--git-path", "hooks"],
-                              capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        proc = None
-    if proc is None or proc.returncode != 0:
-        _fail_exit(args, "audit", "usage",
-                   "--install-hook/--uninstall-hook must run inside a git "
-                   "repository.", exit_code=EXIT_USAGE)
-    return os.path.abspath(proc.stdout.strip())
+    return _audit_hook_command._git_hooks_dir(
+        args, deps=_audit_hook_dependencies())
 
 
 def _hook_is_ours(existing, name):
-    """STRICT ownership check: a hook is
-    ambient's only when it is byte-identical to the current generated
-    template, OR carries the exact generated header — shebang + the marker
-    as the ENTIRE second line + the installed-by template line as the
-    ENTIRE third line. Every line must match EXACTLY (no startswith): a
-    foreign hook that merely SHARES the installed-by prefix (e.g. a fork
-    appending its own note) is foreign — it needs --force to replace and
-    is never auto-removed."""
-    if existing is None:
-        return False
-    if existing == _render_hook(name):
-        return True
-    lines = existing.splitlines()
-    markers = (AMBIENT_HOOK_MARKER, *LEGACY_AMBIENT_HOOK_MARKERS)
-    # 1.5.x wrote the installed-by line as `ambient audit ...` before the launcher
-    # was renamed. The MARKER line is what proves ownership and only we ever write
-    # it, so accept either installed-by wording; refusing the old one would leave
-    # upgraded users unable to uninstall their own hook.
-    installed_by = (
-        f"# Installed by: {LAUNCHER_NAME} audit --install-hook {name}",
-        f"# Installed by: ambient audit --install-hook {name}",
-    )
-    return any(
-        len(lines) >= 3
-        and lines[0] == "#!/bin/sh"
-        and lines[1] == f"{marker} ({name})"
-        and lines[2] in installed_by
-        for marker in markers
-    )
+    return _audit_hook_command._hook_is_ours(
+        existing, name, deps=_audit_hook_dependencies())
 
 
 def cmd_audit_hook(args):
-    """Install/remove the ambient-codex audit git hook. Pure hooks-file management:
-    needs no API key and makes no network call. Refuses to CLOBBER a hook it
-    did not install (strict template/header match — _hook_is_ours) unless
-    --force (which backs the original up first); uninstall removes ONLY an
-    ambient-installed hook."""
-    if getattr(args, "install_hook", None) and getattr(args, "uninstall_hook",
-                                                       None):
-        usage_exit("pass either --install-hook or --uninstall-hook, not both")
-    installing = bool(getattr(args, "install_hook", None))
-    name = args.install_hook if installing else args.uninstall_hook
-    hooks_dir = _git_hooks_dir(args)
-    path = os.path.join(hooks_dir, name)
-    try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            existing = fh.read()
-    except OSError:
-        existing = None
-    ours = _hook_is_ours(existing, name)
-    if not installing:
-        if existing is None:
-            print(f"ambient: no {name} hook installed — nothing to remove")
-            return
-        if not ours:
-            _fail_exit(args, "audit", "config",
-                       f"the existing {name} hook at {path} was NOT installed "
-                       "by ambient — refusing to remove it.")
-        os.unlink(path)
-        print(f"ambient: removed the ambient {name} hook ({path})")
-        return
-    if existing is not None and not ours:
-        if not getattr(args, "force", False):
-            _fail_exit(args, "audit", "config",
-                       f"a {name} hook already exists at {path} and was not "
-                       "installed by ambient — re-run with --force to replace "
-                       f"it (the original is saved to {name}.pre-ambient.bak).")
-        backup = path + ".pre-ambient.bak"
-        shutil.copy2(path, backup)
-        print(f"ambient: existing {name} hook backed up to {backup}",
-              file=sys.stderr)
-    script = _render_hook(name)
-    os.makedirs(hooks_dir, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=hooks_dir, prefix=".tmp-hook-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(script)
-        os.chmod(tmp, 0o755)
-        os.replace(tmp, path)
-    except OSError:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
-    bypass = ("git commit --no-verify" if name == "pre-commit"
-              else "git push --no-verify")
-    audit_cmd = (f"{LAUNCHER_NAME} audit --staged --json" if name == "pre-commit"
-                 else f'{LAUNCHER_NAME} audit --diff "@{{u}}...HEAD" --json')
-    print(f"ambient: installed the {name} hook → {path}\n"
-          f"  runs:        {audit_cmd}\n"
-          "  blocks on:   verdict FIX FIRST (CRITICAL/HIGH findings); "
-          "everything else passes\n"
-          "  warn-only:   AMBIENT_HOOK_MODE=warn (reports, never blocks)\n"
-          f"  bypass once: {bypass}\n"
-          f"  uninstall:   ambient-codex audit --uninstall-hook {name}")
+    return _audit_hook_command.cmd_audit_hook(
+        args, deps=_audit_hook_dependencies())
 
 
 def _audit_planning_dependencies():
@@ -4372,107 +4236,54 @@ def cmd_chat(args, api_key, api_url, conf):
     return _generation_commands.run_chat(
         args, api_key, api_url, conf, _generation_dependencies())
 
-def _parse_file_records(text):
-    """Parse a build-generation reply into file objects without repairing cuts.
+def _build_state_dependencies():
+    return _build_state_command.BuildStateDependencies.bind(
+        SECRET_NAMES_RE=SECRET_NAMES_RE, __version__=__version__,
+        _build_state_path=_build_state_path, _build_workflow=_build_workflow,
+        json=json, os=os, safe_relpath=safe_relpath, sys=sys, tempfile=tempfile,
+    )
 
-    The primary contract is one per-file JSON object per line. The parser is
-    deliberately tolerant of harmless formatting and deliberately intolerant of
-    unsafe salvage:
-      * a record must begin its line, so prose examples are not accepted;
-      * objects may be pretty-printed or concatenated on one line;
-      * an unterminated object is treated as a truncated tail and dropped;
-      * a legacy {"files":[...]} wrapper is unwrapped after a full decode.
-    """
-    return _build_workflow.parse_file_records(text)
+
+def _parse_file_records(text):
+    return _build_state_command._parse_file_records(
+        text, deps=_build_state_dependencies())
 
 
 def _within_root(child_real, root_real):
-    """True if realpath `child_real` is inside (or equal to) `root_real`. Uses
-    commonpath so it is correct even when root_real is the filesystem root '/'
-    (M9: `child.startswith(root + os.sep)` fails there — nothing starts with
-    '//', wrongly rejecting every subdirectory)."""
-    return _build_workflow.within_root(child_real, root_real)
+    return _build_state_command._within_root(
+        child_real, root_real, deps=_build_state_dependencies())
 
 
 def safe_relpath(path, root):
-    """Path-traversal firewall for manifest writes. Model
-    output is UNTRUSTED: any path it names must resolve to a plain relative
-    location strictly inside `root`, or be rejected VERBATIM with a reason —
-    never 'fixed' (fixing invites smuggling). Blocks the zip-slip family:
-    absolute paths, drive/UNC prefixes, .. segments, ~ references, .git
-    internals, credential-named files, control characters, and symlinked
-    ancestors/destinations that physically escape the root. Returns the
-    normalized relative path or raises ValueError."""
-    return _build_workflow.safe_relative_path(
-        path, root, secret_name_re=SECRET_NAMES_RE)
+    return _build_state_command.safe_relpath(
+        path, root, deps=_build_state_dependencies())
 
 
 def _build_state_path(root):
-    return _build_workflow.state_path(root)
+    return _build_state_command._build_state_path(
+        root, deps=_build_state_dependencies())
 
 
 def build_resume_identity(*, task, model, reduce_model, context_paths,
                           raw_context_sha, max_files, max_file_bytes,
                           max_tokens, temperature):
-    """Hash every stable input that can change generated build content.
-
-    Include the runtime version so prompt/repair changes in a plugin update do
-    not silently reuse files generated by an older pipeline. This identity is
-    separate from the on-disk state format version.
-    """
-    return _build_workflow.resume_identity(
-        runtime_version=__version__, task=task, model=model, reduce_model=reduce_model,
+    return _build_state_command.build_resume_identity(
+        task=task, model=model, reduce_model=reduce_model,
         context_paths=context_paths, raw_context_sha=raw_context_sha,
         max_files=max_files, max_file_bytes=max_file_bytes,
-        max_tokens=max_tokens, temperature=temperature)
+        max_tokens=max_tokens, temperature=temperature,
+        deps=_build_state_dependencies())
 
 
 def _save_build_state(root, state):
-    """Atomic 0600 resume-state write; best-effort (a state failure must never
-    kill a run whose results are already in memory)."""
-    try:
-        os.makedirs(root, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=root, prefix=".ambient-build-")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(state, fh)
-        os.replace(tmp, _build_state_path(root))
-        os.chmod(_build_state_path(root), 0o600)
-    except OSError as err:
-        print(f"ambient: could not save build resume-state ({err})",
-              file=sys.stderr)
+    return _build_state_command._save_build_state(
+        root, state, deps=_build_state_dependencies())
 
 
 def _load_build_state(root, task_sha, max_plan=512, max_file_bytes=None):
-    """Resume state is UNTRUSTED data (any process could have written it):
-    every path re-fires through the firewall and every record's hash is
-    re-verified, or the state is discarded — a poisoned state file must not
-    become a --dir escape on the next --apply. task_sha matching is cache
-    IDENTITY, not integrity, so the user's own caps are re-enforced against the
-    loaded state: `max_plan` (= --max-files) bounds BOTH the accepted plan items
-    AND the resumed `done` files, and `max_file_bytes` (= --max-file-bytes)
-    drops any over-cap resumed file — a same-hash poisoned state cannot apply
-    more or bigger files than the current invocation allows."""
-    # Bound parse-time allocation from the untrusted state to a PLAUSIBLE size
-    # for the current caps (max_plan files × max_file_bytes, ×6 for worst-case
-    # JSON escaping, + overhead) — big enough for any legit state, small enough
-    # to refuse a bloated poisoned one.
-    read_cap = max(max_plan, 1) * max(max_file_bytes or 200_000, 1) * 6 + 2_000_000
-    try:
-        with open(_build_state_path(root), encoding="utf-8") as fh:
-            raw = fh.read(read_cap + 1)
-            if len(raw) > read_cap:
-                return None            # implausibly large state → discard
-            st = json.loads(raw)
-    except (OSError, json.JSONDecodeError):
-        return None
-    try:
-        return _build_workflow.normalize_resume_state(
-            st, task_sha=task_sha, root=root, max_plan=max_plan,
-            max_file_bytes=max_file_bytes, safe_relpath=safe_relpath)
-    except ValueError:
-        print("ambient: previous build state contained unsafe paths — "
-              "ignoring it and starting fresh", file=sys.stderr)
-        return None
+    return _build_state_command._load_build_state(
+        root, task_sha, max_plan, max_file_bytes,
+        deps=_build_state_dependencies())
 
 
 def _build_dependencies():

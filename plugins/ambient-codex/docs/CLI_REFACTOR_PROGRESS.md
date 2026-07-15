@@ -135,6 +135,8 @@ bugs, verification, commits, or the next action changes.
 | 3G-10 | Map-reduce command composition | Complete | local checkpoint | `map_reduce_command.py`; memoized fan-out, cache identity, shared cancellation gates, hierarchical reduce sizing, deterministic reducer support, synthesis fallback, and paid-work preservation moved behind immutable late-bound executor/session dependencies |
 | 5A-6 | Result and error rendering composition | Complete | local checkpoint | `output_command.py`; terminal partial signaling, streamed-result suppression, token-only JSON envelopes, redacted machine errors, usage receipts, and total JSON-mode failure routing moved behind immutable late-bound output dependencies |
 | 4A-10 | Audit execution and estimate planning | Complete | local checkpoint | `audit_planning.py`; per-model sample preparation, cache-key parity, single/chunk execution, model-specific split and fallback estimates, consensus validation, best-of cache-miss accounting, and repository dry-run plans moved behind immutable late-bound policy dependencies |
+| 5D-8 | Managed Git audit-hook transaction | Complete | local checkpoint | `audit_hook_command.py`; portable hook rendering, worktree hook discovery, ownership detection, foreign-hook backup/refusal, atomic install, executable permissions, and uninstall restoration moved behind immutable filesystem/process dependencies |
+| 4B-14 | Resumable build-state adapters | Complete | local checkpoint | `build_state_command.py`; versioned content identity, path firewall delegation, bounded untrusted-state parsing, hash verification, restrictive atomic persistence, and cap revalidation moved behind immutable filesystem/workflow dependencies |
 
 ## Phase 0 checklist
 
