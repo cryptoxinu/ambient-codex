@@ -287,6 +287,7 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertIn("state\n   changes", skill)
         self.assertIn("Never cancel a healthy Ambient job", skill)
         self.assertIn("Do not copy the full brief", skill)
+        self.assertIn("adaptive recovery signal", skill)
 
 
 if __name__ == "__main__":

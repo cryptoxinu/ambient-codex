@@ -119,6 +119,7 @@ EXPECTED_DEFAULTS = {
     "_auto_budget": False,          # getattr(..., False)
     "_cache_salt": None,            # getattr(..., None)
     "escalation_ceiling": 65536,    # getattr(..., MAX_AUTO_BUDGET_TOKENS)
+    "max_budget_escalations": 1,    # getattr(..., 1)
     "gate_fallback": True,          # getattr(..., True) — single-call lanes
                                     # re-gate a live --fallback swap; fan-out
                                     # workers set False (batch reserved it)
@@ -159,7 +160,7 @@ class RequestSpecContractTests(unittest.TestCase):
             allow_cost=True, yes=True, parallel=7, no_cache=True,
             cache_ttl=99, fallback=True, consensus="a,b",
             _no_fallback=True, _auto_budget=True, _cache_salt="best-of:3",
-            escalation_ceiling=777)
+            escalation_ceiling=777, max_budget_escalations=2)
         spec = amb.RequestSpec.from_args(argparse.Namespace(**values))
         for name, want in values.items():
             self.assertEqual(getattr(spec, name), want, name)

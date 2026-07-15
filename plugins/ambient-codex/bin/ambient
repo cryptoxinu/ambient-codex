@@ -2635,6 +2635,10 @@ def _session_or(session, api_key, api_url, conf=None):
     return Session(api_url=api_url, api_key=api_key, conf=conf or {})
 
 
+DEFAULT_BUDGET_ESCALATIONS = 1
+MAX_BUDGET_ESCALATIONS = 2
+
+
 @dataclasses.dataclass(frozen=True)
 class RequestSpec:
     """The ENGINE's frozen request-knob carrier: every knob the
@@ -2672,6 +2676,10 @@ class RequestSpec:
     _auto_budget: bool = False           # getattr(..., False)
     _cache_salt: object = None           # getattr(..., None) — best-of lanes
     escalation_ceiling: int = MAX_AUTO_BUDGET_TOKENS  # getattr default
+    # Build generation is the sole lane that raises this to two. A second
+    # escalation is justified only after a model spent a full first retry on
+    # reasoning without emitting a file; every other lane preserves one retry.
+    max_budget_escalations: int = DEFAULT_BUDGET_ESCALATIONS
     # True (default) = SINGLE-CALL lane — complete()
     # re-gates a live --fallback swap per call (main thread; sys.exit on a
     # refusal is correct). Fan-out workers (map/consensus/best-of) set False:
@@ -2718,16 +2726,15 @@ class AttemptState:
     messages: list
     spec: RequestSpec # per-attempt frozen knobs (replaced per variant)
     stall_retried: bool = False
-    budget_retried: bool = False
+    budget_escalations: int = 0
     fallback_retried: bool = False
     budget_shrunk: bool = False
     attempt_no: int = 0
 
 
-# Hard ceiling on the attempt loop: the initial attempt + one retry per
-# independent guard flag — exactly the maximum depth the old recursive
-# `return complete(...)` ladder could reach (each frame set one more flag,
-# flags never reset), so the loop can NEVER run longer than the recursion.
+# Hard ceiling on normal calls: the initial attempt + one retry per independent
+# guard flag. Build generation may add one more output escalation, still capped
+# by MAX_BUDGET_ESCALATIONS in _budget_escalation_limit().
 MAX_COMPLETE_ATTEMPTS = 5
 
 
@@ -2739,6 +2746,16 @@ def _reasoning_str(*vals):
         if isinstance(v, str) and v.strip():
             return v.strip()
     return ""
+
+
+def _budget_escalation_limit(value):
+    """Clamp an internal retry policy to the small, safe engine maximum."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = DEFAULT_BUDGET_ESCALATIONS
+    return max(DEFAULT_BUDGET_ESCALATIONS,
+               min(MAX_BUDGET_ESCALATIONS, parsed))
 
 
 def complete(api_key, api_url, model, messages, args, _stall_retried=False,
@@ -2761,9 +2778,13 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
     api_key, api_url = session.api_key, session.api_url
     state = AttemptState(
         model=model, messages=messages, spec=RequestSpec.from_args(args),
-        stall_retried=_stall_retried, budget_retried=_budget_retried,
+        stall_retried=_stall_retried,
+        budget_escalations=int(bool(_budget_retried)),
         fallback_retried=_fallback_retried, budget_shrunk=_budget_shrunk)
-    for _ in range(MAX_COMPLETE_ATTEMPTS):
+    budget_limit = _budget_escalation_limit(state.spec.max_budget_escalations)
+    max_attempts = MAX_COMPLETE_ATTEMPTS + (
+        budget_limit - DEFAULT_BUDGET_ESCALATIONS)
+    for _ in range(max_attempts):
         model, messages, spec = state.model, state.messages, state.spec
         payload = {
             "model": model,
@@ -3024,7 +3045,8 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
             # profile), not a flat 65536 — and we now start from a well-sized
             # budget, so bump gently.
             ceiling = spec.escalation_ceiling
-            if not state.budget_retried and spec.max_tokens < ceiling:
+            if (state.budget_escalations < budget_limit
+                    and spec.max_tokens < ceiling):
                 new_budget = min(max(spec.max_tokens * 2,
                                      spec.max_tokens + 16384),
                                  ceiling)
@@ -3037,7 +3059,8 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
                 state = dataclasses.replace(
                     state,
                     spec=dataclasses.replace(spec, max_tokens=new_budget),
-                    budget_retried=True, attempt_no=state.attempt_no + 1)
+                    budget_escalations=state.budget_escalations + 1,
+                    attempt_no=state.attempt_no + 1)
                 continue
             reasoning = reasoning_text
             input_chars = sum(len(m.get("content") or "") for m in messages)
@@ -3085,7 +3108,7 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
     # exists so a future edit can never turn the loop into an unbounded spin.
     raise ChatError(
         "internal",
-        f"completion retry ladder exceeded {MAX_COMPLETE_ATTEMPTS} attempts",
+        f"completion retry ladder exceeded {max_attempts} attempts",
     )
 
 
@@ -7762,6 +7785,7 @@ def cmd_build(args, api_key, api_url, conf):
     rf_files = None
     gen_extra = ""
     attempts = {}
+    recovery_paths = set()
     queue = list(batches)
     while queue:
         batch = queue.pop(0)
@@ -7775,24 +7799,32 @@ def cmd_build(args, api_key, api_url, conf):
             continue
         want = [p["path"] for p in batch]
 
-        def _mk_user(overview, already_blk, ctx):
+        def _mk_user(overview, already_blk, ctx, compact=False):
+            targets = "\n".join(
+                f"  {p['path']} — {p.get('purpose', '')}" for p in batch)
+            if compact:
+                u = (f"TASK: {task}\n\nRECOVERY GENERATION: a prior attempt "
+                     "spent its output on reasoning before emitting these files. "
+                     "Generate ONLY these complete file records now:\n"
+                     f"{targets}")
+                return u + (f"\n\nContext:\n{ctx}" if ctx else "")
             u = (f"TASK: {task}\n\nFULL PLAN (for cross-file consistency):\n"
                  f"{overview}\n\nALREADY GENERATED (do not repeat):\n"
                  f"{already_blk}\n\nGENERATE NOW — complete content for exactly "
-                 "these files:\n"
-                 + "\n".join(f"  {p['path']} — {p.get('purpose', '')}"
-                             for p in batch))
+                 f"these files:\n{targets}")
             return u + (f"\n\nContext:\n{ctx}" if ctx else "")
 
         already = "\n".join(f"  {k}" for k in done) or "  (none yet)"
-        user = _mk_user(plan_overview, already, context)
+        compact_recovery = any(p["path"] in recovery_paths for p in batch)
+        user = _mk_user(plan_overview, already, context, compact_recovery)
         # M44: keep the generation prompt within the model's single-shot window.
         # Splitting the BATCH can't help (task/plan/already/context are
         # batch-independent), so shrink the INPUT: drop the already-list, then
         # truncate context, then condense the plan to paths only.
         head = len(BUILD_GEN_PROMPT + gen_extra) + 2000   # scaffold + margin
         if head + len(user) > single:
-            user = _mk_user(plan_overview, "  (omitted to fit the window)", context)
+            user = _mk_user(plan_overview, "  (omitted to fit the window)",
+                            context, compact_recovery)
         if head + len(user) > single and context:
             # _mk_user prepends an 11-char "\n\nContext:\n" before ctx — account
             # for it, else context[:room] overshoots the window by 11 and this
@@ -7800,10 +7832,11 @@ def cmd_build(args, api_key, api_url, conf):
             room = max(0, single - head
                        - len(_mk_user(plan_overview, "  (omitted)", ""))
                        - len("\n\nContext:\n"))
-            user = _mk_user(plan_overview, "  (omitted)", context[:room])
+            user = _mk_user(plan_overview, "  (omitted)", context[:room],
+                            compact_recovery)
         if head + len(user) > single:
             user = _mk_user("\n".join(f"  {p['path']}" for p in plan),
-                            "  (omitted)", "")
+                            "  (omitted)", "", compact_recovery)
         if head + len(user) > single:
             # Still over even minimized. Split a multi-file batch BEFORE the API
             # call (avoids a doomed 400 round-trip); a single-file batch that
@@ -7819,6 +7852,20 @@ def cmd_build(args, api_key, api_url, conf):
                                      "larger-context -m model"})
             continue
         ga, _x = _ns_with(rf_files)
+        generation_chars = len(BUILD_GEN_PROMPT + gen_extra) + len(user)
+        if getattr(args, "_auto_budget", False):
+            # The command-level budget was sized against the profile's
+            # worst-case single-shot input. This concrete file request is often
+            # far smaller, so re-derive its context-safe ceiling before asking
+            # the model to spend more reasoning on a complete artifact.
+            ga.max_tokens = None
+            apply_output_budget(ga, profile, generation_chars)
+        else:
+            ga.escalation_ceiling = max(
+                ga.max_tokens,
+                _context_safe_escalation_ceiling(
+                    profile, generation_chars, _effective_cpt(profile.model)))
+        ga.max_budget_escalations = MAX_BUDGET_ESCALATIONS
         gen_calls += 1
         # C1: name WHICH files this call generates and how far along the plan we
         # are, on top of the streaming char-heartbeat — a long build must show
@@ -7889,6 +7936,7 @@ def cmd_build(args, api_key, api_url, conf):
         for rel, body_text in got.items():
             done[rel] = {"content": body_text,
                          "sha256": hashlib.sha256(body_text.encode()).hexdigest()}
+        recovery_paths.difference_update(got)
         state["done"] = done
         state["failed"] = failed
         _save_build_state(root, state)
@@ -7896,6 +7944,13 @@ def cmd_build(args, api_key, api_url, conf):
                    if p["path"] not in done
                    and p["path"] not in {f["path"] for f in failed}]
         if missing:
+            output_starved = (
+                isinstance(body, dict)
+                and (body.get("reasoning_draft")
+                     or body.get("finish_reason") == "length"
+                     or body.get("salvaged_partial")))
+            if output_starved:
+                recovery_paths.update(p["path"] for p in missing)
             if len(batch) > 1:
                 mid = max(1, len(missing) // 2)
                 for half in (missing[mid:], missing[:mid]):

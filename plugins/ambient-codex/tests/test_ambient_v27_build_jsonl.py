@@ -525,6 +525,33 @@ class TestJsonlBuild(unittest.TestCase):
         self.assertEqual(files.get("a.py"), "REAL_A\n", files)   # not REASONED_BAD
         self.assertEqual(files.get("b.py"), "REAL_B\n", files)
 
+    def test_reasoning_only_build_recovery_uses_per_file_prompt_and_policy(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        seen = []
+        state = {"calls": 0}
+
+        def fake(api_key, api_url, model, messages, args, on_delta=None, **kw):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                return _plan("a.py", "b.py"), {}, {"finish_reason": "stop"}
+            seen.append((messages[1]["content"], args.max_budget_escalations,
+                         args.escalation_ceiling))
+            if state["calls"] == 2:
+                return "reasoning only", {}, {
+                    "salvaged_partial": True, "reasoning_draft": True}
+            requested = messages[1]["content"]
+            return (_rec("a.py", "A\n") if "a.py" in requested
+                    else _rec("b.py", "B\n")), {}, {"finish_reason": "stop"}
+
+        env, files = _run(d, fake)
+        self.assertEqual(env.get("failed"), [], env)
+        self.assertEqual(files, {"a.py": "A\n", "b.py": "B\n"})
+        self.assertEqual(seen[0][1], 2)
+        self.assertIn("FULL PLAN", seen[0][0])
+        self.assertNotIn("FULL PLAN", seen[1][0])
+        self.assertGreater(seen[1][2], 0)
+
     def test_salvaged_partial_reply_drops_its_last_record(self):
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)

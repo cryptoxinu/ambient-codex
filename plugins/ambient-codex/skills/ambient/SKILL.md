@@ -124,8 +124,12 @@ stall detection.
    invocation. Report usable partial output and every coverage gap.
 
 Build uses record-framed JSONL and `.ambient-build.json` so complete files survive
-truncation and missing files can requeue. Never claim a build completed unless the
-final envelope and local file/test verification agree.
+truncation and missing files can requeue. A reasoning-only or output-capped build
+attempt is an adaptive recovery signal: keep the Ambient build running so its
+selected model can retry the missing files with a smaller artifact unit and its
+own context-safe output ceiling. Do not cancel it or complete the same scoped
+build locally merely because it reached an output cap. Never claim a build
+completed unless the final envelope and local file/test verification agree.
 
 ## Massive Repository Protocol
 

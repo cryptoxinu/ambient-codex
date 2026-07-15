@@ -132,6 +132,19 @@ class AttemptLoopTests(unittest.TestCase):
         # Namespace — the caller's args object is untouched.
         self.assertEqual(args.max_tokens, 8000)
 
+    def test_build_budget_policy_can_escalate_twice_without_mutating_args(self):
+        fake, calls, _d = stream_seq(
+            ok_body(content=""), ok_body(content=""), ok_body("done"))
+        args = ns(max_budget_escalations=2)
+        with patched(amb, stream_completion=fake), \
+                contextlib.redirect_stderr(io.StringIO()):
+            content, _u, _b = amb.complete(
+                "k", "u", "m", [{"role": "user", "content": "x"}], args)
+        self.assertEqual(content, "done")
+        self.assertEqual([call["max_tokens"] for call in calls],
+                         [8000, 24384, 30000])
+        self.assertEqual(args.max_tokens, 8000)
+
     def test_budget_400_shrinks_once_without_mutating_args(self):
         fake, calls, _d = stream_seq(
             (400, {"error": {"message": "max_tokens exceeds model limit"}}),
@@ -182,7 +195,7 @@ class AttemptLoopTests(unittest.TestCase):
     def test_full_ladder_fits_inside_the_hard_attempt_bound(self):
         # Deepest chain the old recursion could reach: stall retry → budget
         # shrink → model fallback → budget escalation → success = 5 attempts,
-        # exactly the loop's hard bound.
+        # exactly the default loop's hard bound.
         fake, calls, _d = stream_seq(
             amb.StallError("s", partial=""),
             (400, {"error": {"message": "max_tokens exceeds model limit"}}),
@@ -197,7 +210,7 @@ class AttemptLoopTests(unittest.TestCase):
                 "k", "u", "z-ai/glm-5.2",
                 [{"role": "user", "content": "x"}], ns(fallback=True))
         self.assertEqual(content, "done")
-        self.assertEqual(len(calls), amb.MAX_COMPLETE_ATTEMPTS)
+        self.assertEqual(len(calls), 5)
         self.assertEqual(body["_served_model"], calls[-1]["model"])
 
     def test_attempt_bound_is_a_hard_stop_not_a_spin(self):
