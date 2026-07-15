@@ -24,7 +24,7 @@ jobs:
       - name: Compile check
         run: |
           python -m compileall -q ambient_codex
-          python -m py_compile bin/ambient mcp/ambient_mcp.py
+          python -m py_compile bin/ambient mcp/ambient_mcp.py scripts/ambient-codex-launcher.py
       - name: Import checks
         run: |
           python -c "import importlib.machinery as m; m.SourceFileLoader('a','bin/ambient').load_module()"
@@ -46,7 +46,7 @@ jobs:
       # `bin/ambient` is extensionless, so a bare `ruff check .` used to skip the whole
       # CLI. pyproject's `extend-include` fixes that; name every runtime path anyway.
       - name: Lint
-        run: ruff check bin/ambient mcp ambient_codex tests
+        run: ruff check bin/ambient mcp ambient_codex scripts tests
       - name: Runtime line coverage (80% minimum)
         run: |
           coverage run -m unittest discover -s tests -t . -q

@@ -86,12 +86,12 @@ For a terminal launcher (`ambient-codex setup`, `ambient-codex doctor`, ...):
 "$(codex mcp get ambient --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["transport"]["cwd"].rstrip("/."))')/bin/ambient" link
 ```
 
-`codex plugin add` installs into a version-stamped cache directory, so re-run
-`ambient-codex link` after each plugin update; the old symlink points at the
-previous directory. `ambient-codex doctor` reports a stale launcher as
-`FAIL launcher` with that exact fix. (The bundled `hooks/session-start.sh` heals it
-automatically, but hooks are opt-in so a clean install never triggers Codex's
-hook-trust review.)
+`codex plugin add` installs into a version-stamped cache directory. Run
+`ambient-codex link` once to create a stable terminal launcher: on every
+invocation it resolves Codex's active Ambient plugin, so plugin-cache rotation
+cannot strand later terminal commands. `ambient-codex doctor` reports a missing
+or foreign launcher and points to that command. The bundled session hook safely
+migrates an owned legacy symlink when enabled; hooks are opt-in.
 
 ## Validate Local Development
 

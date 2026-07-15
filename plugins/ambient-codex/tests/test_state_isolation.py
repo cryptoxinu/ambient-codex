@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ CLI = ROOT / "bin" / "ambient"
 CREDENTIALS = ROOT / "ambient_codex" / "credentials.py"
 STRESS_HARNESS = ROOT / "tools" / "stress_test.sh"
 MODEL_MATRIX = ROOT / "tools" / "model_matrix.sh"
+STABLE_LAUNCHER = ROOT / "scripts" / "ambient-codex-launcher.py"
 
 # `posixpath.expanduser` reads HOME; `ntpath.expanduser` ignores it and reads
 # USERPROFILE. Sandboxing only HOME sent these tests at the developer's real
@@ -287,6 +289,50 @@ class TestPathLauncherName(unittest.TestCase):
             self.assertTrue(os.path.lexists(os.path.join(dest, "ambient-codex" + suffix)))
             self.assertFalse(os.path.lexists(os.path.join(dest, "ambient" + suffix)),
                              "Codex claimed the shared `ambient` name on PATH")
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher integration")
+    def test_terminal_launcher_survives_plugin_cache_rotation(self):
+        """A copied launcher must resolve the active cache after its source dies."""
+        with tempfile.TemporaryDirectory() as home:
+            old_root = Path(home) / "cache" / "ambient-codex" / "old"
+            active_root = Path(home) / "cache" / "ambient-codex" / "active"
+            for root in (old_root, active_root):
+                (root / "bin").mkdir(parents=True)
+                shutil.copy2(CLI, root / "bin" / "ambient")
+                shutil.copytree(ROOT / "ambient_codex", root / "ambient_codex")
+                if STABLE_LAUNCHER.exists():
+                    (root / "scripts").mkdir()
+                    shutil.copy2(STABLE_LAUNCHER,
+                                 root / "scripts" / STABLE_LAUNCHER.name)
+
+            launcher_dir = Path(home) / "launcher-bin"
+            launcher_dir.mkdir()
+            install = subprocess.run(
+                [sys.executable, str(old_root / "bin" / "ambient"), "link",
+                 "--dir", str(launcher_dir)],
+                env=sandbox_env(home), capture_output=True, text=True,
+                timeout=120, check=False)
+            self.assertEqual(install.returncode, 0, install.stderr)
+            launcher = launcher_dir / "ambient-codex"
+            self.assertFalse(launcher.is_symlink())
+
+            fake_bin = Path(home) / "fake-bin"
+            fake_bin.mkdir()
+            codex = fake_bin / "codex"
+            codex.write_text(
+                "#!/bin/sh\nprintf '%s\\n' '"
+                + json.dumps({"transport": {"cwd": str(active_root / ".")}})
+                + "'\n",
+                encoding="utf-8")
+            os.chmod(codex, 0o755)
+            shutil.rmtree(old_root)
+            env = sandbox_env(home, PATH=str(fake_bin) + os.pathsep
+                              + os.environ.get("PATH", ""))
+            proc = subprocess.run([str(launcher), "--version"], env=env,
+                                  capture_output=True, text=True, timeout=120,
+                                  check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("ambient", proc.stdout.lower())
 
 
 class TestOpencodeProviderIsNamespaced(unittest.TestCase):

@@ -29,7 +29,7 @@ Commands:
                        settings, doctor, usage (also exposed through MCP)
   mode      [on|off]   Delegate mode toggle (no arg = status). When ON, Codex
                        routes code writing through Ambient for the session
-  link                 Put a stable `ambient` launcher on your PATH
+  link                 Put a stable `ambient-codex` launcher on your PATH
   cache     [action]   Inspect / clear the local chunk cache
   trust-url [url]      Explicitly trust a non-Ambient endpoint (self-hosted)
   version              Print version
@@ -9277,27 +9277,64 @@ def _shim_is_ours(shim_path):
     return _launcher.owned_shim(shim_path, read_text=read_text)
 
 
-def cmd_link(args):
-    """Put a stable `ambient-codex` launcher on PATH. Marketplace installs live in a
-    VERSIONED cache dir that changes on every update — a symlink in
-    ~/.local/bin survives updates (no stable path for
-    `ambient-codex setup`, which needs the user's own terminal).
+def _stable_launcher_asset():
+    """Return the self-contained launcher shipped beside this CLI."""
+    root = os.path.dirname(os.path.dirname(_bundled_cli_path()))
+    asset = os.path.join(root, "scripts", "ambient-codex-launcher.py")
+    if not os.path.isfile(asset):
+        raise OSError("the bundled stable launcher is missing")
+    return asset
 
-    The launcher is deliberately NOT named `ambient`: another Ambient install
-    (e.g. the Claude plugin) owns that name on PATH, and the two must coexist."""
-    target = _this_script()
+
+def _stable_launcher_is_ours(path):
+    def read_text(candidate):
+        with open(candidate, encoding="utf-8") as fh:
+            return fh.read()
+    return _launcher.owned_file(path, read_text=read_text)
+
+
+def _write_stable_launcher(source, destination):
+    """Atomically install the standalone launcher without following links."""
+    temp = destination + f".tmp-{os.getpid()}"
+    try:
+        with open(source, encoding="utf-8") as reader:
+            body = reader.read()
+        with open(temp, "x", encoding="utf-8", newline="") as writer:
+            writer.write(body)
+        os.chmod(temp, 0o755)
+        os.replace(temp, destination)
+    except OSError:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
+
+
+def cmd_link(args):
+    """Put a cache-rotation-safe `ambient-codex` launcher on PATH.
+
+    The copied wrapper resolves the active Codex MCP install when it is invoked,
+    rather than pointing at a versioned plugin-cache directory. The launcher is
+    deliberately not named `ambient`: another Ambient install may own that name.
+    """
     dest_dir = os.path.expanduser(getattr(args, "dir", None) or "~/.local/bin")
     dest = os.path.join(dest_dir, LAUNCHER_NAME)
     if getattr(args, "remove", False):
         if os.name == "nt":   # M14: install wrote ambient.cmd, not a symlink
             shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
-            if os.path.exists(shim):
-                if _shim_is_ours(shim):
-                    os.remove(shim)
-                    print(f"removed: {shim}")
-                else:
+            payload = dest + ".py"
+            if os.path.exists(shim) or os.path.exists(payload):
+                if os.path.exists(shim) and not _shim_is_ours(shim):
                     sys.exit(f"ambient: {shim} is not an ambient-codex launcher "
                              "— refusing to delete it")
+                if os.path.exists(payload) and not _stable_launcher_is_ours(payload):
+                    sys.exit(f"ambient: {payload} is not an ambient-codex launcher "
+                             "— refusing to delete it")
+                for path in (shim, payload):
+                    if os.path.exists(path):
+                        os.remove(path)
+                print(f"removed: {shim}")
             else:
                 print(f"nothing to remove at {shim}")
             return
@@ -9309,15 +9346,18 @@ def cmd_link(args):
                 sys.exit(f"ambient: {dest} points at {os.readlink(dest)} — not "
                          "an ambient-codex launcher, refusing to delete it")
         elif os.path.exists(dest):
-            sys.exit(f"ambient: {dest} is not a symlink — refusing to delete "
-                     "a foreign file")
+            if _stable_launcher_is_ours(dest):
+                os.remove(dest)
+            else:
+                sys.exit(f"ambient: {dest} is not an ambient-codex launcher "
+                         "— refusing to delete a foreign file")
         else:
             print(f"nothing to remove at {dest}")
         return
-    if os.path.exists(dest) and not os.path.islink(dest):
+    if os.path.exists(dest) and not os.path.islink(dest) and not _stable_launcher_is_ours(dest):
         sys.exit(
-            f"ambient: {dest} exists and is not a symlink — refusing to "
-            "overwrite it. Pass --dir DIR to link somewhere else."
+            f"ambient: {dest} exists and is not an ambient-codex launcher — "
+            "refusing to overwrite it. Pass --dir DIR to link somewhere else."
         )
     if os.path.islink(dest) and not _link_is_ours(dest):
         # An existing (or dangling) symlink to a NON-ambient-codex target is a
@@ -9329,14 +9369,21 @@ def cmd_link(args):
         )
     try:
         os.makedirs(dest_dir, exist_ok=True)
+        asset = _stable_launcher_asset()
         if os.name == "nt":  # symlinks need privileges on Windows — shim it
             shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
+            payload = dest + ".py"
+            if os.path.exists(shim) and not _shim_is_ours(shim):
+                sys.exit(f"ambient: {shim} is not an ambient-codex launcher — "
+                         "refusing to overwrite it")
+            if os.path.exists(payload) and not _stable_launcher_is_ours(payload):
+                sys.exit(f"ambient: {payload} is not an ambient-codex launcher — "
+                         "refusing to overwrite it")
+            _write_stable_launcher(asset, payload)
             with open(shim, "w", encoding="utf-8") as fh:
-                # Use the interpreter running THIS command (guaranteed present) —
-                # a bare `python` is off PATH on a stock Windows install (only
-                # `py`) and the Store app-execution alias shadows it with a dead
-                # stub, so `@python` shims are DOA.
-                fh.write(f'@"{sys.executable}" "{target}" %*\r\n')
+                fh.write(
+                    f"@rem {_launcher.STABLE_LAUNCHER_MARKER}\r\n"
+                    f'@"{sys.executable}" "%~dp0{LAUNCHER_NAME}.py" %*\r\n')
             print(f"wrote launcher: {shim}")
             if dest_dir not in os.environ.get("PATH", "").split(os.pathsep):
                 print(
@@ -9345,12 +9392,10 @@ def cmd_link(args):
                     "Environment Variables → Path, or run:\n"
                     f'  setx PATH "%PATH%;{dest_dir}")')
             return
-        tmp = dest + f".tmp-{os.getpid()}"
-        os.symlink(target, tmp)
-        os.replace(tmp, dest)
+        _write_stable_launcher(asset, dest)
     except OSError as err:
         sys.exit(f"ambient: could not create the link ({err})")
-    print(f"linked: {dest} -> {target}")
+    print(f"linked: {dest} -> active Codex Ambient plugin")
     if dest_dir not in os.environ.get("PATH", "").split(os.pathsep):
         print(
             f"note: {dest_dir} is not on your PATH yet — add this to your "
@@ -9713,7 +9758,7 @@ def _configure_link(sub):
     p.add_argument("--dir", default=None, metavar="DIR",
                    help="link directory (default ~/.local/bin)")
     p.add_argument("--remove", action="store_true",
-                   help="remove the launcher symlink")
+                   help="remove the stable launcher")
 
 
 def _configure_uninstall(sub):

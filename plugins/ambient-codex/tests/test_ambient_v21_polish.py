@@ -5,12 +5,10 @@ Pins the two NEW behaviors this batch introduced:
 1. `ambient agent` preserves the secrets-tripwire warning at launch without
    introducing money language into the public terminal surface.
 
-2. hooks/session-start.sh launcher self-heal scoping (S2 LOW): the hook heals
-   $HOME/.local/bin/ambient ONLY — and only when it is a SYMLINK that is
-   either dangling (plugin update GC'd the old versioned dir) or a stale
-   ambient launcher (target exists, basename `ambient`, but not the ACTIVE
-   install). It must NEVER clobber a real (non-symlink) file or a foreign
-   symlink, and it must not create anything when nothing is there. No
+2. hooks/session-start.sh launcher migration scoping: the hook replaces only an
+   owned legacy symlink with the stable launcher after plugin cache rotation. It
+   must NEVER clobber a real (non-symlink) file or a foreign symlink, and it
+   must not create anything when nothing is there. No
    PATH-wide healing: a foreign tool coincidentally named `ambient` elsewhere
    is out of scope by design.
 
@@ -33,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 BIN = os.path.join(ROOT, "bin", "ambient")
 HOOK = os.path.join(ROOT, "hooks", "session-start.sh")
+STABLE_LAUNCHER = os.path.join(ROOT, "scripts", "ambient-codex-launcher.py")
 
 KEY = "sk-test-key-abcdef1234567890"
 
@@ -128,7 +127,7 @@ class TestAgentLaunchWarnings(unittest.TestCase):
                  "SessionStart self-heal is POSIX-sh + symlinks; Windows "
                  "installs use the ambient.cmd shim path instead")
 class TestSessionStartSelfHeal(unittest.TestCase):
-    """S2: the hook heals ONLY $HOME/.local/bin/ambient-codex, only when safe.
+    """The hook migrates ONLY an owned legacy launcher, only when safe.
 
     The launcher is deliberately NOT named `ambient`: another Ambient install owns
     that name on PATH, and the two must be able to coexist.
@@ -146,6 +145,9 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         os.makedirs(os.path.join(self.root, "bin"))
         shutil.copytree(os.path.join(ROOT, "ambient_codex"),
                         os.path.join(self.root, "ambient_codex"))
+        os.makedirs(os.path.join(self.root, "scripts"))
+        shutil.copyfile(STABLE_LAUNCHER,
+                        os.path.join(self.root, "scripts", "ambient-codex-launcher.py"))
         self.active = os.path.join(self.root, "bin", "ambient")
         shutil.copyfile(BIN, self.active)
         os.chmod(self.active, os.stat(self.active).st_mode
@@ -172,9 +174,9 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         self.assertEqual(proc.stdout, "")
         self.assertEqual(proc.stderr, "")
 
-    def test_dangling_symlink_is_relinked_to_a_working_launcher(self):
-        # The post-GC scenario the hook header describes: the old versioned
-        # install dir is gone, the launcher dangles.
+    def test_dangling_symlink_is_migrated_to_the_stable_launcher(self):
+        # The post-GC scenario: an owned versioned-cache symlink must become a
+        # copied launcher rather than another cache symlink.
         gone = os.path.join(os.path.dirname(self.root), "1.9.0", "bin",
                             "ambient")
         os.symlink(gone, self.link)
@@ -182,11 +184,11 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         self.assertFalse(os.path.exists(self.link))  # dangling
         proc = self._run_hook()
         self._assert_silent_ok(proc)
-        self.assertTrue(os.path.islink(self.link))
-        self.assertEqual(os.path.realpath(self.link), self.active)
-        self.assertTrue(os.path.exists(self.link))  # works again
+        self.assertFalse(os.path.islink(self.link))
+        with open(self.link, encoding="utf-8") as fh:
+            self.assertIn("ambient-codex stable launcher v1", fh.read())
 
-    def test_stale_but_existing_launcher_is_repointed_to_active_root(self):
+    def test_stale_existing_symlink_is_migrated_to_the_stable_launcher(self):
         old_root = os.path.join(os.path.dirname(self.root), "1.9.0", "bin")
         os.makedirs(old_root)
         old = os.path.join(old_root, "ambient")
@@ -195,16 +197,17 @@ class TestSessionStartSelfHeal(unittest.TestCase):
         os.symlink(old, self.link)
         proc = self._run_hook()
         self._assert_silent_ok(proc)
-        self.assertTrue(os.path.islink(self.link))
-        self.assertEqual(os.path.realpath(self.link), self.active)
+        self.assertFalse(os.path.islink(self.link))
+        with open(self.link, encoding="utf-8") as fh:
+            self.assertIn("ambient-codex stable launcher v1", fh.read())
 
     def test_healing_is_idempotent(self):
-        os.symlink(self.active, self.link)
+        shutil.copyfile(STABLE_LAUNCHER, self.link)
+        os.chmod(self.link, 0o755)
         before = os.lstat(self.link).st_ino
         proc = self._run_hook()
         self._assert_silent_ok(proc)
         self.assertEqual(os.lstat(self.link).st_ino, before)  # untouched
-        self.assertEqual(os.path.realpath(self.link), self.active)
 
     def test_real_file_is_never_clobbered(self):
         payload = "#!/bin/sh\necho this is the user's own ambient\n"

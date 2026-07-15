@@ -57,7 +57,11 @@ class OutputSchemaTests(unittest.TestCase):
             read_text=lambda _path: '@python "C:\\\\cache\\\\ambient-codex\\\\bin\\\\ambient" %*'))
         self.assertFalse(core.owned_shim(
             "/tmp/foreign.cmd", read_text=lambda _path: '@python "C:\\\\other\\\\tool" %*'))
-        self.assertEqual(core.__all__, ("owned_link", "owned_shim"))
+        self.assertTrue(core.owned_file(
+            "/tmp/ambient-codex", read_text=lambda _path:
+            '# ambient-codex stable launcher v1'))
+        self.assertEqual(core.__all__, (
+            "owned_link", "owned_shim", "owned_file"))
 
     def test_module_allowlists_tokens_and_never_mutates_input(self):
         core = importlib.import_module("ambient_codex.output_schema")
