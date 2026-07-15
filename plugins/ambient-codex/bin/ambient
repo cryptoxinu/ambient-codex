@@ -180,6 +180,7 @@ from ambient_codex import cli_dispatch as _cli_dispatch  # noqa: E402
 from ambient_codex import cli_parser as _cli_parser  # noqa: E402
 from ambient_codex import code_workflow as _code_workflow  # noqa: E402
 from ambient_codex import launcher as _launcher  # noqa: E402
+from ambient_codex import maintenance_commands as _maintenance_commands  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
@@ -8576,74 +8577,23 @@ def cmd_doctor(args):
 
 def _print_empty_usage(args, note, message):
     """Render no local usage as a successful, schema-stable summary."""
-    if getattr(args, "json", False):
-        print(json.dumps({
-            "schema_version": 1,
-            "days": args.days,
-            "models": [],
-            "empty": True,
-            "all_priced": True,
-            "saved_pct": None,
-            "approx_ref_records": 0,
-            "est_records": 0,
-            "unmetered_lanes": ["agent"],
-            "note": note,
-        }, indent=2))
-        return
-    print(message)
-    print(f"note: {note}.")
+    return _maintenance_commands.print_empty_usage(args, note, message)
+
+
+def _usage_dependencies():
+    return _maintenance_commands.UsageDependencies(
+        usage_path=USAGE_PATH, read_config=read_config_file,
+        savings_enabled=_savings_enabled, report=_usage_report,
+        positive_int=_as_pos_int, resolve_api_url=resolve_api_url,
+        fetch_models=fetch_models, model_pricing=model_pricing,
+        resolve_reference_price=resolve_reference_price,
+        network_error=NetworkError, usage_error=usage_exit, now=time.time,
+    )
 
 
 def cmd_usage(args):
     """Local spend summary (Ambient exposes no balance endpoint)."""
-    if args.days <= 0:   # L18: validate the ARG first, before touching the ledger
-        usage_exit("--days must be a positive number of days")
-    conf = read_config_file()
-    show_savings = _savings_enabled(conf)  # OFF by default: calls+tokens only
-    unmetered_note = ("`ambient-codex agent` activity is not included in local "
-                      "usage totals — these totals cover only ambient CLI calls")
-    try:
-        records, bad = _usage_report.read_records(USAGE_PATH)
-    except FileNotFoundError:
-        _print_empty_usage(args, unmetered_note, "No usage recorded yet.")
-        return
-    except OSError as err:
-        sys.exit(f"ambient: cannot read {USAGE_PATH}: {err}")
-    if bad:
-        print(f"ambient: skipped {bad} corrupt usage line(s)", file=sys.stderr)
-    cutoff = time.time() - args.days * 86400
-    recent = _usage_report.filter_recent(
-        records, cutoff, lambda r: _as_pos_int(r.get("ts"), 0))
-    if not recent:
-        _print_empty_usage(args, unmetered_note,
-                           f"No usage in the last {args.days} days.")
-        return
-    pricing = {}
-    try:
-        api_url = resolve_api_url(conf)
-        for m in fetch_models(api_url, "unused"):
-            # model_pricing semantics: zero/absent pricing is UNPRICED, not
-            # free — a 0 "cost" here would fabricate a near-100% saving.
-            p = model_pricing([m], m.get("id"))
-            if p:
-                pricing[m["id"]] = p
-    except (NetworkError, SystemExit):
-        pass  # offline: stored per-record costs still work; rest shows n/a
-    default_ref = resolve_reference_price(conf)
-    summary = _usage_report.summarize_records(
-        recent, pricing=pricing, default_reference=default_ref,
-        positive_int=_as_pos_int)
-    if getattr(args, "json", False):
-        # Relative % savings only — NO dollar figures and NO per-token
-        # reference prices (founder policy: billing is plan-dependent).
-        print(json.dumps(_usage_report.usage_payload(
-            summary, days=args.days, show_savings=show_savings,
-            note=unmetered_note), indent=2))
-        return
-    for line in _usage_report.usage_lines(
-            summary, days=args.days, show_savings=show_savings,
-            note=unmetered_note):
-        print(line)
+    return _maintenance_commands.run_usage(args, _usage_dependencies())
 
 
 def _this_script():
@@ -8815,37 +8765,9 @@ def cmd_link(args):
 def cmd_cache(args):
     """Local data lifecycle: inspect or purge the chunk cache (entries hold
     model output that quotes your code; TTL 7 days, 0600)."""
-    try:
-        entries = [e for e in os.listdir(CACHE_DIR) if e.endswith(".json")]
-    except OSError:
-        entries = []
-    if args.action == "clear":
-        ot = getattr(args, "older_than", None)
-        if ot is not None and ot < 0:   # M27: a negative cutoff is in the FUTURE
-            usage_exit("--older-than must be a non-negative number of days "
-                       "(a negative value would clear the entire cache)")
-        cutoff = (time.time() - ot * 86400 if ot else None)
-        removed = 0
-        for e in entries:
-            p = os.path.join(CACHE_DIR, e)
-            try:
-                if cutoff is not None and os.stat(p).st_mtime > cutoff:
-                    continue
-                os.unlink(p)
-                removed += 1
-            except OSError:
-                pass
-        print(f"cache: removed {removed} of {len(entries)} entries "
-              f"({CACHE_DIR})")
-        return
-    total = 0
-    for e in entries:
-        try:
-            total += os.stat(os.path.join(CACHE_DIR, e)).st_size
-        except OSError:
-            pass
-    print(f"cache: {len(entries)} entries, {total:,} bytes at {CACHE_DIR}")
-    print("clear with: ambient-codex cache clear [--older-than DAYS]")
+    return _maintenance_commands.run_cache(
+        args, _maintenance_commands.CacheDependencies(
+            cache_dir=CACHE_DIR, usage_error=usage_exit, now=time.time))
 
 
 OPENCODE_CONFIG_PATH = os.path.expanduser("~/.config/opencode/opencode.json")
@@ -9079,74 +9001,14 @@ def cmd_uninstall(args):
 
     Removing the plugin itself is a Codex action, so we print the command rather than
     run it."""
-    purge = getattr(args, "purge", False)
-    # Defence in depth: _state_dir() already refuses a foreign root at import, but
-    # never scrub or delete without re-confirming STATE_DIR is ours right here.
-    if foreign_root(STATE_DIR) is not None:
-        sys.exit(f"ambient: refusing to uninstall — state root {STATE_DIR} is inside "
-                 "another Ambient install's tree.")
-    if not getattr(args, "yes", False) and sys.stdin.isatty():
-        print("This removes Ambient Codex's API key and PATH launcher"
-              + (f", and deletes {STATE_DIR}" if purge else "")
-              + ".")
-        print("It does NOT touch any other Ambient install.")
-        try:
-            if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
-                print("Cancelled.")
-                return
-        except (EOFError, KeyboardInterrupt):
-            print("\nCancelled.")
-            return
-
-    # 1. Key: keychain item (ambient-codex only) + the env-file entry.
-    kc_ok = keychain_delete()
-    save_config_values({"AMBIENT_API_KEY": None, "AMBIENT_KEY_BACKEND": None})
-    if kc_ok and not keychain_read():
-        print("• API key removed (keychain + env file).")
-    else:
-        print(f"• Could not fully remove the key from the OS keychain (locked?). "
-              f"Remove it manually: Keychain Access → search '{KEYCHAIN_SERVICE}'.",
-              file=sys.stderr)
-
-    # 2. PATH launcher: cmd_link refuses anything not ours. `--dir` lets the user
-    # point at a launcher they created with `link --dir`; the default covers
-    # ~/.local/bin. Launchers linked into OTHER dirs must be removed with that dir.
-    link_dir = getattr(args, "dir", None)
-    try:
-        cmd_link(argparse.Namespace(remove=True, dir=link_dir))
-    except SystemExit as exc:
-        print(f"• Launcher not removed: {exc}", file=sys.stderr)
-    if link_dir is None:
-        print("• If you ran `ambient-codex link --dir <other>`, remove that one "
-              "with `ambient-codex uninstall --dir <other>`.")
-
-    # 3. State dir — ONLY with --purge, and ONLY if it is truly ours.
-    if purge:
-        root = os.path.realpath(STATE_DIR)
-        if foreign_root(root) is not None:
-            print(f"• Refusing to delete {root} — it is inside another install's tree.",
-                  file=sys.stderr)
-        elif os.path.isdir(root):
-            import shutil
-            errors = []
-            shutil.rmtree(root, onerror=lambda fn, path, exc: errors.append(path))
-            if not os.path.exists(root) and not errors:
-                print(f"• Deleted all state: {root}")
-            else:
-                print(f"• Could not fully delete {root} "
-                      f"({len(errors)} item(s) left) — remove it manually.",
-                      file=sys.stderr)
-        else:
-            print(f"• No state dir to delete ({root}).")
-    else:
-        print(f"• Kept your settings and usage history in {STATE_DIR} "
-              "(run with --purge to delete them).")
-
-    # 4. The plugin itself is Codex's to remove.
-    print("\nTo remove the plugin from Codex, run:")
-    print("  codex plugin remove ambient-codex@ambient-codex")
-    print("Git audit hooks, if you installed any, stay until you run "
-          f"`{LAUNCHER_NAME} audit --uninstall-hook <hook>` in each repo.")
+    return _maintenance_commands.run_uninstall(
+        args, _maintenance_commands.UninstallDependencies(
+            state_dir=STATE_DIR, foreign_root=foreign_root,
+            keychain_delete=keychain_delete, keychain_read=keychain_read,
+            save_config=save_config_values, command_link=cmd_link,
+            launcher_name=LAUNCHER_NAME,
+            keychain_service=KEYCHAIN_SERVICE,
+        ))
 
 
 def _configure_cache(sub):
