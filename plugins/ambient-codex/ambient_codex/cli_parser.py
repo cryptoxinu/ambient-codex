@@ -200,5 +200,229 @@ def configure_build(sub, *, add_common):
     add_common(p)
 
 
-__all__ = ("add_common_flags", "add_best_of_flag", "configure_audit",
-           "configure_map", "configure_build")
+def configure_version(sub):
+    sub.add_parser("version", help="print version")
+
+
+def configure_models(sub):
+    parser = sub.add_parser("models", help="list models")
+    parser.add_argument("--json", action="store_true",
+                        help="machine-readable list")
+    parser.add_argument("--all", action="store_true",
+                        help="include models hidden by your curation")
+
+
+def configure_curate(sub):
+    parser = sub.add_parser(
+        "curate", help="pick which models the menus surface (hide/show/only/note)")
+    parser.add_argument(
+        "verb", nargs="?", choices=["status", "hide", "show", "only", "note",
+                                     "reset"], default="status",
+        help="what to do (default: show current curation)")
+    parser.add_argument(
+        "ids", nargs="*", help="model ids or globs (e.g. qwen/*); for `note`: "
+                                "<id> then the note text")
+
+
+def configure_setup(sub):
+    parser = sub.add_parser("setup", help="first-run: store + verify API key")
+    parser.add_argument("--key-stdin", action="store_true", help="read key from stdin")
+    parser.add_argument("--force", action="store_true", help="replace existing key")
+    parser.add_argument("--file", action="store_true",
+                        help="store in the env file instead of the macOS Keychain")
+    parser.add_argument("--remove", action="store_true",
+                        help="delete the stored key (Keychain + env file) — clean offboarding")
+
+
+def configure_link(sub):
+    parser = sub.add_parser(
+        "link", help="put a stable `ambient-codex` launcher on your PATH (~/.local/bin)")
+    parser.add_argument("--dir", default=None, metavar="DIR",
+                        help="link directory (default ~/.local/bin)")
+    parser.add_argument("--remove", action="store_true",
+                        help="remove the stable launcher")
+
+
+def configure_uninstall(sub, *, state_dir):
+    parser = sub.add_parser(
+        "uninstall", help="remove THIS install's key, launcher, and (with --purge) all its state")
+    parser.add_argument("--purge", action="store_true",
+                        help=f"also delete the whole state dir ({state_dir})")
+    parser.add_argument("--dir", default=None, metavar="DIR",
+                        help="launcher dir to un-link (default ~/.local/bin)")
+    parser.add_argument("--yes", action="store_true",
+                        help="skip the confirmation prompt")
+
+
+def configure_cache(sub):
+    parser = sub.add_parser("cache", help="inspect or clear the local chunk cache")
+    parser.add_argument("action", nargs="?", choices=["status", "clear"],
+                        default="status", help="status (default) or clear")
+    parser.add_argument("--older-than", type=int, default=None, metavar="DAYS",
+                        help="clear only entries older than DAYS")
+
+
+def configure_trust_url(sub):
+    parser = sub.add_parser(
+        "trust-url", help="explicitly trust a non-Ambient API endpoint (self-hosted gateway)")
+    parser.add_argument("url", nargs="?", help="https:// endpoint to trust")
+    parser.add_argument("--reset", action="store_true",
+                        help="clear the trusted endpoint (back to api.ambient.xyz)")
+
+
+def configure_usage(sub):
+    parser = sub.add_parser(
+        "usage", help="local token summary + optional relative savings (when enabled)")
+    parser.add_argument("--days", type=int, default=30,
+                        help="look-back window in days (default 30)")
+    parser.add_argument("--json", action="store_true",
+                        help="machine-readable summary")
+
+
+def configure_mode(sub):
+    parser = sub.add_parser(
+        "mode", help="delegate mode: on / off / takeover / status")
+    parser.add_argument(
+        "state", nargs="?", choices=["on", "off", "takeover"], default=None,
+        help="off · on (Ambient writes code, Codex plans/reviews) · takeover "
+             "(Ambient-first for substantive work); omit to print current status")
+
+
+def configure_config(sub):
+    parser = sub.add_parser(
+        "config", help="view or change your Ambient settings (no env vars, no file editing)")
+    parser.add_argument("verb", nargs="?", choices=["status", "set", "unset"],
+                        default="status",
+                        help="status (default) · set <name> <value> · unset <name>")
+    parser.add_argument("name", nargs="?",
+                        help="setting name (see: ambient-codex config)")
+    parser.add_argument("value", nargs="?", help="new value (for set)")
+
+
+def configure_control(sub, *, parser_class):
+    parser = sub.add_parser(
+        "control", help="Codex-native control panel: status, mode, models, key, settings")
+    parser.add_argument("--json", action="store_true",
+                        help="machine-readable native control snapshot")
+    parser.add_argument("--all-models", action="store_true",
+                        help="include models hidden by local curation")
+    parser.add_argument("--offline", action="store_true",
+                        help="skip catalog fetch and show local state only")
+    actions = parser.add_subparsers(dest="control_action", parser_class=parser_class)
+    status = actions.add_parser("status", help="show the native control panel")
+    status.add_argument("--json", action="store_true",
+                        help="machine-readable native control snapshot")
+    status.add_argument("--all-models", action="store_true",
+                        help="include models hidden by local curation")
+    status.add_argument("--offline", action="store_true",
+                        help="skip catalog fetch and show local state only")
+    actions.add_parser("menu", help="interactive terminal menu")
+    mode = actions.add_parser("mode", help="set delegate mode")
+    mode.add_argument("state", choices=["off", "on", "takeover"])
+    model = actions.add_parser("model", help="set default model lanes")
+    model.add_argument("model_id", help="model id or unique substring")
+    model.add_argument("--chat", action="store_true",
+                       help="only set the chat/audit lane")
+    model.add_argument("--code", action="store_true",
+                       help="only set the code/build/agent lane")
+    model.add_argument("--all", action="store_true",
+                       help="allow curated-out models in lookup")
+    key = actions.add_parser("key", help="API key status, setup, rotation, removal")
+    key.add_argument("key_action", nargs="?",
+                     choices=["status", "setup", "add", "rotate", "remove"],
+                     default="status")
+    key.add_argument("--file", action="store_true",
+                     help="store key in the env file instead of the OS secret store")
+    setting = actions.add_parser("setting", help="set or unset a config knob")
+    setting.add_argument("name", help="setting name (see: ambient-codex control)")
+    setting.add_argument("value", nargs="?", help="new value")
+    setting.add_argument("--unset", action="store_true",
+                         help="remove the setting and use the default")
+    actions.add_parser("doctor", help="run diagnostics")
+    usage = actions.add_parser("usage", help="show local usage")
+    usage.add_argument("--days", type=int, default=30)
+    usage.add_argument("--json", action="store_true")
+
+
+def configure_doctor(sub):
+    sub.add_parser("doctor", help="diagnose key/funds/model/network/service issues")
+
+
+def configure_use(sub):
+    parser = sub.add_parser("use", help="pick the sticky default model")
+    parser.add_argument(
+        "model_id", nargs="?", help="model id (omit for interactive menu); "
+                                    "'auto[:cheapest|:largest]' stores a per-call "
+                                    "delegation instead of a fixed model")
+    parser.add_argument("--chat", action="store_true",
+                        help="only set the chat/audit default")
+    parser.add_argument("--code", action="store_true",
+                        help="only set the code/agent default")
+    parser.add_argument("--all", action="store_true",
+                        help="pick from every model, including curated-out ones")
+    parser.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
+
+
+def configure_ask(sub, *, add_common, add_best_of):
+    parser = sub.add_parser(
+        "ask", help="one-shot completion",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""examples:
+  ambient-codex ask "explain CRDTs in two paragraphs"
+  cat design.md | ambient-codex ask "list the open questions" -
+  ambient-codex ask "summarize" --json           (stable machine envelope)""")
+    parser.add_argument("prompt", nargs="*", help="the question; add '-' to ALSO "
+                        "read stdin (cat doc.txt | ambient-codex ask \"summarize\" -)")
+    parser.add_argument("-s", "--system", help="system prompt")
+    parser.add_argument("--allow-secrets", action="store_true",
+                        help="bypass the credentials tripwire (false positives only)")
+    parser.add_argument("--json", action="store_true",
+                        help="emit a stable JSON envelope instead of prose")
+    parser.add_argument("--consensus", metavar="M1,M2",
+                        help="ask the SAME question on several explicitly-named "
+                             "models and report each answer plus an "
+                             "agreement/divergence note")
+    add_best_of(parser)
+    add_common(parser)
+
+
+def configure_code(sub, *, add_common, add_best_of):
+    parser = sub.add_parser("code", help="code generation")
+    parser.add_argument("task", nargs="*", help="what to build, in plain words")
+    parser.add_argument("-f", "--context", action="append", metavar="FILE",
+                        help="context file the generation should match (repeatable)")
+    parser.add_argument("--allow-secrets", action="store_true",
+                        help="bypass the credentials tripwire (false positives only)")
+    parser.add_argument("--json", action="store_true",
+                        help="emit a stable JSON envelope instead of prose")
+    add_best_of(parser)
+    add_common(parser)
+
+
+def configure_chat(sub, *, add_common):
+    parser = sub.add_parser(
+        "chat", help="interactive REPL on Ambient — streams each reply with a "
+                     "per-turn token receipt and optional savings; "
+                     "/model /clear /help /exit")
+    parser.add_argument("-s", "--system", help="system prompt for the whole session")
+    add_common(parser)
+
+
+def configure_agent(sub):
+    parser = sub.add_parser(
+        "agent", help="interactive agentic terminal on Ambient (opencode TUI). "
+                      "For headless builds Codex can review, use: ambient-codex build")
+    parser.add_argument("-m", "--model", default=None,
+                        help="model id for this session only")
+    parser.add_argument("agent_args", nargs=argparse.REMAINDER,
+                        help="passed straight to opencode; first arg 'run' = "
+                             "headless one-task mode")
+
+
+def configure_codex(sub):
+    parser = sub.add_parser("codex", help="blocked upstream; see `ambient-codex agent`")
+    parser.add_argument("codex_args", nargs=argparse.REMAINDER)
+
+
+__all__ = tuple(name for name in globals()
+                if name.startswith("configure_") or name.startswith("add_"))

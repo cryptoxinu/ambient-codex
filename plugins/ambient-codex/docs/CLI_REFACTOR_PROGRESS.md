@@ -117,6 +117,7 @@ bugs, verification, commits, or the next action changes.
 | 5B-1 | Agent provider + command construction | Complete | local checkpoint | `agent_config.py`; immutable namespaced provider merge and credential-free OpenCode argv construction preserve facade-controlled environment/process ownership |
 | 5B-2 | Launcher ownership checks | Complete | local checkpoint | `launcher.py`; injected symlink/shim ownership predicates preserve facade filesystem patch seams |
 | 5C-1 | Large workflow parser construction | Complete | local checkpoint | `cli_parser.py`; shared model/progress flags plus audit/map/build parsers are module-owned with facade wrappers preserving monkeypatch seams |
+| 5C-2 | Remaining command parser construction | Complete | local checkpoint | `cli_parser.py`; control, setup, configuration, chat/code/ask, agent, and utility parsers are module-owned while dynamic state and custom error-parser seams remain facade-injected |
 
 ## Phase 0 checklist
 

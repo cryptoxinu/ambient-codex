@@ -9380,63 +9380,27 @@ def _add_best_of_flag(parser):
 
 
 def _configure_version(sub):
-    sub.add_parser("version", help="print version")
+    return _cli_parser.configure_version(sub)
 
 
 def _configure_models(sub):
-    p = sub.add_parser("models", help="list models")
-    p.add_argument("--json", action="store_true", help="machine-readable list")
-    p.add_argument("--all", action="store_true",
-                   help="include models hidden by your curation")
+    return _cli_parser.configure_models(sub)
 
 
 def _configure_curate(sub):
-    p = sub.add_parser(
-        "curate", help="pick which models the menus surface (hide/show/only/note)"
-    )
-    p.add_argument(
-        "verb", nargs="?",
-        choices=["status", "hide", "show", "only", "note", "reset"],
-        default="status", help="what to do (default: show current curation)")
-    p.add_argument("ids", nargs="*",
-                   help="model ids or globs (e.g. qwen/*); for `note`: "
-                        "<id> then the note text")
+    return _cli_parser.configure_curate(sub)
 
 
 def _configure_setup(sub):
-    p = sub.add_parser("setup", help="first-run: store + verify API key")
-    p.add_argument("--key-stdin", action="store_true", help="read key from stdin")
-    p.add_argument("--force", action="store_true", help="replace existing key")
-    p.add_argument(
-        "--file", action="store_true",
-        help="store in the env file instead of the macOS Keychain",
-    )
-    p.add_argument(
-        "--remove", action="store_true",
-        help="delete the stored key (Keychain + env file) — clean offboarding",
-    )
+    return _cli_parser.configure_setup(sub)
 
 
 def _configure_link(sub):
-    p = sub.add_parser(
-        "link", help="put a stable `ambient-codex` launcher on your PATH (~/.local/bin)"
-    )
-    p.add_argument("--dir", default=None, metavar="DIR",
-                   help="link directory (default ~/.local/bin)")
-    p.add_argument("--remove", action="store_true",
-                   help="remove the stable launcher")
+    return _cli_parser.configure_link(sub)
 
 
 def _configure_uninstall(sub):
-    p = sub.add_parser(
-        "uninstall",
-        help="remove THIS install's key, launcher, and (with --purge) all its state")
-    p.add_argument("--purge", action="store_true",
-                   help=f"also delete the whole state dir ({STATE_DIR})")
-    p.add_argument("--dir", default=None, metavar="DIR",
-                   help="launcher dir to un-link (default ~/.local/bin)")
-    p.add_argument("--yes", action="store_true",
-                   help="skip the confirmation prompt")
+    return _cli_parser.configure_uninstall(sub, state_dir=STATE_DIR)
 
 
 def cmd_uninstall(args):
@@ -9517,155 +9481,40 @@ def cmd_uninstall(args):
 
 
 def _configure_cache(sub):
-    p = sub.add_parser(
-        "cache", help="inspect or clear the local chunk cache"
-    )
-    p.add_argument("action", nargs="?", choices=["status", "clear"],
-                   default="status", help="status (default) or clear")
-    p.add_argument("--older-than", type=int, default=None, metavar="DAYS",
-                   help="clear only entries older than DAYS")
+    return _cli_parser.configure_cache(sub)
 
 
 def _configure_trust_url(sub):
-    p = sub.add_parser(
-        "trust-url",
-        help="explicitly trust a non-Ambient API endpoint (self-hosted gateway)",
-    )
-    p.add_argument("url", nargs="?", help="https:// endpoint to trust")
-    p.add_argument("--reset", action="store_true",
-                   help="clear the trusted endpoint (back to api.ambient.xyz)")
+    return _cli_parser.configure_trust_url(sub)
 
 
 def _configure_usage(sub):
-    p = sub.add_parser(
-        "usage",
-        help="local token summary + optional relative savings (when enabled)")
-    p.add_argument("--days", type=int, default=30,
-                   help="look-back window in days (default 30)")
-    p.add_argument("--json", action="store_true", help="machine-readable summary")
+    return _cli_parser.configure_usage(sub)
 
 
 def _configure_mode(sub):
-    p = sub.add_parser("mode", help="delegate mode: on / off / takeover / status")
-    p.add_argument("state", nargs="?", choices=["on", "off", "takeover"],
-                   default=None,
-                   help="off · on (Ambient writes code, Codex plans/reviews) · "
-                        "takeover (Ambient-first for substantive work); "
-                        "omit to print current status")
+    return _cli_parser.configure_mode(sub)
 
 
 def _configure_config(sub):
-    p = sub.add_parser(
-        "config",
-        help="view or change your Ambient settings (no env vars, no file editing)")
-    p.add_argument("verb", nargs="?", choices=["status", "set", "unset"],
-                   default="status",
-                   help="status (default) · set <name> <value> · unset <name>")
-    p.add_argument("name", nargs="?", help="setting name (see: ambient-codex config)")
-    p.add_argument("value", nargs="?", help="new value (for set)")
+    return _cli_parser.configure_config(sub)
 
 
 def _configure_control(sub):
-    p = sub.add_parser(
-        "control",
-        help="Codex-native control panel: status, mode, models, key, settings")
-    p.add_argument("--json", action="store_true",
-                   help="machine-readable native control snapshot")
-    p.add_argument("--all-models", action="store_true",
-                   help="include models hidden by local curation")
-    p.add_argument("--offline", action="store_true",
-                   help="skip catalog fetch and show local state only")
-    actions = p.add_subparsers(dest="control_action", parser_class=_Parser)
-
-    status = actions.add_parser("status", help="show the native control panel")
-    status.add_argument("--json", action="store_true",
-                        help="machine-readable native control snapshot")
-    status.add_argument("--all-models", action="store_true",
-                        help="include models hidden by local curation")
-    status.add_argument("--offline", action="store_true",
-                        help="skip catalog fetch and show local state only")
-    actions.add_parser("menu", help="interactive terminal menu")
-
-    mode = actions.add_parser("mode", help="set delegate mode")
-    mode.add_argument("state", choices=["off", "on", "takeover"])
-
-    model = actions.add_parser("model", help="set default model lanes")
-    model.add_argument("model_id", help="model id or unique substring")
-    model.add_argument("--chat", action="store_true",
-                       help="only set the chat/audit lane")
-    model.add_argument("--code", action="store_true",
-                       help="only set the code/build/agent lane")
-    model.add_argument("--all", action="store_true",
-                       help="allow curated-out models in lookup")
-
-    key = actions.add_parser("key", help="API key status, setup, rotation, removal")
-    key.add_argument("key_action", nargs="?",
-                     choices=["status", "setup", "add", "rotate", "remove"],
-                     default="status")
-    key.add_argument("--file", action="store_true",
-                     help="store key in the env file instead of the OS secret store")
-
-    setting = actions.add_parser("setting", help="set or unset a config knob")
-    setting.add_argument("name", help="setting name (see: ambient-codex control)")
-    setting.add_argument("value", nargs="?", help="new value")
-    setting.add_argument("--unset", action="store_true",
-                         help="remove the setting and use the default")
-
-    actions.add_parser("doctor", help="run diagnostics")
-    usage = actions.add_parser("usage", help="show local usage")
-    usage.add_argument("--days", type=int, default=30)
-    usage.add_argument("--json", action="store_true")
+    return _cli_parser.configure_control(sub, parser_class=_Parser)
 
 
 def _configure_doctor(sub):
-    sub.add_parser("doctor", help="diagnose key/funds/model/network/service issues")
+    return _cli_parser.configure_doctor(sub)
 
 
 def _configure_use(sub):
-    p = sub.add_parser("use", help="pick the sticky default model")
-    p.add_argument(
-        "model_id", nargs="?",
-        help="model id (omit for interactive menu); 'auto[:cheapest|:largest]' "
-             "stores a per-call delegation instead of a fixed model")
-    p.add_argument("--chat", action="store_true",
-                   help="only set the chat/audit default")
-    p.add_argument("--code", action="store_true",
-                   help="only set the code/agent default")
-    p.add_argument("--all", action="store_true",
-                   help="pick from every model, including curated-out ones")
-    # Accepted no-op: `use` never spends, but every other command takes --yes,
-    # so a uniform script/skill flow that passes it must not error (was exit 64).
-    p.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
+    return _cli_parser.configure_use(sub)
 
 
 def _configure_ask(sub):
-    p = sub.add_parser(
-        "ask", help="one-shot completion",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""examples:
-  ambient-codex ask "explain CRDTs in two paragraphs"
-  cat design.md | ambient-codex ask "list the open questions" -
-  ambient-codex ask "summarize" --json           (stable machine envelope)""")
-    p.add_argument(
-        "prompt", nargs="*",
-        help="the question; add '-' to ALSO read stdin "
-             "(cat doc.txt | ambient-codex ask \"summarize\" -)")
-    p.add_argument("-s", "--system", help="system prompt")
-    p.add_argument(
-        "--allow-secrets", action="store_true",
-        help="bypass the credentials tripwire (false positives only)",
-    )
-    p.add_argument(
-        "--json", action="store_true",
-        help="emit a stable JSON envelope instead of prose",
-    )
-    p.add_argument(
-        "--consensus", metavar="M1,M2",
-        help="ask the SAME question on several explicitly-named models and "
-             "report each answer plus an agreement/divergence note",
-    )
-    _add_best_of_flag(p)
-    add_common_flags(p)
+    return _cli_parser.configure_ask(
+        sub, add_common=add_common_flags, add_best_of=_add_best_of_flag)
 
 
 def _configure_audit(sub):
@@ -9678,31 +9527,12 @@ def _configure_map(sub):
 
 
 def _configure_code(sub):
-    p = sub.add_parser("code", help="code generation")
-    p.add_argument("task", nargs="*", help="what to build, in plain words")
-    p.add_argument("-f", "--context", action="append", metavar="FILE",
-                   help="context file the generation should match (repeatable)")
-    p.add_argument(
-        "--allow-secrets", action="store_true",
-        help="bypass the credentials tripwire (false positives only)",
-    )
-    p.add_argument(
-        "--json", action="store_true",
-        help="emit a stable JSON envelope instead of prose",
-    )
-    _add_best_of_flag(p)
-    add_common_flags(p)
+    return _cli_parser.configure_code(
+        sub, add_common=add_common_flags, add_best_of=_add_best_of_flag)
 
 
 def _configure_chat(sub):
-    p = sub.add_parser(
-        "chat",
-        help="interactive REPL on Ambient — streams each reply with a "
-             "per-turn token receipt and optional savings; /model /clear /help /exit",
-    )
-    p.add_argument("-s", "--system",
-                   help="system prompt for the whole session")
-    add_common_flags(p)
+    return _cli_parser.configure_chat(sub, add_common=add_common_flags)
 
 
 def _configure_build(sub):
@@ -9710,21 +9540,11 @@ def _configure_build(sub):
 
 
 def _configure_agent(sub):
-    p = sub.add_parser(
-        "agent",
-        help="interactive agentic terminal on Ambient (opencode TUI). For "
-             "headless builds Codex can review, use: ambient-codex build",
-    )
-    p.add_argument("-m", "--model", default=None,
-                   help="model id for this session only")
-    p.add_argument("agent_args", nargs=argparse.REMAINDER,
-                   help="passed straight to opencode; first arg 'run' = "
-                        "headless one-task mode")
+    return _cli_parser.configure_agent(sub)
 
 
 def _configure_codex(sub):
-    p = sub.add_parser("codex", help="blocked upstream; see `ambient-codex agent`")
-    p.add_argument("codex_args", nargs=argparse.REMAINDER)
+    return _cli_parser.configure_codex(sub)
 
 
 def _cmd_version(args):

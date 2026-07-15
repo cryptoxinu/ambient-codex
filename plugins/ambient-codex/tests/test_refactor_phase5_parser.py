@@ -45,6 +45,30 @@ class WorkflowParserTests(unittest.TestCase):
         mapped = parser.parse_args(["map", "summarize", "a.py", "--json"])
         self.assertTrue(mapped.json)
 
+    def test_control_and_small_workflow_parsers_are_module_owned(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command", required=True)
+        common = lambda target: self.core.add_common_flags(  # noqa: E731
+            target, default_timeout_s=300, max_parallel_chunks=4)
+        best = lambda target: self.core.add_best_of_flag(  # noqa: E731
+            target, best_of_max=8)
+        self.core.configure_control(
+            sub, parser_class=argparse.ArgumentParser)
+        self.core.configure_ask(
+            sub, add_common=common, add_best_of=best)
+        self.core.configure_code(
+            sub, add_common=common, add_best_of=best)
+        self.core.configure_chat(sub, add_common=common)
+
+        mode = parser.parse_args(["control", "mode", "takeover"])
+        self.assertEqual(mode.state, "takeover")
+        ask = parser.parse_args(["ask", "hello", "--best-of", "2"])
+        self.assertEqual(ask.best_of, 2)
+        code = parser.parse_args(["code", "build", "--json"])
+        self.assertTrue(code.json)
+        chat = parser.parse_args(["chat", "--no-progress"])
+        self.assertFalse(chat.progress)
+
 
 if __name__ == "__main__":
     unittest.main()
