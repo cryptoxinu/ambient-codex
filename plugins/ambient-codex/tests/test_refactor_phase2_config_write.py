@@ -240,6 +240,17 @@ class InternalConfigWriteTests(unittest.TestCase):
             self.assertEqual(len(attempts), 2)
             self.assertFalse(lock_path.exists())
 
+    def test_windows_delete_pending_permission_race_is_still_contention(self):
+        config_store = importlib.import_module("ambient_codex.config_store")
+        with tempfile.TemporaryDirectory() as td:
+            missing_lock = Path(td) / ".env.lock"
+            error = PermissionError(13, "sharing violation", str(missing_lock))
+
+            self.assertTrue(config_store._portable_lock_is_contended(
+                error, str(missing_lock), "nt"))
+            self.assertFalse(config_store._portable_lock_is_contended(
+                error, str(missing_lock), "posix"))
+
     def test_fallback_lock_write_and_cleanup_errors_fail_closed(self):
         config_store = importlib.import_module("ambient_codex.config_store")
         with tempfile.TemporaryDirectory() as td:

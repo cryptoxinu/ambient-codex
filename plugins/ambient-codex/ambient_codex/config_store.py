@@ -124,11 +124,17 @@ def _posix_config_lock(lock_path, fcntl_module, abort):
             os.close(descriptor)
 
 
-def _portable_lock_is_contended(error, lock_path):
+def _portable_lock_is_contended(error, lock_path, platform_name=None):
     if isinstance(error, FileExistsError):
         return True
     if not isinstance(error, PermissionError):
         return False
+    # Windows can keep a just-closed file in delete-pending state: O_EXCL then
+    # raises PermissionError even though lexists() already reports false. Treat
+    # that bounded transient exactly like an existing lock; the 10-second wait
+    # still fails closed for a genuinely unwritable directory.
+    if (platform_name or os.name) == "nt":
+        return True
     try:
         return os.path.lexists(lock_path)
     except OSError:
