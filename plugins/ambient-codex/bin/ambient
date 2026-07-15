@@ -7754,28 +7754,13 @@ def cmd_build(args, api_key, api_url, conf):
     # surfaced as a warning, but NOT counted as a failure — a chatty extra file
     # must not turn a fully-delivered plan into a partial/exit-2 result.
     dropped = []
-    todo = [p for p in plan if p["path"] not in done]
-    est = {p["path"]: max(200, _as_pos_int(p.get("est_lines"), 50) * 40)
-           for p in todo}
-    # Answer-share heuristic: the output budget covers reasoning + JSON quoting
-    # overhead; keep batches well under it so truncation is the exception.
-    batch_budget = max(4000, int(args.max_tokens * CHARS_PER_TOKEN * 0.35))
-    batches, cur, cur_sz = [], [], 0
-    for p in todo:
-        if cur and cur_sz + est[p["path"]] > batch_budget:
-            batches.append(cur)
-            cur, cur_sz = [], 0
-        cur.append(p)
-        cur_sz += est[p["path"]]
-    if cur:
-        batches.append(cur)
-    plan_overview = "\n".join(
-        f"  {p['path']} — {p.get('purpose', '')}" for p in plan)
     # Bounded retry tree: splits + per-file retries can multiply calls far past
     # len(batches), so the gate must price the CAP, and the loop must enforce
     # it — a model that keeps omitting files can't drive unbounded spend
     #.
-    max_gen_calls = 3 * max(1, len(todo)) + 4
+    batches, max_gen_calls = _build_workflow.generation_batches(
+        plan, done_paths=done, max_tokens=args.max_tokens,
+        chars_per_token=CHARS_PER_TOKEN)
     gen_calls = 0
     # Generation is a stream of per-file JSON objects, not one JSON object. A
     # response_format schema would force the old wrapper shape and make
@@ -7796,46 +7781,15 @@ def cmd_build(args, api_key, api_url, conf):
                                              "resume where this stopped"})
             continue
         want = [p["path"] for p in batch]
-
-        def _mk_user(overview, already_blk, ctx, compact=False):
-            targets = "\n".join(
-                f"  {p['path']} — {p.get('purpose', '')}" for p in batch)
-            if compact:
-                u = (f"TASK: {task}\n\nRECOVERY GENERATION: a prior attempt "
-                     "spent its output on reasoning before emitting these files. "
-                     "Generate ONLY these complete file records now:\n"
-                     f"{targets}")
-                return u + (f"\n\nContext:\n{ctx}" if ctx else "")
-            u = (f"TASK: {task}\n\nFULL PLAN (for cross-file consistency):\n"
-                 f"{overview}\n\nALREADY GENERATED (do not repeat):\n"
-                 f"{already_blk}\n\nGENERATE NOW — complete content for exactly "
-                 f"these files:\n{targets}")
-            return u + (f"\n\nContext:\n{ctx}" if ctx else "")
-
-        already = "\n".join(f"  {k}" for k in done) or "  (none yet)"
-        compact_recovery = any(p["path"] in recovery_paths for p in batch)
-        user = _mk_user(plan_overview, already, context, compact_recovery)
         # M44: keep the generation prompt within the model's single-shot window.
         # Splitting the BATCH can't help (task/plan/already/context are
         # batch-independent), so shrink the INPUT: drop the already-list, then
         # truncate context, then condense the plan to paths only.
-        head = len(BUILD_GEN_PROMPT + gen_extra) + 2000   # scaffold + margin
-        if head + len(user) > single:
-            user = _mk_user(plan_overview, "  (omitted to fit the window)",
-                            context, compact_recovery)
-        if head + len(user) > single and context:
-            # _mk_user prepends an 11-char "\n\nContext:\n" before ctx — account
-            # for it, else context[:room] overshoots the window by 11 and this
-            # whole tier is a no-op that drops ALL context at the next guard.
-            room = max(0, single - head
-                       - len(_mk_user(plan_overview, "  (omitted)", ""))
-                       - len("\n\nContext:\n"))
-            user = _mk_user(plan_overview, "  (omitted)", context[:room],
-                            compact_recovery)
-        if head + len(user) > single:
-            user = _mk_user("\n".join(f"  {p['path']}" for p in plan),
-                            "  (omitted)", "", compact_recovery)
-        if head + len(user) > single:
+        user = _build_workflow.generation_prompt(
+            task=task, batch=batch, plan=plan, done_paths=done,
+            context=context, system_chars=len(BUILD_GEN_PROMPT + gen_extra),
+            single_shot_chars=single, recovery_paths=recovery_paths)
+        if user is None:
             # Still over even minimized. Split a multi-file batch BEFORE the API
             # call (avoids a doomed 400 round-trip); a single-file batch that
             # can't fit is an honest, non-splittable failure.

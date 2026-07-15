@@ -258,6 +258,78 @@ def classify_file_records(records, *, wanted_paths, plan_paths, done_paths,
     return tuple(accepted), tuple(failures), tuple(dropped)
 
 
+def _positive_int(value, default):
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def generation_batches(plan, *, done_paths, max_tokens, chars_per_token):
+    """Return immutable model-budgeted generation batches and a call ceiling."""
+    done = set(done_paths)
+    todo = tuple(dict(item) for item in plan if item["path"] not in done)
+    estimates = {
+        item["path"]: max(200, _positive_int(item.get("est_lines"), 50) * 40)
+        for item in todo
+    }
+    budget = max(4000, int(max_tokens * chars_per_token * 0.35))
+    batches, current, current_size = [], [], 0
+    for item in todo:
+        estimate = estimates[item["path"]]
+        if current and current_size + estimate > budget:
+            batches.append(tuple(current))
+            current, current_size = [], 0
+        current.append(item)
+        current_size += estimate
+    if current:
+        batches.append(tuple(current))
+    return tuple(batches), 3 * max(1, len(todo)) + 4
+
+
+def _generation_user(task, batch, overview, already, context, compact):
+    targets = "\n".join(
+        f"  {item['path']} — {item.get('purpose', '')}" for item in batch)
+    if compact:
+        prompt = (f"TASK: {task}\n\nRECOVERY GENERATION: a prior attempt "
+                  "spent its output on reasoning before emitting these files. "
+                  "Generate ONLY these complete file records now:\n"
+                  f"{targets}")
+    else:
+        prompt = (f"TASK: {task}\n\nFULL PLAN (for cross-file consistency):\n"
+                  f"{overview}\n\nALREADY GENERATED (do not repeat):\n"
+                  f"{already}\n\nGENERATE NOW — complete content for exactly "
+                  f"these files:\n{targets}")
+    return prompt + (f"\n\nContext:\n{context}" if context else "")
+
+
+def generation_prompt(*, task, batch, plan, done_paths, context, system_chars,
+                      single_shot_chars, recovery_paths):
+    """Fit one build request by progressively compacting shared context."""
+    overview = "\n".join(
+        f"  {item['path']} — {item.get('purpose', '')}" for item in plan)
+    already = "\n".join(f"  {path}" for path in done_paths) or "  (none yet)"
+    compact = any(item["path"] in set(recovery_paths) for item in batch)
+    head = system_chars + 2000
+    prompt = _generation_user(task, batch, overview, already, context, compact)
+    if head + len(prompt) > single_shot_chars:
+        prompt = _generation_user(
+            task, batch, overview, "  (omitted to fit the window)", context,
+            compact)
+    if head + len(prompt) > single_shot_chars and context:
+        empty = _generation_user(task, batch, overview, "  (omitted)", "", compact)
+        room = max(0, single_shot_chars - head - len(empty)
+                   - len("\n\nContext:\n"))
+        prompt = _generation_user(
+            task, batch, overview, "  (omitted)", context[:room], compact)
+    if head + len(prompt) > single_shot_chars:
+        paths_only = "\n".join(f"  {item['path']}" for item in plan)
+        prompt = _generation_user(
+            task, batch, paths_only, "  (omitted)", "", compact)
+    return prompt if head + len(prompt) <= single_shot_chars else None
+
+
 __all__ = ("state_path", "safe_relative_path", "resume_identity",
            "normalize_resume_state", "validate_plan_items", "parse_file_records",
-           "classify_file_records")
+           "classify_file_records", "generation_batches", "generation_prompt")

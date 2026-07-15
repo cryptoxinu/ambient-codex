@@ -135,3 +135,41 @@ class BuildWorkflowTests(unittest.TestCase):
             ("large.py", "file exceeds --max-file-bytes (4)"),
         ))
         self.assertEqual(dropped, ("extra.py",))
+
+    def test_generation_batches_are_model_budgeted_and_do_not_mutate_plan(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        plan = [
+            {"path": "done.py", "est_lines": 10},
+            {"path": "a.py", "est_lines": 100},
+            {"path": "b.py", "est_lines": 100},
+        ]
+        before = copy.deepcopy(plan)
+
+        batches, max_calls = core.generation_batches(
+            plan, done_paths=("done.py",), max_tokens=4000,
+            chars_per_token=4.0)
+
+        self.assertEqual(plan, before)
+        self.assertEqual(
+            tuple(tuple(item["path"] for item in batch) for batch in batches),
+            (("a.py",), ("b.py",)),
+        )
+        self.assertEqual(max_calls, 10)
+
+    def test_generation_prompt_compacts_context_before_refusing_a_file(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        plan = ({"path": "a.py", "purpose": "implementation"},)
+        prompt = core.generation_prompt(
+            task="build", batch=plan, plan=plan,
+            done_paths=("old.py",), context="x" * 5000,
+            system_chars=100, single_shot_chars=2600,
+            recovery_paths=())
+
+        self.assertIsNotNone(prompt)
+        self.assertLessEqual(100 + 2000 + len(prompt), 2600)
+        self.assertIn("a.py", prompt)
+        self.assertNotIn("old.py", prompt)
+        self.assertIsNone(core.generation_prompt(
+            task="x" * 1000, batch=plan, plan=plan, done_paths=(), context="",
+            system_chars=100, single_shot_chars=2200,
+            recovery_paths=()))

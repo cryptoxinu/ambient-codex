@@ -101,9 +101,10 @@ bugs, verification, commits, or the next action changes.
 | 4B-2 | Build resume identity + state path | Complete | `1a10931`→`743948a` | `build_workflow.py`; version-sensitive deterministic identity and scoped path extracted |
 | 4B-3 | Build resume-state validation | Complete | local checkpoint | `build_workflow.py`; immutable bounded plan/done validation delegates through the existing facade path firewall |
 | 4B-4 | Build manifest firewall | Complete | local checkpoint | `build_workflow.py`; copied/capped model manifest validation delegates through the existing path firewall |
-| 4B-7 | Build generation-record acceptance | Complete | local checkpoint | `build_workflow.py`; immutable path-contract classification preserves complete records, rejects unsafe/oversized output, drops unplanned files, and discards a potentially cut salvage tail |
 | 4B-5 | Build JSONL record framing | Complete | local checkpoint | `build_workflow.py`; complete-record recovery and cut-tail discard extracted |
 | 4B-6 | Build manifest path firewall | Complete | local checkpoint | `build_workflow.py`; traversal, symlink, reserved-name, and credential-name validation now module-owned |
+| 4B-7 | Build generation-record acceptance | Complete | local checkpoint | `build_workflow.py`; immutable path-contract classification preserves complete records, rejects unsafe/oversized output, drops unplanned files, and discards a potentially cut salvage tail |
+| 4B-8 | Model-aware build batching + prompt compaction | Complete | local checkpoint | `build_workflow.py`; output-share batching, bounded call ceilings, recovery prompts, context trimming, and paths-only fallback are pure and model-window constrained |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
