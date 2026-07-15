@@ -138,15 +138,18 @@ class FilterRecentTests(unittest.TestCase):
 
 
 class UsageReportFacadeTests(unittest.TestCase):
-    def test_cmd_usage_delegates_read_and_handles_missing_ledger(self):
+    def test_cmd_usage_returns_empty_json_for_missing_ledger(self):
         with tempfile.TemporaryDirectory() as td:
             facade = load_facade(Path(td) / "home")
             with mock.patch.object(
                     facade._usage_report, "read_records",
                     side_effect=FileNotFoundError()):
-                with self.assertRaises(SystemExit) as ctx:
-                    facade.cmd_usage(types.SimpleNamespace(days=7))
-            self.assertIn("no usage recorded yet", str(ctx.exception))
+                with mock.patch("sys.stdout") as output:
+                    facade.cmd_usage(types.SimpleNamespace(days=7, json=True))
+            payload = "".join(
+                str(call.args[0]) for call in output.write.call_args_list if call.args)
+            self.assertIn('"empty": true', payload)
+            self.assertIn('"models": []', payload)
 
     def test_cmd_usage_reports_bad_lines_from_reader(self):
         with tempfile.TemporaryDirectory() as td:
@@ -154,13 +157,15 @@ class UsageReportFacadeTests(unittest.TestCase):
             with mock.patch.object(
                     facade._usage_report, "read_records",
                     return_value=([], 4)):
-                # no recent records -> exits, but the bad count is reported first
-                with mock.patch("sys.stderr") as err:
-                    with self.assertRaises(SystemExit):
-                        facade.cmd_usage(types.SimpleNamespace(days=7))
+                # No records in the selected window is a successful empty report.
+                with mock.patch("sys.stderr") as err, mock.patch("sys.stdout") as output:
+                    facade.cmd_usage(types.SimpleNamespace(days=7, json=True))
             printed = "".join(
                 str(c.args[0]) for c in err.write.call_args_list if c.args)
             self.assertIn("skipped 4 corrupt", printed)
+            payload = "".join(
+                str(call.args[0]) for call in output.write.call_args_list if call.args)
+            self.assertIn('"empty": true', payload)
 
     def test_cmd_usage_maps_generic_oserror_to_cannot_read(self):
         with tempfile.TemporaryDirectory() as td:
@@ -182,8 +187,8 @@ class UsageReportFacadeTests(unittest.TestCase):
                                    return_value=(recs, 0)) as reader, \
                     mock.patch.object(facade._usage_report, "filter_recent",
                                       return_value=[]) as recent:
-                with self.assertRaises(SystemExit):  # empty recent -> exits
-                    facade.cmd_usage(types.SimpleNamespace(days=7))
+                with mock.patch("sys.stdout"):
+                    facade.cmd_usage(types.SimpleNamespace(days=7, json=True))
             reader.assert_called_once_with("/patched/usage.jsonl")
             self.assertEqual(recent.call_count, 1)
             args, _ = recent.call_args

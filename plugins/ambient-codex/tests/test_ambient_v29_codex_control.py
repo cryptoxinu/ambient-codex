@@ -155,6 +155,9 @@ class ControlSnapshotTests(ControlCase):
              "description": "second-opinion review of the current git diff"},
             data["workflows"],
         )
+        control_phrases = {action["phrase"] for action in data["chat_actions"]}
+        workflow_phrases = {workflow["phrase"] for workflow in data["workflows"]}
+        self.assertFalse(control_phrases & workflow_phrases)
         self.assertIn("ambient-codex control mode on", data["actions"])
         self.assertIn("ambient-codex setup", data["actions"])
         setting_names = [setting["name"] for setting in data["settings"]]

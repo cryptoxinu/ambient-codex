@@ -8342,12 +8342,6 @@ CONTROL_CHAT_ACTIONS = (
     ("change code/build model", "override the model for code, builds, and agent work only"),
     ("change mode", "choose off / delegate / takeover"),
     ("change settings", "edit streaming, fallback, and optional savings"),
-    ("audit this diff", "audit the current git diff"),
-    ("audit this repo", "run a repository audit"),
-    ("build <task>", "draft a file set with Codex review"),
-    ("ask Ambient <question>", "ask the chat model"),
-    ("diagnose Ambient", "run doctor"),
-    ("show Ambient usage", "show usage and optional relative savings"),
 )
 
 
@@ -9060,16 +9054,39 @@ def cmd_doctor(args):
         sys.exit(1)
 
 
+def _print_empty_usage(args, note, message):
+    """Render no local usage as a successful, schema-stable summary."""
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "schema_version": 1,
+            "days": args.days,
+            "models": [],
+            "empty": True,
+            "all_priced": True,
+            "saved_pct": None,
+            "approx_ref_records": 0,
+            "est_records": 0,
+            "unmetered_lanes": ["agent"],
+            "note": note,
+        }, indent=2))
+        return
+    print(message)
+    print(f"note: {note}.")
+
+
 def cmd_usage(args):
     """Local spend summary (Ambient exposes no balance endpoint)."""
     if args.days <= 0:   # L18: validate the ARG first, before touching the ledger
         usage_exit("--days must be a positive number of days")
     conf = read_config_file()
     show_savings = _savings_enabled(conf)  # OFF by default: calls+tokens only
+    unmetered_note = ("`ambient-codex agent` activity is not included in local "
+                      "usage totals — these totals cover only ambient CLI calls")
     try:
         records, bad = _usage_report.read_records(USAGE_PATH)
     except FileNotFoundError:
-        sys.exit("ambient: no usage recorded yet")
+        _print_empty_usage(args, unmetered_note, "No usage recorded yet.")
+        return
     except OSError as err:
         sys.exit(f"ambient: cannot read {USAGE_PATH}: {err}")
     if bad:
@@ -9078,7 +9095,9 @@ def cmd_usage(args):
     recent = _usage_report.filter_recent(
         records, cutoff, lambda r: _as_pos_int(r.get("ts"), 0))
     if not recent:
-        sys.exit(f"ambient: no usage in the last {args.days} days")
+        _print_empty_usage(args, unmetered_note,
+                           f"No usage in the last {args.days} days.")
+        return
     pricing = {}
     try:
         api_url = resolve_api_url(conf)
@@ -9101,8 +9120,6 @@ def cmd_usage(args):
     est_records = summary["est_records"]
     priced_all = summary["all_priced"]
     approx_ref = summary["approx_ref_records"]
-    unmetered_note = ("`ambient-codex agent` activity is not included in local "
-                      "usage totals — these totals cover only ambient CLI calls")
     if getattr(args, "json", False):
         # Relative % savings only — NO dollar figures and NO per-token
         # reference prices (founder policy: billing is plan-dependent).
@@ -9115,6 +9132,7 @@ def cmd_usage(args):
             "schema_version": 1, # contract field
             "days": args.days,
             "models": json_models,
+            "empty": False,
             "all_priced": priced_all,
             "saved_pct": overall_pct,
             "approx_ref_records": approx_ref,
