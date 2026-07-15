@@ -10,7 +10,8 @@ class AuditPreparationTests(unittest.TestCase):
         self.assertEqual(core.__all__, (
             "extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
             "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
-            "select_cross_file_inputs", "merge_cross_file_findings",
+            "select_cross_file_inputs", "merge_cross_file_findings", "normalize_findings",
+            "effective_verdict",
         ))
 
     def test_json_extraction_accepts_fences_and_marks_safe_repairs(self):
@@ -100,3 +101,20 @@ class AuditPreparationTests(unittest.TestCase):
             as_pos_int=lambda value, default: int(value or default))
         self.assertEqual(merged["verdict"], "NEEDS WORK")
         self.assertEqual(merged["_unparsed_chunks"], 1)
+
+    def test_render_normalization_is_immutable_and_verdict_never_fakes_ship(self):
+        core = importlib.import_module("ambient_codex.audit_core")
+        source = [{"file": "app.py:9", "severity": "HIGH"}, "bad"]
+        normalized = core.normalize_findings(source)
+        self.assertEqual(source[0]["file"], "app.py:9")
+        self.assertEqual(normalized[0]["file"], "app.py")
+        self.assertEqual(normalized[0]["line"], 9)
+        self.assertEqual(normalized[1], "bad")
+        self.assertEqual(
+            core.effective_verdict("SHIP", normalized, partial=False,
+                                  verdict=lambda *_args: "SHIP"),
+            "FIX FIRST")
+        self.assertEqual(
+            core.effective_verdict("SHIP", [], partial=True,
+                                  verdict=lambda *_args: "SHIP"),
+            "NEEDS WORK")

@@ -242,6 +242,35 @@ def merge_cross_file_findings(first, second, second_incomplete, *, dedupe,
             "_unparsed_chunks": unparsed, "_repaired_chunks": repaired}
 
 
+def normalize_findings(findings):
+    """Copy findings while splitting a leaked ``file:line`` location field."""
+    normalized = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            normalized.append(finding)
+            continue
+        copied = dict(finding)
+        match = re.match(r"^(.*?):(\d+)$", str(copied.get("file", "")))
+        if match:
+            copied["file"] = match.group(1)
+            copied.setdefault("line", int(match.group(2)))
+        normalized.append(copied)
+    return normalized
+
+
+def effective_verdict(stated, findings, *, partial, verdict):
+    """Prevent model prose from reporting a clean verdict over incomplete work."""
+    resolved = stated or verdict(findings, partial)
+    if partial and resolved == "SHIP":
+        return "NEEDS WORK"
+    if resolved == "SHIP" and findings:
+        return ("FIX FIRST" if any(isinstance(finding, dict)
+                and finding.get("severity") in ("CRITICAL", "HIGH")
+                for finding in findings) else "NEEDS WORK")
+    return resolved
+
+
 __all__ = ("extract_json", "dedupe_findings", "verdict_from", "prepare_sample",
            "single_shot_key", "reduce_findings", "cross_file_suspects", "parse_audit_object",
-           "select_cross_file_inputs", "merge_cross_file_findings")
+           "select_cross_file_inputs", "merge_cross_file_findings", "normalize_findings",
+           "effective_verdict")
