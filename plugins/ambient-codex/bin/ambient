@@ -7349,10 +7349,7 @@ def _within_root(child_real, root_real):
     commonpath so it is correct even when root_real is the filesystem root '/'
     (M9: `child.startswith(root + os.sep)` fails there — nothing starts with
     '//', wrongly rejecting every subdirectory)."""
-    try:
-        return os.path.commonpath([child_real, root_real]) == root_real
-    except ValueError:   # different drives (Windows) / mixed abs+rel → not within
-        return False
+    return _build_workflow.within_root(child_real, root_real)
 
 
 def safe_relpath(path, root):
@@ -7364,48 +7361,8 @@ def safe_relpath(path, root):
     internals, credential-named files, control characters, and symlinked
     ancestors/destinations that physically escape the root. Returns the
     normalized relative path or raises ValueError."""
-    if not isinstance(path, str) or not path.strip():
-        raise ValueError("empty path")
-    p = path.strip().replace("\\", "/")
-    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in p):
-        raise ValueError("control characters in path")
-    if len(p) > 1024:
-        raise ValueError("path too long")
-    # Explicit leading-slash check: Windows py3.13 changed ntpath.isabs to
-    # False for drive-relative "/x" paths — a leading slash always signals
-    # absolute intent and is rejected on every platform (Windows CI finding).
-    if p.startswith("/") or os.path.isabs(p) or re.match(r"^[A-Za-z]:", p):
-        raise ValueError("absolute/drive path")
-    parts = [seg for seg in p.split("/") if seg not in ("", ".")]
-    if not parts:
-        raise ValueError("empty path")
-    for seg in parts:
-        # Alias-fold BEFORE comparing: Windows strips trailing dots/spaces and
-        # default macOS filesystems are case-insensitive, so '.Git ' would hit
-        # the real.git while dodging an exact match.
-        folded = seg.rstrip(". ").lower()
-        if seg == ".." or folded == "..":
-            raise ValueError("parent-directory escape")
-        if seg.startswith("~"):
-            raise ValueError("home-directory reference")
-        if folded == ".git":
-            raise ValueError(".git internals are off-limits")
-        if folded.startswith(".ambient-build"):
-            raise ValueError("reserved ambient-build name")
-        if not folded:
-            raise ValueError("empty path segment")
-    if SECRET_NAMES_RE.search(parts[-1]):
-        raise ValueError("credential-named file")
-    root_real = os.path.realpath(root)
-    dest = os.path.join(root_real, *parts)
-    # A symlinked EXISTING ancestor can point outside while the lexical path
-    # stays inside — realpath resolves what exists and keeps the rest lexical.
-    parent_real = os.path.realpath(os.path.dirname(dest))
-    if not _within_root(parent_real, root_real):   # M9: correct at root '/'
-        raise ValueError("resolves outside the target directory (symlink escape)")
-    if os.path.islink(dest):
-        raise ValueError("destination is an existing symlink")
-    return "/".join(parts)
+    return _build_workflow.safe_relative_path(
+        path, root, secret_name_re=SECRET_NAMES_RE)
 
 
 def _build_state_path(root):

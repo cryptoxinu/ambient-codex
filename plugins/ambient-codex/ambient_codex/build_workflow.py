@@ -1,13 +1,62 @@
-"""Pure identity policy for resumable build workflows."""
+"""Bounded path, identity, and state policies for resumable build workflows."""
 
 import hashlib
 import json
 import os
+import re
 
 
 def state_path(root):
     """Return the fixed resume-state path beneath a validated build root."""
     return os.path.join(root, ".ambient-build.json")
+
+
+def within_root(child_real, root_real):
+    """Return whether a resolved path is inside a resolved build root."""
+    try:
+        return os.path.commonpath([child_real, root_real]) == root_real
+    except ValueError:
+        return False
+
+
+def safe_relative_path(path, root, *, secret_name_re):
+    """Firewall one untrusted manifest path before any build write."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("empty path")
+    normalized = path.strip().replace("\\", "/")
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in normalized):
+        raise ValueError("control characters in path")
+    if len(normalized) > 1024:
+        raise ValueError("path too long")
+    if (normalized.startswith("/") or os.path.isabs(normalized)
+            or re.match(r"^[A-Za-z]:", normalized)):
+        raise ValueError("absolute/drive path")
+    parts = [segment for segment in normalized.split("/")
+             if segment not in ("", ".")]
+    if not parts:
+        raise ValueError("empty path")
+    for segment in parts:
+        folded = segment.rstrip(". ").lower()
+        if segment == ".." or folded == "..":
+            raise ValueError("parent-directory escape")
+        if segment.startswith("~"):
+            raise ValueError("home-directory reference")
+        if folded == ".git":
+            raise ValueError(".git internals are off-limits")
+        if folded.startswith(".ambient-build"):
+            raise ValueError("reserved ambient-build name")
+        if not folded:
+            raise ValueError("empty path segment")
+    if secret_name_re.search(parts[-1]):
+        raise ValueError("credential-named file")
+    root_real = os.path.realpath(root)
+    destination = os.path.join(root_real, *parts)
+    parent_real = os.path.realpath(os.path.dirname(destination))
+    if not within_root(parent_real, root_real):
+        raise ValueError("resolves outside the target directory (symlink escape)")
+    if os.path.islink(destination):
+        raise ValueError("destination is an existing symlink")
+    return "/".join(parts)
 
 
 def resume_identity(*, runtime_version, task, model, reduce_model, context_paths,
@@ -172,5 +221,5 @@ def parse_file_records(text):
     return files
 
 
-__all__ = ("state_path", "resume_identity", "normalize_resume_state",
-           "validate_plan_items", "parse_file_records")
+__all__ = ("state_path", "safe_relative_path", "resume_identity",
+           "normalize_resume_state", "validate_plan_items", "parse_file_records")

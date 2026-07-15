@@ -1,10 +1,24 @@
 """Phase 4 contracts for resumable build workflow policies."""
 
 import importlib
+import re
+import tempfile
 import unittest
 
 
 class BuildWorkflowTests(unittest.TestCase):
+    def test_safe_relative_path_rejects_escapes_and_credential_names(self):
+        core = importlib.import_module("ambient_codex.build_workflow")
+        with tempfile.TemporaryDirectory() as root:
+            matcher = re.compile(r"secret", re.IGNORECASE)
+            self.assertEqual(
+                core.safe_relative_path("src/app.py", root, secret_name_re=matcher),
+                "src/app.py",
+            )
+            for candidate in ("../escape.py", "/tmp/escape.py", "keys/secret.txt"):
+                with self.assertRaises(ValueError, msg=candidate):
+                    core.safe_relative_path(candidate, root, secret_name_re=matcher)
+
     def test_state_path_is_scoped_to_the_build_root(self):
         core = importlib.import_module("ambient_codex.build_workflow")
         self.assertEqual(core.state_path("/tmp/build"), "/tmp/build/.ambient-build.json")
