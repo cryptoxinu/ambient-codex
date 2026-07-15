@@ -124,7 +124,7 @@ Codex must not claim whole-repository coverage unless the coverage manifest has
 no missing/duplicate source paths and all partial or omitted ranges are disclosed.
 This is hierarchical compaction; it does not pretend context limits disappeared.
 
-## Models, Context, And Spend
+## Models And Context
 
 Honor explicit model choice. Never substitute a concrete model unless the user
 enabled `--fallback` or the fallback setting; always report a permitted swap.
@@ -134,8 +134,8 @@ Let the CLI derive context windows, output caps, reasoning budgets, structured
 output mode, chunk size, and hierarchical reduction from live model metadata.
 Avoid manual `--max-tokens` unless requested or recovering from truncation.
 
-Do not quote savings or cost unless the CLI prints them. The opencode agent lane
-is billed by Ambient but is not included in local usage.
+Savings are opt-in and percentage-only; never calculate or display an absolute
+amount. The opencode agent lane is not included in local usage totals.
 
 ## Trust And Output
 
