@@ -127,6 +127,7 @@ bugs, verification, commits, or the next action changes.
 | 5D-6 | Layered health diagnostics | Complete | local checkpoint | `doctor_command.py`; runtime/config/key isolation, catalog/auth/billing, model/curation, launcher coexistence, agent config, and cache checks are module-owned through a frozen dependency boundary |
 | 4B-11 | Model-aware build command composition | Complete | local checkpoint | `build_command.py`; dry-run zero-egress, context distillation, structured-plan fallback, resumable bounded generation, recovery, safe apply, and partial rendering moved behind immutable late-bound dependencies while existing pure policy modules remain authoritative |
 | 4A-9 | Bounded audit command composition | Complete | local checkpoint | `audit_command.py`; file/git/repository intake, model routing, chunk planning, best-of/consensus, deterministic reduction, cross-file confirmation, and partial/coverage rendering moved behind immutable late-bound dependencies |
+| 4B-12 | Focused code and interactive chat composition | Complete | local checkpoint | `generation_commands.py`; task/context distillation, generation-only best-of, model routing, rolling history compaction, model switching, per-turn secret checks, streaming, and token/relative-savings receipts moved behind immutable dependencies |
 
 ## Phase 0 checklist
 
