@@ -252,16 +252,19 @@ USAGE_PATH = os.path.join(STATE_DIR, "usage.jsonl")
 # Completions STREAM: liveness is judged by data flow, not total duration. A
 # healthy generation can run for ages; silence beyond the per-op timeout
 # (args.timeout, default 300s) means a hung worker and is caught immediately.
-# AMBIENT_HARD_WALL_S / AMBIENT_NOPROGRESS_S let a very long build raise these.
-HARD_WALL_S = _env_pos_int("AMBIENT_HARD_WALL_S", 5400, floor=60)
+# There is no elapsed-time wall by default. Operators who need a fixed policy
+# ceiling can opt in with AMBIENT_HARD_WALL_S; zero leaves progressing work
+# alone. AMBIENT_NOPROGRESS_S remains mandatory and catches wedged streams.
+HARD_WALL_S = _env_pos_int("AMBIENT_HARD_WALL_S", 0, floor=0)
 # A wedged worker can keep the socket alive (empty deltas / keep-alives) while
 # emitting NO new content or reasoning — that fools a pure silence timeout. If
 # nothing useful grows for this long, treat it as a stall.
 NOPROGRESS_S = _env_pos_int("AMBIENT_NOPROGRESS_S", 150, floor=10)
 # The streamed heartbeat ("…writing (N chars, Xs)") and the build phase lines
 # ("generating <paths> [X/Y]") are pure UX. This toggle gates ONLY their DISPLAY —
-# the smart-timeout guards above (HARD_WALL_S / NOPROGRESS_S / stall) are safety
-# and stay enforced no matter what, so silencing progress never weakens them.
+# the smart inactivity/stall guards above are safety and stay enforced no matter
+# what, so silencing progress never weakens them. An explicitly configured hard
+# wall also remains active.
 # Default ON. Precedence: --progress/--no-progress flag > AMBIENT_PROGRESS env >
 # config file > on. Resolved once by main(); a module holder keeps stream_completion
 # (which has no args/conf) from re-reading config on every ~1s tick.

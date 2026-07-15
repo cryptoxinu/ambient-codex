@@ -143,15 +143,14 @@ class TakeoverModeTests(_EnvIsolated):
 
 
 class EnvPosIntTests(_EnvIsolated):
-    """C2: HARD_WALL_S / NOPROGRESS_S are env-tunable via _env_pos_int, with a
-    floor so a fat-fingered 0 can never DISABLE the safety guard."""
+    """C2: elapsed-time walls are opt-in; no-progress safety stays mandatory."""
 
     def test_missing_keeps_default(self):
         self.assertEqual(amb._env_pos_int("AMBIENT_NOPROGRESS_S", 150, floor=10), 150)
 
     def test_valid_override_applied(self):
         os.environ["AMBIENT_HARD_WALL_S"] = "9000"
-        self.assertEqual(amb._env_pos_int("AMBIENT_HARD_WALL_S", 5400, floor=60), 9000)
+        self.assertEqual(amb._env_pos_int("AMBIENT_HARD_WALL_S", 0, floor=0), 9000)
 
     def test_floor_clamps_too_small(self):
         os.environ["AMBIENT_NOPROGRESS_S"] = "7"           # below the floor
@@ -161,12 +160,12 @@ class EnvPosIntTests(_EnvIsolated):
 
     def test_invalid_keeps_default(self):
         os.environ["AMBIENT_HARD_WALL_S"] = "not-a-number"
-        self.assertEqual(amb._env_pos_int("AMBIENT_HARD_WALL_S", 5400, floor=60), 5400)
+        self.assertEqual(amb._env_pos_int("AMBIENT_HARD_WALL_S", 0, floor=0), 0)
 
-    def test_module_constants_are_positive_ints(self):
+    def test_module_defaults_disable_elapsed_wall_but_keep_stall_guard(self):
         self.assertIsInstance(amb.HARD_WALL_S, int)
         self.assertIsInstance(amb.NOPROGRESS_S, int)
-        self.assertGreaterEqual(amb.HARD_WALL_S, 60)
+        self.assertEqual(amb.HARD_WALL_S, 0)
         self.assertGreaterEqual(amb.NOPROGRESS_S, 10)
 
 

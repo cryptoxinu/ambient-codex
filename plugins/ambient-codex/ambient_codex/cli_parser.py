@@ -61,8 +61,9 @@ def add_common_flags(parser, *, default_timeout_s, max_parallel_chunks):
     parser.add_argument(
         "--no-progress", dest="progress", action="store_false",
         default=argparse.SUPPRESS,
-        help="silence the streamed progress display — the smart stall/hard-wall "
-             "timeout still runs (or AMBIENT_PROGRESS=off)")
+        help="silence the streamed progress display — smart inactivity/stall "
+             "detection and any opt-in hard wall still run "
+             "(or AMBIENT_PROGRESS=off)")
 
 
 def add_best_of_flag(parser, *, best_of_max):

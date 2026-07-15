@@ -54,3 +54,23 @@ class StreamingTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["content"], "hello")
+
+    def test_disabled_hard_wall_allows_progressing_stream_to_finish(self):
+        core = importlib.import_module("ambient_codex.streaming")
+        event = json.dumps({"choices": [{"delta": {"content": "hello"}}]})
+        response = _Response([
+            f"data: {event}\n".encode(), b"\n", b"data: [DONE]\n", b"\n",
+        ])
+        ticks = iter((0, 10_000, 20_000, 30_000, 40_000, 50_000))
+        status, body = core.stream_completion(
+            "https://example.invalid", "key", {"model": "test"}, 30,
+            opener=lambda request, timeout: response,
+            network_error=_NetworkError,
+            stall_error=_StallError,
+            progress_enabled=lambda: False,
+            hard_wall_s=0,
+            noprogress_s=100_000,
+            clock=lambda: next(ticks),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["content"], "hello")

@@ -18,7 +18,7 @@ import urllib.request
 def stream_completion(api_url, api_key, payload, timeout, on_delta=None, *,
                       opener=None, network_error=RuntimeError,
                       stall_error=RuntimeError, stream_line_max=65536,
-                      heartbeat_s=30, hard_wall_s=900, noprogress_s=120,
+                      heartbeat_s=30, hard_wall_s=0, noprogress_s=120,
                       progress_enabled=None, stderr=None,
                       stderr_is_tty=None, clock=None):
     """Return one streamed chat completion as ``(status, body)``.
@@ -148,7 +148,7 @@ def stream_completion(api_url, api_key, payload, timeout, on_delta=None, *,
         threading.Thread(target=reader, daemon=True).start()
         while True:
             now = clock()
-            if now - start > hard_wall_s:
+            if hard_wall_s and now - start > hard_wall_s:
                 close_beat()
                 raise stall_error(
                     f"generation exceeded the {hard_wall_s // 60}-minute hard wall",
