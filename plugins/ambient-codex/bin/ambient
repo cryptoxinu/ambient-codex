@@ -196,6 +196,7 @@ from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import settings_commands as _settings_commands  # noqa: E402
+from ambient_codex import setup_command as _setup_command  # noqa: E402
 from ambient_codex import state as _state_core  # noqa: E402
 from ambient_codex import streaming as _streaming  # noqa: E402
 from ambient_codex import transport as _transport  # noqa: E402
@@ -8222,45 +8223,7 @@ def _collect_key_interactive():
     """Prompt for the key with hidden input, local pre-validation, and up to
     3 attempts (a stray Enter or a mangled paste re-prompts instead of
     aborting the whole flow)."""
-    import getpass
-    import warnings
-    # PREFLIGHT echo control BEFORE any key is typed: by the time getpass's
-    # GetPassWarning fires, the key was already read WITH ECHO — visible in
-    # scrollback. termios probing types nothing.
-    if os.name != "nt":
-        try:
-            import termios
-            termios.tcgetattr(sys.stdin.fileno())
-        except (ImportError, OSError, ValueError):
-            sys.exit(
-                "ambient: this terminal cannot hide typed input — the key "
-                f"would be visible. Pipe it instead: {LAUNCHER_NAME} setup --key-stdin"
-            )
-    print(SETUP_PREAMBLE)
-    for attempt in range(3):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            try:
-                key = getpass.getpass("Ambient API key (input hidden): ")
-            except (EOFError, KeyboardInterrupt):
-                sys.exit("\nambient: cancelled — nothing saved")
-        if any(isinstance(w.message, getpass.GetPassWarning) for w in caught):
-            # Backstop: getpass STILL fell back to echoing despite the
-            # preflight — the pasted value may be visible. Refuse it.
-            sys.exit(
-                "ambient: this terminal echoed the input — treat that key as "
-                f"exposed: rotate it at {KEY_CONSOLE_URL}, then use: "
-                f"{LAUNCHER_NAME} setup --key-stdin"
-            )
-        key = key.strip()
-        if key.lower().startswith("bearer "):
-            key = key[7:].strip()
-        problem = key_paste_problem(key)
-        if problem is None:
-            return key
-        more = "" if attempt == 2 else "  Try again (Ctrl-C quits)."
-        print(f"  {problem}{more}")
-    sys.exit("ambient: no valid key after 3 attempts — nothing saved")
+    return _setup_command.collect_key_interactive(_setup_dependencies())
 
 
 def _verify_and_store_key(key, conf, use_file):
@@ -8268,154 +8231,38 @@ def _verify_and_store_key(key, conf, use_file):
     Keychain/libsecret preferred, 0600 env file otherwise. Returns
     (models, probe_detail, where, funds_issue). Exits with a per-category
     diagnosis + support pointer when the key can't be certified."""
-    api_url = resolve_api_url(conf)
-    host = urllib.parse.urlsplit(api_url).hostname
-    print(f"Verifying key with {host} (one tiny paid completion)…",
-          file=sys.stderr)
-    try:
-        status, body = api_request(api_url, key, "/v1/models", timeout=30)
-        if status != 200:
-            category, diagnosis = classify_error(status, body, key)
-            sys.exit(f"ambient [{category}]: {diagnosis} Nothing was saved.\n"
-                     f"{SUPPORT_LINE}")
-        models = _catalog_data(body)   # normalized list of dict entries
-        # /v1/models is unauthenticated, so really verify the key with a tiny
-        # completion (fractions of a cent).
-        ok, category, detail = auth_probe(api_url, key, models)
-    except NetworkError as err:
-        sys.exit(
-            f"ambient [network]: cannot reach Ambient ({err}). Check your "
-            "internet connection and try again — nothing saved; if other "
-            f"sites load fine, Ambient itself may be unreachable.\n{SUPPORT_LINE}"
-        )
-    funds_issue = False
-    if not ok:
-        if category == "funds":
-            # A 402/insufficient-credits response PROVES the key authenticated
-            # (the account was identified). Refusing to save it would force a
-            # full re-run after top-up for no security gain — save it, and
-            # route the user to the console.
-            funds_issue = True
-        elif category == "key":
-            sys.exit(
-                "ambient [key]: Ambient rejected this key — it may be "
-                "mistyped, revoked, or inactive. Re-copy it from "
-                f"{KEY_CONSOLE_URL} → API Keys, or create a fresh one. "
-                f"Nothing was saved.\n{SUPPORT_LINE}"
-            )
-        elif category in ("rate", "service"):
-            sys.exit(
-                f"ambient [{category}]: could not verify the key right now "
-                f"({detail}) — an Ambient-side problem, not your key. Nothing "
-                f"was saved. Retry in a minute: {LAUNCHER_NAME} setup\n{SUPPORT_LINE}"
-            )
-        else:
-            sys.exit(f"ambient [{category}]: key check FAILED: {detail} — "
-                     f"nothing saved.\n{SUPPORT_LINE}")
-    if not use_file and keychain_available():
-        if not keychain_write(key):
-            # Fail closed: never silently downgrade to plaintext on a Mac.
-            sys.exit(
-                "ambient: Keychain write failed — nothing saved. Retry, or store "
-                f"in the env file explicitly with: {LAUNCHER_NAME} setup --force --file"
-            )
-        # Key lives in the Keychain; scrub any plaintext copy from the file.
-        save_config_values({
-            "AMBIENT_API_KEY": None,
-            "AMBIENT_API_URL": api_url if api_url != DEFAULT_API_URL else None,
-            "AMBIENT_KEY_BACKEND": "keychain",
-        })
-        where = ("macOS Keychain (no plaintext on disk)"
-                 if secret_backend() == "keychain"
-                 else "OS secret store (no plaintext on disk)")
-    else:
-        if use_file:
-            # Explicit file backend: remove any stale Keychain entry that would
-            # otherwise be dead weight (resolution already prefers the file).
-            keychain_delete()
-        save_config_values({
-            "AMBIENT_API_KEY": key,
-            "AMBIENT_API_URL": api_url if api_url != DEFAULT_API_URL else None,
-            "AMBIENT_KEY_BACKEND": "file",
-        })
-        where = f"{CONFIG_PATH} (owner-only permissions)"
-    return models, detail, where, funds_issue
+    return _setup_command.verify_and_store_key(
+        key, conf, use_file, _setup_dependencies())
 
 
 def _setup_remove():
     """Offboarding: delete the stored key everywhere it may live. Removing the
     key naturally re-arms first-use onboarding (state IS key presence)."""
-    kc_ok = keychain_delete()
-    save_config_values({"AMBIENT_API_KEY": None, "AMBIENT_KEY_BACKEND": None})
-    if not kc_ok:
-        sys.exit(
-            "ambient: the env file was scrubbed, but the OS secret store "
-            "REFUSED the delete (locked keychain?) — the key may still be "
-            f"stored there. Unlock your keychain and re-run: {LAUNCHER_NAME} setup --remove"
-        )
-    if keychain_read():
-        sys.exit(
-            "ambient: the key still resolves from the OS secret store after "
-            "the delete — remove it manually (Keychain Access → search "
-            f"'{KEYCHAIN_SERVICE}') or re-run: {LAUNCHER_NAME} setup --remove"
-        )
-    print("Key removed from the OS secret store and the env file.")
-    print("Sticky settings (default models, delegate mode) were kept — delete")
-    print(f"{CONFIG_PATH} to reset everything. Reconfigure any time: {LAUNCHER_NAME} setup")
-    if os.environ.get(API_KEY_ENV):
-        print(
-            f"note: {API_KEY_ENV} is still set in this shell's environment "
-            "and will keep working until you unset it.",
-            file=sys.stderr,
-        )
+    return _setup_command.setup_remove(_setup_dependencies())
+
+
+def _setup_dependencies():
+    return _setup_command.SetupDependencies(
+        preamble=SETUP_PREAMBLE, launcher_name=LAUNCHER_NAME,
+        key_console_url=KEY_CONSOLE_URL, support_line=SUPPORT_LINE,
+        default_api_url=DEFAULT_API_URL, config_path=CONFIG_PATH,
+        api_key_env=API_KEY_ENV, keychain_service=KEYCHAIN_SERVICE,
+        read_config=read_config_file, save_config=save_config_values,
+        resolve_key=resolve_key_and_backend, resolve_api_url=resolve_api_url,
+        key_paste_problem=key_paste_problem, api_request=api_request,
+        classify_error=classify_error, catalog_data=_catalog_data,
+        auth_probe=auth_probe, network_error=NetworkError,
+        keychain_available=keychain_available, keychain_write=keychain_write,
+        keychain_delete=keychain_delete, keychain_read=keychain_read,
+        secret_backend=secret_backend, print_welcome=print_welcome_panel,
+    )
 
 
 def cmd_setup(args):
     """First-run key onboarding: collect, locally pre-validate, verify with a
     real authenticated completion, store securely, then show the welcome
     panel. --remove offboards; --force rotates."""
-    conf = read_config_file()
-    if getattr(args, "remove", False):
-        _setup_remove()
-        return
-    existing, backend = resolve_key_and_backend(conf)
-    if existing and not args.force:
-        where = {
-            "keychain": "macOS Keychain",
-            "secret-tool": "OS secret store",
-            "file": CONFIG_PATH,
-            "env": f"the {API_KEY_ENV} environment variable",
-        }.get(backend, backend or "unknown")
-        sys.exit(
-            f"ambient: a key is already configured ({where}).\n"
-            f"  Rotate/replace: {LAUNCHER_NAME} setup --force\n"
-            f"  Remove:         {LAUNCHER_NAME} setup --remove"
-        )
-    if args.key_stdin:
-        # M11: --key-stdin is for a PIPED key. On a TTY, readline() echoes the
-        # typed key to the screen/scrollback — refuse and point at the hidden-
-        # input interactive path instead.
-        try:
-            stdin_is_tty = sys.stdin.isatty()
-        except Exception:  # noqa: BLE001 — closed/odd stdin is not a TTY
-            stdin_is_tty = False
-        if stdin_is_tty:
-            sys.exit("ambient: --key-stdin expects a piped key (echo-safe). "
-                     f"For interactive entry with hidden input, run: {LAUNCHER_NAME} setup")
-        key = sys.stdin.readline().strip()
-        if key.lower().startswith("bearer "):
-            key = key[7:].strip()
-        problem = key_paste_problem(key)
-        if problem:
-            sys.exit(f"ambient: {problem} — nothing saved")
-    elif sys.stdin.isatty():
-        key = _collect_key_interactive()
-    else:
-        sys.exit(f"ambient: no TTY — pipe the key via: {LAUNCHER_NAME} setup --key-stdin")
-    models, detail, where, funds_issue = _verify_and_store_key(
-        key, conf, args.file)
-    print()
-    print_welcome_panel(models, where, detail, read_config_file(), funds_issue)
+    return _setup_command.run_setup(args, _setup_dependencies())
 
 
 def cmd_doctor(args):

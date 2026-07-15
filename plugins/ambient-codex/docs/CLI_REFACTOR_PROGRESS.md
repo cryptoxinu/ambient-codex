@@ -123,6 +123,7 @@ bugs, verification, commits, or the next action changes.
 | 5D-2 | Usage, cache, and uninstall maintenance | Complete | local checkpoint | `maintenance_commands.py`; token-only usage rendering, bounded cache lifecycle, foreign-state refusal, key/launcher cleanup, and purge policy are module-owned through injected adapters |
 | 5D-3 | Stable launcher transaction | Complete | local checkpoint | `launcher_command.py`; POSIX/Windows install and removal, foreign-target refusal, atomic asset copy, PATH guidance, and cache-rotation-safe launcher ownership are module-owned |
 | 5D-4 | OpenCode provider and agent handoff | Complete | local checkpoint | `agent_command.py`; namespaced provider read/merge/atomic write, restrictive permissions, key-via-environment boundary, auto-model resolution, pure-mode argv, and platform-specific process handoff are module-owned |
+| 5D-5 | Secure key setup and offboarding | Complete | local checkpoint | `setup_command.py`; hidden-input preflight, paste normalization, authenticated verification, classified failure policy, Keychain fail-closed storage, explicit file fallback, rotation, and removal are module-owned |
 
 ## Phase 0 checklist
 
