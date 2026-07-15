@@ -141,21 +141,24 @@ the launch command for the plugin's own server rather than registering a second 
 codex -c 'mcp_servers.ambient.command="py"' -c 'mcp_servers.ambient.args=["-3","-u","mcp/ambient_mcp.py"]'
 ```
 
-## Picking A Model
+## Choosing Model Defaults
 
-Ask Codex to switch models and it shows a deterministic text menu first. Serving
-models are listed up front because they are ready for immediate use, and the menu
-also offers `browse all models` for on-demand models that may take longer to
-start:
+Ambient has two independent defaults: chat/review covers asks and audits, while
+code/build covers code, builds, and agent work. `set one model for all work`
+sets both defaults together; the two lane-specific controls are only for an
+intentional override. `browse available models` is informational and changes
+nothing. Ask Codex to switch models and it shows a deterministic text menu
+first. Serving models are listed up front because they are ready for immediate
+use, with on-demand models shown separately:
 
 ```text
-Pick a model for both chat and code:
+Set one model for all work:
 
 Serving now - ready for immediate use:
 1. ambient/large - GLM 5.2
 2. moonshotai/kimi-k2.7-code - Kimi K2.7 Code
 3. z-ai/glm-5.2 - GLM 5.2
-4. Browse all models - includes on-demand models that may take longer to start
+4. Browse available models - includes on-demand models that may take longer to start
 ```
 
 After the user replies with a number or model id, Codex calls `ambient_set_model`

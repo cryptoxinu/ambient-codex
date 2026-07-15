@@ -8336,10 +8336,10 @@ CONTROL_WORKFLOWS = (
 )
 
 CONTROL_CHAT_ACTIONS = (
-    ("pick a model", "choose from serving models, with a browse-all option"),
-    ("browse all models", "show serving and on-demand models; on-demand may take longer to start"),
-    ("change chat model", "choose the chat/audit model lane only"),
-    ("change code model", "choose the code/build/agent model lane only"),
+    ("set one model for all work", "set the same default for chat/review and code/build work"),
+    ("browse available models", "view serving and on-demand models without changing a default"),
+    ("change chat/review model", "override the model for asks and audits only"),
+    ("change code/build model", "override the model for code, builds, and agent work only"),
     ("change mode", "choose off / delegate / takeover"),
     ("change settings", "edit streaming, fallback, and optional savings"),
     ("audit this diff", "audit the current git diff"),
@@ -8504,10 +8504,13 @@ def _control_print_status(payload):
         print(f"  {workflow['phrase']:<24} {workflow['description']}")
     print("\nIn Codex chat, say:")
     workflow_phrases = {workflow["phrase"] for workflow in payload["workflows"]}
-    for action in payload["chat_actions"]:
-        if action["phrase"] in workflow_phrases:
-            continue
-        print(f"  {action['phrase']:<24} {action['description']}")
+    control_actions = tuple(
+        action for action in payload["chat_actions"]
+        if action["phrase"] not in workflow_phrases
+    )
+    control_width = max(24, *(len(action["phrase"]) + 2 for action in control_actions))
+    for action in control_actions:
+        print(f"  {action['phrase']:<{control_width}}{action['description']}")
     print("  (workflow commands are listed above)")
     print("\nActions:")
     for action in payload["actions"]:

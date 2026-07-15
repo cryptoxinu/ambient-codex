@@ -131,8 +131,23 @@ class ControlSnapshotTests(ControlCase):
             data["chat_actions"],
         )
         self.assertIn(
-            {"phrase": "browse all models",
-             "description": "show serving and on-demand models; on-demand may take longer to start"},
+            {"phrase": "set one model for all work",
+             "description": "set the same default for chat/review and code/build work"},
+            data["chat_actions"],
+        )
+        self.assertIn(
+            {"phrase": "browse available models",
+             "description": "view serving and on-demand models without changing a default"},
+            data["chat_actions"],
+        )
+        self.assertIn(
+            {"phrase": "change chat/review model",
+             "description": "override the model for asks and audits only"},
+            data["chat_actions"],
+        )
+        self.assertIn(
+            {"phrase": "change code/build model",
+             "description": "override the model for code, builds, and agent work only"},
             data["chat_actions"],
         )
         self.assertIn(
@@ -162,6 +177,10 @@ class ControlSnapshotTests(ControlCase):
         self.assertIn("ambient-codex control model MODEL --chat", out)
         self.assertNotIn("spend-cap", out)
         self.assertIn("In Codex chat, say:", out)
+        self.assertIn(
+            "set one model for all work  set the same default for chat/review and code/build work",
+            out,
+        )
         for phrase, _description in amb.CONTROL_CHAT_ACTIONS:
             self.assertIn(phrase, out)
         workflow_phrases = [phrase for phrase, _description in amb.CONTROL_WORKFLOWS]

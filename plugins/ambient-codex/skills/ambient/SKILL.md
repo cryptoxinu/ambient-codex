@@ -24,7 +24,7 @@ missing, show the First Run block below and stop.
 |---|---|
 | Status or bare `$ambient` | Call MCP `ambient_control`; render the compact control panel below. |
 | Change mode | Show `1. off`, `2. on / delegate`, `3. takeover`; then call `ambient_set_mode`. |
-| Pick both/chat/code model | Get `ambient_control` or `ambient_models`; show serving models plus `Browse all models`; then call `ambient_set_model` with `both`, `chat`, or `code`. |
+| Set a shared/chat-review/code-build model | Get `ambient_control` or `ambient_models`; show serving models plus `browse available models`; then call `ambient_set_model` with `both`, `chat`, or `code`. |
 | Named setting | Call `ambient_set_config`; otherwise show current settings and ask which value to set. |
 | Key status/removal | Call `ambient_key`. Setup/rotation must happen in the user's terminal. |
 | Short ask | Call MCP `ambient_ask`, or bundled `ask "PROMPT" --json`. |
@@ -52,8 +52,10 @@ For bare `$ambient`, setup completion, or “Ambient settings”:
 3. For models, show “Serving now” first and a final `Browse all models` option.
    The all-model view must say on-demand models are available but may take
    longer to start. Never label ordinary on-demand state as broken or down.
-4. Expose these controls once: `pick a model`, `browse all models`,
-   `change chat model`, `change code model`, `change mode`, `change settings`.
+4. Expose these controls once: `set one model for all work` (sets both
+   defaults), `browse available models` (does not change a default), `change chat/review model`
+   (asks and audits), `change code/build model` (code, builds, and agent work),
+   `change mode`, and `change settings`.
 5. Expose these workflows once: `audit this diff`, `audit this repo`,
    `build <task>`, `ask Ambient <question>`, `diagnose Ambient`, and
    `show Ambient usage`. Audit is a workflow, not a mode.
