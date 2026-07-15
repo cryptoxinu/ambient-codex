@@ -1455,27 +1455,10 @@ def savings_note(model, usage, catalog=None, conf=None):
     estimated token counts carry '(est.)'; zero tokens → no note. OFF by default — see _savings_enabled. Never raises."""
     if not _savings_enabled(conf):
         return ""
-    try:
-        tin = _as_pos_int(usage.get("prompt_tokens"), 0)
-        tout = _as_pos_int(usage.get("completion_tokens"), 0)
-        if tin + tout == 0:
-            return ""
-        cost, assumed = usage_cost(model, usage, catalog)
-        if assumed:
-            return ""  # unknown real price → no honest comparison to make
-        fcost = reference_cost(usage, resolve_reference_price(conf))
-        if fcost <= 0 or cost <= 0:
-            return ""
-        est = " (est.)" if usage.get("_estimated") else ""
-        saved = fcost - cost
-        if saved <= 0:
-            return f" — costlier than a frontier model{est}"
-        pct = int(saved / fcost * 100)  # floored: 93.7% claims 93%
-        if pct < 1:
-            return ""
-        return f" — ~{pct}% cheaper than a frontier model{est}"
-    except Exception:  # pragma: no cover — a receipt must never kill a result
-        return ""
+    return _usage_pricing.relative_savings_note(
+        model, usage, _PRICING_CATALOG if catalog is None else catalog,
+        resolve_reference_price(conf),
+        (ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE), _as_pos_int)
 
 
 def savings_note_by_served(usage_by_model, catalog=None, conf=None):
@@ -1490,40 +1473,11 @@ def savings_note_by_served(usage_by_model, catalog=None, conf=None):
     it never raises. OFF by default — see _savings_enabled."""
     if not _savings_enabled(conf):
         return ""
-    try:
-        if not usage_by_model:
-            return ""
-        if len(usage_by_model) == 1:
-            (m, u), = usage_by_model.items()
-            return savings_note(m, u, catalog, conf)
-        tot = {"prompt_tokens": 0, "completion_tokens": 0}
-        cost, assumed_any, est_any = 0.0, False, False
-        for m, u in usage_by_model.items():
-            tot["prompt_tokens"] += _as_pos_int(u.get("prompt_tokens"), 0)
-            tot["completion_tokens"] += _as_pos_int(
-                u.get("completion_tokens"), 0)
-            c, assumed = usage_cost(m, u, catalog)
-            cost += c
-            assumed_any = assumed_any or assumed
-            est_any = est_any or bool(u.get("_estimated"))
-        if tot["prompt_tokens"] + tot["completion_tokens"] == 0:
-            return ""
-        est = " (est.)" if est_any else ""
-        mixed = f"mixed serving, {len(usage_by_model)} models — "
-        if assumed_any:
-            return ""  # unknown real price on some sample → no honest claim
-        fcost = reference_cost(tot, resolve_reference_price(conf))
-        if fcost <= 0 or cost <= 0:
-            return ""
-        saved = fcost - cost
-        if saved <= 0:
-            return f" — {mixed}costlier than a frontier model{est}"
-        pct = int(saved / fcost * 100)  # floored: 93.7% claims 93%
-        if pct < 1:
-            return ""
-        return f" — {mixed}~{pct}% cheaper than a frontier model{est}"
-    except Exception:  # pragma: no cover — a receipt must never kill a result
-        return ""
+    return _usage_pricing.relative_savings_note_by_served(
+        usage_by_model,
+        _PRICING_CATALOG if catalog is None else catalog,
+        resolve_reference_price(conf),
+        (ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE), _as_pos_int)
 
 
 # --- Cross-process file lock (usage ledger) --------------------

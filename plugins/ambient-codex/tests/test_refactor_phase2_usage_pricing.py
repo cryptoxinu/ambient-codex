@@ -15,7 +15,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
 MOVED_NAMES = ("model_pricing", "parse_reference_price", "usage_cost",
-               "reference_cost")
+               "reference_cost", "relative_savings_note",
+               "relative_savings_note_by_served")
 
 
 def _pos_int(value, default):
@@ -223,6 +224,37 @@ class ReferenceCostTests(unittest.TestCase):
                 {"prompt_tokens": None, "completion_tokens": -3},
                 (3.0, 15.0), _pos_int),
             0.0)
+
+
+class RelativeSavingsTests(unittest.TestCase):
+    def setUp(self):
+        self.pricing = importlib.import_module("ambient_codex.usage_pricing")
+        self.catalog = [{
+            "id": "m", "pricing": {"input": 1, "output": 1},
+        }]
+
+    def test_note_is_relative_only_and_omits_unpriced_models(self):
+        usage = {"prompt_tokens": 100, "completion_tokens": 100}
+        note = self.pricing.relative_savings_note(
+            "m", usage, self.catalog, (3.0, 15.0), (20.0, 60.0),
+            _pos_int)
+        self.assertIn("% cheaper", note)
+        self.assertNotIn("$", note)
+        self.assertEqual(self.pricing.relative_savings_note(
+            "missing", usage, self.catalog, (3.0, 15.0), (20.0, 60.0),
+            _pos_int), "")
+
+    def test_mixed_serving_prices_each_models_tokens(self):
+        catalog = self.catalog + [{
+            "id": "n", "pricing": {"input": 2, "output": 2},
+        }]
+        note = self.pricing.relative_savings_note_by_served(
+            {"m": {"prompt_tokens": 100},
+             "n": {"completion_tokens": 100, "_estimated": True}},
+            catalog, (3.0, 15.0), (20.0, 60.0), _pos_int)
+        self.assertIn("mixed serving, 2 models", note)
+        self.assertIn("(est.)", note)
+        self.assertNotIn("$", note)
 
 
 class PricingFacadeTests(unittest.TestCase):

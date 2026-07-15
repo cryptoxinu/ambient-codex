@@ -78,5 +78,67 @@ def reference_cost(usage, ref, to_pos_int):
     return (tin * ref[0] + tout * ref[1]) / 1e6
 
 
+def _relative_note(cost, frontier_cost, estimated, prefix=""):
+    if frontier_cost <= 0 or cost <= 0:
+        return ""
+    suffix = " (est.)" if estimated else ""
+    saved = frontier_cost - cost
+    if saved <= 0:
+        return f" — {prefix}costlier than a frontier model{suffix}"
+    percent = int(saved / frontier_cost * 100)
+    return (f" — {prefix}~{percent}% cheaper than a frontier model{suffix}"
+            if percent >= 1 else "")
+
+
+def relative_savings_note(model, usage, catalog, reference, assumed_prices,
+                          to_pos_int):
+    """Return an honest relative-only receipt note, or an empty string."""
+    try:
+        prompt = to_pos_int(usage.get("prompt_tokens"), 0)
+        completion = to_pos_int(usage.get("completion_tokens"), 0)
+        if prompt + completion == 0:
+            return ""
+        cost, assumed = usage_cost(
+            model, usage, catalog, assumed_prices, to_pos_int)
+        if assumed:
+            return ""
+        frontier = reference_cost(usage, reference, to_pos_int)
+        return _relative_note(cost, frontier, bool(usage.get("_estimated")))
+    except Exception:  # noqa: BLE001 — a receipt must never kill a result
+        return ""
+
+
+def relative_savings_note_by_served(usage_by_model, catalog, reference,
+                                    assumed_prices, to_pos_int):
+    """Price mixed serving by actual model while exposing no money amount."""
+    try:
+        if not usage_by_model:
+            return ""
+        if len(usage_by_model) == 1:
+            (model, usage), = usage_by_model.items()
+            return relative_savings_note(
+                model, usage, catalog, reference, assumed_prices, to_pos_int)
+        total = {"prompt_tokens": 0, "completion_tokens": 0}
+        cost, assumed_any, estimated = 0.0, False, False
+        for model, usage in usage_by_model.items():
+            total["prompt_tokens"] += to_pos_int(usage.get("prompt_tokens"), 0)
+            total["completion_tokens"] += to_pos_int(
+                usage.get("completion_tokens"), 0)
+            model_cost, assumed = usage_cost(
+                model, usage, catalog, assumed_prices, to_pos_int)
+            cost += model_cost
+            assumed_any = assumed_any or assumed
+            estimated = estimated or bool(usage.get("_estimated"))
+        if (not total["prompt_tokens"] and not total["completion_tokens"]) \
+                or assumed_any:
+            return ""
+        frontier = reference_cost(total, reference, to_pos_int)
+        prefix = f"mixed serving, {len(usage_by_model)} models — "
+        return _relative_note(cost, frontier, estimated, prefix)
+    except Exception:  # noqa: BLE001 — a receipt must never kill a result
+        return ""
+
+
 __all__ = ("model_pricing", "parse_reference_price", "usage_cost",
-           "reference_cost")
+           "reference_cost", "relative_savings_note",
+           "relative_savings_note_by_served")

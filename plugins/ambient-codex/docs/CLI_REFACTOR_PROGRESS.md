@@ -65,7 +65,7 @@ bugs, verification, commits, or the next action changes.
 | 2D2C | Usage aggregation | Complete | local checkpoint | `usage_report.py`; immutable records-to-relative-savings aggregation keeps public rows free of monetary fields |
 | 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | `34b5958`+`ed4f314` | Extracted to `usage_pricing.py`; Codex-audited; CI green |
 | 2D3b-1 | Cost math (`usage_cost`, `reference_cost`) | Complete | `7f6c5f1` | Extended `usage_pricing.py`; injected assumed-prices + coercer; CI green |
-| 2D3b-2 | Savings notes (`savings_note*`) | Deferred | — | Receipt composition w/ 5 deps + `_savings_enabled` gate; move with the display/facade-reduction phase |
+| 2D3b-2 | Savings notes (`savings_note*`) | Complete | local checkpoint | `usage_pricing.py`; opt-in gate remains facade-owned while pure single/mixed-serving relative-only receipt math exposes no monetary amount |
 | 2D3c | Spend gate (`_gate_amount`, `_config_norm_spend`) | REMOVED | `5b08854` | Feature DELETED per founder 2026-07-14 — nothing to extract |
 | 2D4 | Fleet reservations | REMOVED | `5b08854` | Deleted with the spend cap; concurrency (`_resolve_parallel`) is independent and survives |
 | 3A | HTTP transport + catalog normalization | Complete | local checkpoint | `transport.py`; GET-only retry and facade patch seams preserved; full suite green |
