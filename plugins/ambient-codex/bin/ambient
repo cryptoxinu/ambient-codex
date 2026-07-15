@@ -180,6 +180,7 @@ from ambient_codex import cli_dispatch as _cli_dispatch  # noqa: E402
 from ambient_codex import cli_parser as _cli_parser  # noqa: E402
 from ambient_codex import code_workflow as _code_workflow  # noqa: E402
 from ambient_codex import launcher as _launcher  # noqa: E402
+from ambient_codex import launcher_command as _launcher_command  # noqa: E402
 from ambient_codex import maintenance_commands as _maintenance_commands  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
@@ -8654,20 +8655,18 @@ def _stable_launcher_is_ours(path):
 
 def _write_stable_launcher(source, destination):
     """Atomically install the standalone launcher without following links."""
-    temp = destination + f".tmp-{os.getpid()}"
-    try:
-        with open(source, encoding="utf-8") as reader:
-            body = reader.read()
-        with open(temp, "x", encoding="utf-8", newline="") as writer:
-            writer.write(body)
-        os.chmod(temp, 0o755)
-        os.replace(temp, destination)
-    except OSError:
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
-        raise
+    return _launcher_command.write_stable_launcher(source, destination)
+
+
+def _launcher_dependencies():
+    return _launcher_command.LauncherDependencies(
+        launcher_name=LAUNCHER_NAME,
+        stable_launcher_marker=_launcher.STABLE_LAUNCHER_MARKER,
+        link_is_ours=_link_is_ours, shim_is_ours=_shim_is_ours,
+        stable_launcher_asset=_stable_launcher_asset,
+        stable_launcher_is_ours=_stable_launcher_is_ours,
+        write_stable_launcher=_write_stable_launcher,
+    )
 
 
 def cmd_link(args):
@@ -8677,89 +8676,7 @@ def cmd_link(args):
     rather than pointing at a versioned plugin-cache directory. The launcher is
     deliberately not named `ambient`: another Ambient install may own that name.
     """
-    dest_dir = os.path.expanduser(getattr(args, "dir", None) or "~/.local/bin")
-    dest = os.path.join(dest_dir, LAUNCHER_NAME)
-    if getattr(args, "remove", False):
-        if os.name == "nt":   # M14: install wrote ambient.cmd, not a symlink
-            shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
-            payload = dest + ".py"
-            if os.path.exists(shim) or os.path.exists(payload):
-                if os.path.exists(shim) and not _shim_is_ours(shim):
-                    sys.exit(f"ambient: {shim} is not an ambient-codex launcher "
-                             "— refusing to delete it")
-                if os.path.exists(payload) and not _stable_launcher_is_ours(payload):
-                    sys.exit(f"ambient: {payload} is not an ambient-codex launcher "
-                             "— refusing to delete it")
-                for path in (shim, payload):
-                    if os.path.exists(path):
-                        os.remove(path)
-                print(f"removed: {shim}")
-            else:
-                print(f"nothing to remove at {shim}")
-            return
-        if os.path.islink(dest):
-            if _link_is_ours(dest):
-                os.unlink(dest)
-                print(f"removed: {dest}")
-            else:
-                sys.exit(f"ambient: {dest} points at {os.readlink(dest)} — not "
-                         "an ambient-codex launcher, refusing to delete it")
-        elif os.path.exists(dest):
-            if _stable_launcher_is_ours(dest):
-                os.remove(dest)
-            else:
-                sys.exit(f"ambient: {dest} is not an ambient-codex launcher "
-                         "— refusing to delete a foreign file")
-        else:
-            print(f"nothing to remove at {dest}")
-        return
-    if os.path.exists(dest) and not os.path.islink(dest) and not _stable_launcher_is_ours(dest):
-        sys.exit(
-            f"ambient: {dest} exists and is not an ambient-codex launcher — "
-            "refusing to overwrite it. Pass --dir DIR to link somewhere else."
-        )
-    if os.path.islink(dest) and not _link_is_ours(dest):
-        # An existing (or dangling) symlink to a NON-ambient-codex target is a
-        # foreign `ambient` the user set up — never overwrite it.
-        sys.exit(
-            f"ambient: {dest} is a symlink to another tool "
-            f"({os.readlink(dest)}) — refusing to overwrite it. "
-            "Pass --dir DIR to link somewhere else."
-        )
-    try:
-        os.makedirs(dest_dir, exist_ok=True)
-        asset = _stable_launcher_asset()
-        if os.name == "nt":  # symlinks need privileges on Windows — shim it
-            shim = os.path.join(dest_dir, LAUNCHER_NAME + ".cmd")
-            payload = dest + ".py"
-            if os.path.exists(shim) and not _shim_is_ours(shim):
-                sys.exit(f"ambient: {shim} is not an ambient-codex launcher — "
-                         "refusing to overwrite it")
-            if os.path.exists(payload) and not _stable_launcher_is_ours(payload):
-                sys.exit(f"ambient: {payload} is not an ambient-codex launcher — "
-                         "refusing to overwrite it")
-            _write_stable_launcher(asset, payload)
-            with open(shim, "w", encoding="utf-8") as fh:
-                fh.write(
-                    f"@rem {_launcher.STABLE_LAUNCHER_MARKER}\r\n"
-                    f'@"{sys.executable}" "%~dp0{LAUNCHER_NAME}.py" %*\r\n')
-            print(f"wrote launcher: {shim}")
-            if dest_dir not in os.environ.get("PATH", "").split(os.pathsep):
-                print(
-                    f"note: {dest_dir} is not on your PATH yet — add it so "
-                    "`ambient` works from any terminal (System Settings → "
-                    "Environment Variables → Path, or run:\n"
-                    f'  setx PATH "%PATH%;{dest_dir}")')
-            return
-        _write_stable_launcher(asset, dest)
-    except OSError as err:
-        sys.exit(f"ambient: could not create the link ({err})")
-    print(f"linked: {dest} -> active Codex Ambient plugin")
-    if dest_dir not in os.environ.get("PATH", "").split(os.pathsep):
-        print(
-            f"note: {dest_dir} is not on your PATH yet — add this to your "
-            f'shell profile:\n  export PATH="{dest_dir}:$PATH"'
-        )
+    return _launcher_command.run_link(args, _launcher_dependencies())
 
 
 def cmd_cache(args):
