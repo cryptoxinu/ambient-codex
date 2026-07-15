@@ -172,6 +172,7 @@ from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import audit_prose as _audit_prose  # noqa: E402
 from ambient_codex import agent_config as _agent_config  # noqa: E402
+from ambient_codex import build_apply as _build_apply  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
@@ -7906,86 +7907,16 @@ def cmd_build(args, api_key, api_url, conf):
                 ans = ""
             proceed = ans in ("y", "yes")
         if proceed:
-            bak_dir = os.path.join(root, ".ambient-build.bak",
-                                   time.strftime("%Y%m%d-%H%M%S"))
-            for rel, rec in sorted(done.items()):
-                dest = os.path.join(root, *rel.split("/"))
-                # Re-validate the parent BEFORE any lexists/backup touches the
-                # path — a parent swapped to a symlink after generation could
-                # otherwise make the --force backup drag an OUTSIDE file into
-                #.ambient-build.bak.
-                root_real0 = os.path.realpath(root)
-                parent_real0 = os.path.realpath(os.path.dirname(dest))
-                if not _within_root(parent_real0, root_real0):   # M9: correct at root '/'
-                    actions[rel] = "write-failed"
-                    failed.append({"path": rel,
-                                   "reason": "parent escaped the target "
-                                             "directory before write"})
-                    partial = True
-                    continue
-                action = "create"
-                if os.path.lexists(dest):
-                    # Idempotent re-run: an existing file whose content already
-                    # matches is an "unchanged" no-op, NOT a partial result —
-                    # so re-running a finished build exits 0, not 2.
-                    if os.path.isfile(dest) and not os.path.islink(dest):
-                        try:
-                            # Compare raw bytes to the desired content hash. A
-                            # lossy decode could make invalid UTF-8 look like a
-                            # replacement-character file and skip a needed write.
-                            with open(dest, "rb") as fh:
-                                cur_bytes = fh.read()
-                        except OSError:
-                            cur_bytes = None
-                        if cur_bytes is not None and hashlib.sha256(
-                                cur_bytes).hexdigest() == rec["sha256"]:
-                            actions[rel] = "unchanged"
-                            continue
-                    if not args.force:
-                        actions[rel] = "skip-exists"
-                        partial = True
-                        continue
-                    action = "overwrite"
-                    try:
-                        bpath = os.path.join(bak_dir, *rel.split("/"))
-                        os.makedirs(os.path.dirname(bpath), exist_ok=True)
-                        os.replace(dest, bpath)
-                    except OSError as err:
-                        # Backup failed — REFUSE to overwrite. Silently
-                        # destroying the user's original file (while reporting
-                        # "overwrite") is disqualifying for an official plugin.
-                        actions[rel] = "write-failed"
-                        failed.append(
-                            {"path": rel,
-                             "reason": f"backup failed, refused to overwrite "
-                                       f"without a backup: {err}"})
-                        partial = True
-                        continue
-                try:
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    # Re-validate IMMEDIATELY before writing: a parent dir
-                    # could have been swapped for a symlink after the earlier
-                    # firewall check.
-                    root_real = os.path.realpath(root)
-                    parent_real = os.path.realpath(os.path.dirname(dest))
-                    if not _within_root(parent_real, root_real):   # M9
-                        raise OSError("parent escaped the target directory")
-                    fd, tmp = tempfile.mkstemp(
-                        dir=os.path.dirname(dest), prefix=".ambient-")
-                    # newline="" writes the model's content byte-faithfully (no
-                    # \n->\r\n translation), so the manifest sha matches disk on
-                    # every platform and re-runs read back as "unchanged".
-                    with os.fdopen(fd, "w", encoding="utf-8",
-                                   newline="") as fh:
-                        fh.write(rec["content"])
-                    if os.path.islink(dest):
-                        raise OSError("destination became a symlink")
-                    os.replace(tmp, dest)  # plain file perms; never executable
-                    actions[rel] = action
-                except OSError as err:
-                    actions[rel] = "write-failed"
-                    failed.append({"path": rel, "reason": f"write failed: {err}"})
-                    partial = True
+            applied, apply_failures = _build_apply.apply_records(
+                done, root, force=args.force,
+                backup_stamp=time.strftime("%Y%m%d-%H%M%S"),
+                within_root=_within_root)
+            actions = dict(applied)
+            failed.extend({"path": path, "reason": reason}
+                          for path, reason in apply_failures)
+            if apply_failures or any(
+                    action == "skip-exists" for action in actions.values()):
+                partial = True
             # "written" == at least one file actually landed with the intended
             # content (freshly created/overwritten, or already-present-and-
             # matching). If every file skip-exists'd or write-failed, nothing

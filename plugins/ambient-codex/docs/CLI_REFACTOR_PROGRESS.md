@@ -106,6 +106,7 @@ bugs, verification, commits, or the next action changes.
 | 4B-7 | Build generation-record acceptance | Complete | local checkpoint | `build_workflow.py`; immutable path-contract classification preserves complete records, rejects unsafe/oversized output, drops unplanned files, and discards a potentially cut salvage tail |
 | 4B-8 | Model-aware build batching + prompt compaction | Complete | local checkpoint | `build_workflow.py`; output-share batching, bounded call ceilings, recovery prompts, context trimming, and paths-only fallback are pure and model-window constrained |
 | 4B-9 | Build retry-state transition | Complete | local checkpoint | `build_workflow.py`; missing-file splits, reasoning-starvation recovery, per-file retry ceilings, and terminal failure reasons are immutable and resumable |
+| 4B-10 | Safe build apply transaction | Complete | local checkpoint | `build_apply.py`; parent revalidation, byte-idempotency, overwrite backup refusal, atomic replacement, and immutable action/failure reporting are module-owned |
 | 4 | Audit and generation workflows | Pending | — | — |
 | 5 | Integrations and facade reduction | Pending | — | — |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
