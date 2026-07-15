@@ -125,6 +125,7 @@ bugs, verification, commits, or the next action changes.
 | 5D-4 | OpenCode provider and agent handoff | Complete | local checkpoint | `agent_command.py`; namespaced provider read/merge/atomic write, restrictive permissions, key-via-environment boundary, auto-model resolution, pure-mode argv, and platform-specific process handoff are module-owned |
 | 5D-5 | Secure key setup and offboarding | Complete | local checkpoint | `setup_command.py`; hidden-input preflight, paste normalization, authenticated verification, classified failure policy, Keychain fail-closed storage, explicit file fallback, rotation, and removal are module-owned |
 | 5D-6 | Layered health diagnostics | Complete | local checkpoint | `doctor_command.py`; runtime/config/key isolation, catalog/auth/billing, model/curation, launcher coexistence, agent config, and cache checks are module-owned through a frozen dependency boundary |
+| 4B-11 | Model-aware build command composition | Complete | local checkpoint | `build_command.py`; dry-run zero-egress, context distillation, structured-plan fallback, resumable bounded generation, recovery, safe apply, and partial rendering moved behind immutable late-bound dependencies while existing pure policy modules remain authoritative |
 
 ## Phase 0 checklist
 
