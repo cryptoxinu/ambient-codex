@@ -40,6 +40,24 @@ class OutputSchemaTests(unittest.TestCase):
         )
         self.assertNotIn("api_key", core.build_agent_argv.__code__.co_varnames)
 
+    def test_launcher_ownership_checks_use_injected_filesystem_reads(self):
+        core = importlib.import_module("ambient_codex.launcher")
+        self.assertTrue(core.owned_link(
+            "/tmp/ambient-codex", is_link=lambda _path: True,
+            read_link=lambda _path: "/cache/ambient-codex/1/bin/ambient"))
+        self.assertFalse(core.owned_link(
+            "/tmp/ambient-codex", is_link=lambda _path: True,
+            read_link=lambda _path: "/other/ambient"))
+        self.assertFalse(core.owned_link(
+            "/tmp/ambient-codex", is_link=lambda _path: False,
+            read_link=lambda _path: self.fail("must not read a regular file")))
+        self.assertTrue(core.owned_shim(
+            "/tmp/ambient-codex.cmd",
+            read_text=lambda _path: '@python "C:\\\\cache\\\\ambient-codex\\\\bin\\\\ambient" %*'))
+        self.assertFalse(core.owned_shim(
+            "/tmp/foreign.cmd", read_text=lambda _path: '@python "C:\\\\other\\\\tool" %*'))
+        self.assertEqual(core.__all__, ("owned_link", "owned_shim"))
+
     def test_module_allowlists_tokens_and_never_mutates_input(self):
         core = importlib.import_module("ambient_codex.output_schema")
         source = {"prompt_tokens": 1, "completion_tokens": 2,

@@ -175,6 +175,7 @@ from ambient_codex import agent_config as _agent_config  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
+from ambient_codex import launcher as _launcher  # noqa: E402
 from ambient_codex import credentials as _credentials_core  # noqa: E402
 from ambient_codex import intake as _intake_core  # noqa: E402
 from ambient_codex import map_reduce as _map_reduce_core  # noqa: E402
@@ -9374,13 +9375,8 @@ def _link_is_ours(dest):
     A symlink to a DIFFERENT tool merely named `ambient` returns False, so we
     never clobber a foreign launcher. readlink reports the stored target of a
     dangling link too, so the same check covers the post-GC case."""
-    if not os.path.islink(dest):
-        return False
-    try:
-        target = os.readlink(dest)
-    except OSError:
-        return False
-    return "/ambient-codex/" in target.replace("\\", "/")
+    return _launcher.owned_link(
+        dest, is_link=os.path.islink, read_link=os.readlink)
 
 
 def _shim_is_ours(shim_path):
@@ -9389,13 +9385,11 @@ def _shim_is_ours(shim_path):
     `--remove` never deletes a foreign shim. Matches BOTH the current
     `@"<interp>" "<target>" %*` form and the legacy `@python "<target>" %*` one
     so an older shim stays removable."""
-    try:
-        with open(shim_path, encoding="utf-8") as fh:
-            body = fh.read().strip()
-    except OSError:
-        return False
-    m = re.fullmatch(r'@(?:python|"[^"]+") "(.+)" %\*', body)
-    return bool(m) and "/ambient-codex/" in m.group(1).replace("\\", "/")
+    def read_text(path):
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+
+    return _launcher.owned_shim(shim_path, read_text=read_text)
 
 
 def cmd_link(args):
