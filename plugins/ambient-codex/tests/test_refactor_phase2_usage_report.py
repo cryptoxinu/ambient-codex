@@ -15,7 +15,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
-MOVED_NAMES = ("read_records", "filter_recent")
+MOVED_NAMES = ("read_records", "filter_recent", "summarize_records")
 
 
 def load_facade(home):
@@ -118,6 +118,23 @@ class FilterRecentTests(unittest.TestCase):
         recent = report.filter_recent(
             records, 100, lambda r: r["ts"] if isinstance(r["ts"], int) else 0)
         self.assertEqual(recent, [{"ts": 100}, {"ts": 200}])
+
+    def test_usage_summary_is_immutable_and_exposes_only_relative_savings(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        records = [{"model": "example/model", "in": 1_000_000, "out": 0,
+                    "cost": 1.0, "ref": [3.0, 4.0], "est": True}]
+        summary = report.summarize_records(
+            records, pricing={}, default_reference=(3.0, 4.0),
+            positive_int=lambda value, default: int(value) if isinstance(value, int) else default,
+        )
+        self.assertEqual(records[0]["cost"], 1.0)
+        self.assertEqual(summary["rows"], [{
+            "calls": 1, "in": 1_000_000, "out": 0,
+            "model": "example/model", "est_records": 1,
+            "cost_partial": False, "saved_pct": 66,
+        }])
+        self.assertTrue(summary["all_priced"])
+        self.assertEqual(summary["est_records"], 1)
 
 
 class UsageReportFacadeTests(unittest.TestCase):

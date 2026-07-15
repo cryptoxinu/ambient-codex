@@ -62,6 +62,7 @@ bugs, verification, commits, or the next action changes.
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
 | 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
 | 2D2B | Usage summary records/report | Complete | pending push | Reader extracted; Codex-audited |
+| 2D2C | Usage aggregation | Complete | local checkpoint | `usage_report.py`; immutable records-to-relative-savings aggregation keeps public rows free of monetary fields |
 | 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | `34b5958`+`ed4f314` | Extracted to `usage_pricing.py`; Codex-audited; CI green |
 | 2D3b-1 | Cost math (`usage_cost`, `reference_cost`) | Complete | `7f6c5f1` | Extended `usage_pricing.py`; injected assumed-prices + coercer; CI green |
 | 2D3b-2 | Savings notes (`savings_note*`) | Deferred | — | Receipt composition w/ 5 deps + `_savings_enabled` gate; move with the display/facade-reduction phase |

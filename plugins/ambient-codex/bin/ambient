@@ -9124,80 +9124,16 @@ def cmd_usage(args):
     except (NetworkError, SystemExit):
         pass  # offline: stored per-record costs still work; rest shows n/a
     default_ref = resolve_reference_price(conf)
-    totals = {}
-    approx_ref = 0  # records that predate stored reference pricing
-    for r in recent:
-        model = str(r.get("model", "?"))
-        t = totals.setdefault(model, {"calls": 0, "in": 0, "out": 0,
-                                      "cost": 0.0, "unpriced": 0,
-                                      "frontier": 0.0, "est": 0})
-        t["calls"] += 1
-        if r.get("est"):
-            t["est"] += 1  # estimated token counts must not read as exact (M1)
-        # Corrupt-but-parseable records must be skipped like unparseable ones,
-        # not TypeError into.
-        tin = _as_pos_int(r.get("in"), 0)
-        tout = _as_pos_int(r.get("out"), 0)
-        t["in"] += tin
-        t["out"] += tout
-        # Actual cost: the cost STORED at call time is exact; records that
-        # predate it (or lost it) fall back to today's catalog price.
-        c = r.get("cost")
-        # A stored cost > 0 is exact. A stored cost of exactly 0 with real
-        # tokens is NOT trusted (a legacy sub-micro round-to-0 record would
-        # else read as a fabricated ~100% saving) — recompute from the catalog
-        # price (which yields the true tiny cost, or a real 0 for a free model).
-        if isinstance(c, (int, float)) and not isinstance(c, bool) and c > 0:
-            t["cost"] += float(c)
-        elif model in pricing:
-            t["cost"] += (tin * pricing[model][0]
-                          + tout * pricing[model][1]) / 1e6
-        else:
-            t["unpriced"] += 1
-        # Frontier-equivalent: the reference STORED with the record wins —
-        # historical savings stay accurate if the default changes later.
-        ref = r.get("ref")
-        if (isinstance(ref, list) and len(ref) == 2
-                and all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                        and 0 < v < float("inf") for v in ref)):
-            rin, rout = float(ref[0]), float(ref[1])
-        else:
-            rin, rout = default_ref
-            approx_ref += 1
-        t["frontier"] += (tin * rin + tout * rout) / 1e6
-    grand = 0.0           # ALL known spend, incl. partially-priced models
-    grand_frontier = 0.0  # summed ONLY over rows whose cost is fully known
-    priced_cost = 0.0     # known cost of FULLY-priced rows (savings math)
-    est_records = sum(t["est"] for t in totals.values())
-    priced_all = True
-    rows = []      # display rows (rounded ONLY here, for output)
-    raw_rows = []  # aligned RAW figures — text/% math never uses rounded values
-    for model, t in sorted(totals.items()):
-        base = {"calls": t["calls"], "in": t["in"], "out": t["out"],
-                "model": model, "est_records": t["est"]}
-        # KNOWN spend ALWAYS counts — dropping the priced portion of a
-        # partially-unpriced model under-reported real spend.
-        grand += t["cost"]
-        if t["unpriced"]:
-            # Cost not FULLY known → no savings math for this model: a
-            # frontier comparison against an unknown cost would fabricate a
-            # saving. The known cost is reported as a LOWER BOUND, flagged.
-            priced_all = False
-            rows.append({**base, "cost_partial": True, "saved_pct": None})
-            raw_rows.append(("partial", t["cost"]) if t["cost"] > 0 else None)
-            continue
-        # Aggregate and derive the saved-% from RAW totals — rounding first
-        # let sub-microdollar spend read as 0/~100% saved.
-        priced_cost += t["cost"]
-        grand_frontier += t["frontier"]
-        raw_saved = t["frontier"] - t["cost"]
-        pct = (int(raw_saved / t["frontier"] * 100)  # floored
-               if t["frontier"] > 0 and raw_saved > 0 else None)
-        rows.append({**base, "cost_partial": False, "saved_pct": pct})
-        raw_rows.append((t["cost"], t["frontier"], raw_saved, pct))
-    # Savings compare frontier vs the FULLY-priced subset only — partial
-    # models are in `grand` (spend honesty) but never in the saving.
-    grand_saved = grand_frontier - priced_cost
+    summary = _usage_report.summarize_records(
+        recent, pricing=pricing, default_reference=default_ref,
+        positive_int=_as_pos_int)
+    rows = summary["rows"]
+    raw_rows = summary["raw_rows"]
+    grand_frontier = summary["grand_frontier"]
+    grand_saved = summary["grand_saved"]
+    est_records = summary["est_records"]
+    priced_all = summary["all_priced"]
+    approx_ref = summary["approx_ref_records"]
     unmetered_note = ("`ambient-codex agent` activity is not included in local "
                       "usage totals — these totals cover only ambient CLI calls")
     if getattr(args, "json", False):
