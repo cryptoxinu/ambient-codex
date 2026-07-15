@@ -1443,3 +1443,26 @@ relative-only.
 T5 backup cleanup: NO-OP — only the bundle+tarball safety net exists at
 `/Users/z/ambient-codex-backups/pre-refactor-8104930/` (KEEP); no redundant
 working copy exists to delete.
+
+## Continuation update — 2026-07-14 (final local verification)
+
+- New local checkpoints: `094a8c7` moves the single-shot completion lifecycle
+  to `chat_workflow.py`; `322008b` moves the build manifest path firewall to
+  `build_workflow.py`; `22dc6c9` moves immutable usage aggregation to
+  `usage_report.py`; and `39667ef` moves shared terminal result rendering to
+  `output_schema.py`. Each was RED-first, limited to four tracked files, and
+  passed the full local gate.
+- Full guarded suite after the renderer checkpoint: **1,340 pass, 1 intentional
+  skip**; ruff, plugin/skill validators, recursive compile, and diff hygiene
+  pass.
+- Current live model matrix is retained at
+  `/tmp/ambient-codex-model-matrix-20260714-final/summary.txt`: **50 passed,
+  0 failed, 1 intentional usage skip**. It covered all 17 catalog models, real
+  ask/audit/code work for all four serving models, control/setup/git/build and
+  consensus workflows, plus a final clean key-leak tripwire.
+- Plugin cachebuster `1.10.0+codex.20260714205105` is installed locally. Source
+  and installed-cache control both report savings defaulting to `off` and no
+  `reference-price` surface; installed-cache MCP starts on a Python-only PATH
+  and lists exactly 14 tools with zero stderr.
+- Local branch is intentionally unpushed. Do not publish, tag, or push without
+  explicit founder approval.
