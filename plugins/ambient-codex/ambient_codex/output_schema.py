@@ -57,4 +57,40 @@ def build_error_envelope(kind, category, diagnosis, exit_code):
     }
 
 
-__all__ = ("public_usage", "build_envelope", "build_error_envelope")
+def render_terminal_result(text, partial, reason, request, api_key, *, usage,
+                           model, already_streamed, usage_by_model, paint,
+                           redact, stdout, emit_stdout, emit_stderr,
+                           exit_process, partial_exit_code, savings_note,
+                           savings_note_by_served, reasoning_hint):
+    """Render terminal output while keeping financial values out of the schema."""
+    if partial:
+        header = (paint("⚠ PARTIAL / INCOMPLETE RESULT", "1;33")
+                  + f" — {reason}. This is NOT a clean pass; "
+                  "re-run (optionally with a larger --max-tokens/--timeout, or a bigger-"
+                  "context model) or pass --allow-partial to accept.\n\n")
+        if already_streamed:
+            stdout.write("\n")
+            stdout.flush()
+            emit_stderr(redact(header.strip(), api_key))
+        else:
+            emit_stdout(redact(header + text, api_key))
+        if not getattr(request, "allow_partial", False):
+            exit_process(partial_exit_code)
+        return
+    if already_streamed:
+        if not text.endswith("\n"):
+            stdout.write("\n")
+            stdout.flush()
+    else:
+        emit_stdout(redact(text, api_key))
+    if usage and model:
+        note = (savings_note_by_served(usage_by_model) if usage_by_model
+                else savings_note(model, usage))
+        hint = reasoning_hint(text, usage.get("completion_tokens"))
+        emit_stderr(redact(
+            f"\n[ambient {model} | in={usage.get('prompt_tokens')} "
+            f"out={usage.get('completion_tokens')} tokens{hint}{note}]", api_key))
+
+
+__all__ = ("public_usage", "build_envelope", "build_error_envelope",
+           "render_terminal_result")

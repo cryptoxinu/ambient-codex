@@ -3657,43 +3657,15 @@ def render_result(text, partial, reason, args, api_key, usage=None, model=None,
     `usage_by_model`: per-SERVED-model token split for runs whose
     samples were served by different models — the receipt then prices each
     model's own tokens instead of the aggregate at `model`'s price."""
-    if partial:
-        header = (
-            paint("⚠ PARTIAL / INCOMPLETE RESULT", "1;33")
-            + f" — {reason}. This is NOT a clean pass; "
-            "re-run (optionally with a larger --max-tokens/--timeout, or a bigger-"
-            "context model) or pass --allow-partial to accept.\n\n"
-        )
-        if already_streamed:
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            print(redact(header.strip(), api_key), file=sys.stderr)
-        else:
-            print(redact(header + text, api_key))
-        if not getattr(args, "allow_partial", False):
-            sys.exit(EXIT_PARTIAL)
-        return
-    if already_streamed:
-        if not text.endswith("\n"):
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-    else:
-        print(redact(text, api_key))
-    if usage and model:
-        # the receipt now shows what the run COST and what the same
-        # tokens would have cost at the frontier reference price — the tool's
-        # whole value proposition, previously invisible. savings_note() owns
-        # the honesty rules (assumed pricing → no savings claim; est. label);
-        # mixed-served runs price per served model.
-        note = (savings_note_by_served(usage_by_model) if usage_by_model
-                else savings_note(model, usage))
-        rhint = _reasoning_hint(text, usage.get("completion_tokens"))
-        print(
-            redact(f"\n[ambient {model} | in={usage.get('prompt_tokens')} "
-                   f"out={usage.get('completion_tokens')} tokens{rhint}{note}]",
-                   api_key),
-            file=sys.stderr,
-        )
+    return _output_schema.render_terminal_result(
+        text, partial, reason, args, api_key, usage=usage, model=model,
+        already_streamed=already_streamed, usage_by_model=usage_by_model,
+        paint=paint, redact=redact, stdout=sys.stdout, emit_stdout=print,
+        emit_stderr=lambda value: print(value, file=sys.stderr),
+        exit_process=sys.exit, partial_exit_code=EXIT_PARTIAL,
+        savings_note=savings_note, savings_note_by_served=savings_note_by_served,
+        reasoning_hint=_reasoning_hint,
+    )
 
 
 def _public_usage(usage):

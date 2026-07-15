@@ -1,6 +1,7 @@
 """Phase 5 contract for the money-safe public usage projection."""
 
 import importlib
+from types import SimpleNamespace
 import unittest
 
 
@@ -64,6 +65,7 @@ class OutputSchemaTests(unittest.TestCase):
                   "cost": 0.01, "price": 1, "saved_pct": 99}
         self.assertEqual(core.__all__, (
             "public_usage", "build_envelope", "build_error_envelope",
+            "render_terminal_result",
         ))
         self.assertEqual(core.public_usage(source),
                          {"prompt_tokens": 1, "completion_tokens": 2})
@@ -86,3 +88,23 @@ class OutputSchemaTests(unittest.TestCase):
             {"schema_version": 1, "kind": "map", "status": "error",
              "category": "usage", "diagnosis": "bad input", "exit_code": 64},
         )
+
+    def test_terminal_renderer_keeps_savings_relative_and_honors_partial_exit(self):
+        core = importlib.import_module("ambient_codex.output_schema")
+        stdout, stderr, exits = [], [], []
+        core.render_terminal_result(
+            "done", False, "", SimpleNamespace(allow_partial=False), "secret",
+            usage={"prompt_tokens": 1, "completion_tokens": 2}, model="model",
+            already_streamed=False, usage_by_model=None,
+            paint=lambda text, _style: text,
+            redact=lambda text, _secret: text.replace("secret", "[redacted]"),
+            stdout=SimpleNamespace(write=stdout.append, flush=lambda: None),
+            emit_stdout=stdout.append, emit_stderr=stderr.append,
+            exit_process=exits.append, partial_exit_code=2,
+            savings_note=lambda _model, _usage: " ~60% cheaper",
+            savings_note_by_served=lambda _usage: "",
+            reasoning_hint=lambda _text, _tokens: "",
+        )
+        self.assertEqual(stdout, ["done"])
+        self.assertEqual(stderr, ["\n[ambient model | in=1 out=2 tokens ~60% cheaper]"])
+        self.assertEqual(exits, [])
