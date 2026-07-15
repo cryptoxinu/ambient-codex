@@ -27,6 +27,12 @@ class SetupCommandTests(unittest.TestCase):
         with mock.patch.object(os, "environ", PresenceOnlyEnvironment()):
             self.assertTrue(self.core.environment_variable_is_set(
                 "AMBIENT_CODEX_API_KEY"))
+
+    def test_environment_override_note_contains_no_dynamic_key_name(self):
+        note = self.core.environment_override_note()
+
+        self.assertIn("key override", note)
+        self.assertNotIn("AMBIENT_CODEX_API_KEY", note)
         self.assertEqual(
             self.core.normalize_pasted_key("abc_DEF-123"),
             "abc_DEF-123",
