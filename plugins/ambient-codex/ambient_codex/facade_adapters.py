@@ -50,4 +50,38 @@ def install(namespace, module_name, dependencies_name, specification):
     return tuple(public_name for public_name, _target_name in pairs)
 
 
-__all__ = ("build", "install")
+def _resolve(namespace, path):
+    parts = path.split(".")
+    if not parts or any(not _NAME.fullmatch(part) for part in parts):
+        raise ValueError(f"invalid facade dependency source: {path!r}")
+    value = namespace[parts[0]]
+    for part in parts[1:]:
+        value = getattr(value, part)
+    return value
+
+
+def _parse_bindings(specification):
+    pairs = []
+    for item in specification.split():
+        binding, separator, source = item.partition("=")
+        source = source if separator else binding
+        if not _NAME.fullmatch(binding):
+            raise ValueError(f"invalid facade dependency binding: {item!r}")
+        _resolve_path = source.split(".")
+        if not _resolve_path or any(
+                not _NAME.fullmatch(part) for part in _resolve_path):
+            raise ValueError(f"invalid facade dependency source: {source!r}")
+        pairs.append((binding, source))
+    return tuple(pairs)
+
+
+def bind(namespace, factory, specification):
+    """Construct an immutable dependency object from late-bound facade names."""
+    values = {
+        binding: _resolve(namespace, source)
+        for binding, source in _parse_bindings(specification)
+    }
+    return factory(**values)
+
+
+__all__ = ("bind", "build", "install")

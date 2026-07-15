@@ -149,6 +149,7 @@ bugs, verification, commits, or the next action changes.
 | 5A-8 | Bounded streaming redaction | Complete | local checkpoint | `stream_redactor.py`; split credentials and incomplete terminal escapes are held independently, sanitized across provider chunk boundaries, and emitted in linear time through the existing facade class seam |
 | 3B-4 | Immutable completion session state | Complete | local checkpoint | `session_state.py`; frozen transport sessions, weak write-once catalog sidecars, complete request-knob capture, model-policy budget copies, and bounded retry-state transitions are independent of CLI parsing and preserve late-bound facade test seams |
 | 5E-1 | Declarative facade adapter registry | Complete | local checkpoint | `facade_adapters.py`; 135 repetitive compatibility wrappers are now nine validated late-bound groups that preserve module replacement, dependency injection, function metadata, and the two public zero-argument signature contracts |
+| 5E-2 | Declarative dependency binding | Complete | local checkpoint | `facade_adapters.py`; 27 dependency factories now validate and resolve named facade collaborators at call time, preserving patch seams while removing duplicated hand-wiring and keeping every produced dependency record immutable |
 
 ## Phase 0 checklist
 

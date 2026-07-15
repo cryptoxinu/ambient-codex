@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: F401 -- declarative dependency bindings resolve facade names late
 """ambient — CLI for the Ambient (ambient.xyz) OpenAI-compatible inference API.
 
 Commands:
@@ -401,19 +402,8 @@ _ESCAPE_KEEP_TAIL = 64                    # _raw (and each _stable_len rescan) s
 
 
 def _presentation_dependencies():
-    return _presentation_command.PresentationDependencies.bind(
-        ANSI_RE=ANSI_RE, CONFIG_PATH=CONFIG_PATH, CTRL_RE=CTRL_RE,
-        DEFAULT_CODE_MODEL=DEFAULT_CODE_MODEL, DEFAULT_MODEL=DEFAULT_MODEL, DEFAULT_MODEL_NOTES=DEFAULT_MODEL_NOTES,
-        KEY_CONSOLE_URL=KEY_CONSOLE_URL, LAUNCHER_NAME=LAUNCHER_NAME, _KEY_PLACEHOLDER=_KEY_PLACEHOLDER,
-        __version__=__version__, _claim_state_dir=_claim_state_dir, _config_lock=_config_lock,
-        _config_store=_config_store, _model_config=_model_config, _split_csv=_split_csv,
-        _use_color=_use_color, argparse=argparse, curation=curation,
-        fcntl=fcntl, fnmatch=fnmatch, is_auto_model=is_auto_model,
-        is_hidden=is_hidden, json=json, os=os,
-        re=re, read_config_file=read_config_file, ready_model_ids=ready_model_ids,
-        redact=redact, resolve_key_and_backend=resolve_key_and_backend, resolve_model=resolve_model,
-        sys=sys, time=time,
-    )
+    return _facade_adapters.bind(globals(), _presentation_command.PresentationDependencies.bind,
+                                 "ANSI_RE CONFIG_PATH CTRL_RE DEFAULT_CODE_MODEL DEFAULT_MODEL DEFAULT_MODEL_NOTES KEY_CONSOLE_URL LAUNCHER_NAME _KEY_PLACEHOLDER __version__ _claim_state_dir _config_lock _config_store _model_config _split_csv _use_color argparse curation fcntl fnmatch is_auto_model is_hidden json os re read_config_file ready_model_ids redact resolve_key_and_backend resolve_model sys time")
 
 
 (redact, sanitize, _stderr_is_tty, _use_color, paint, _config_lock, _private_dir, save_config_values, _split_csv, curation, is_hidden, note_if_hidden, build_banner, print_welcome_panel, key_paste_problem, model_map, resolve_model) = _facade_adapters.build(
@@ -462,16 +452,8 @@ def _set_pricing_catalog(models):
 
 
 def _model_runtime_dependencies():
-    return _model_runtime.ModelRuntimeDependencies.bind(
-        ANSWER_TOKENS_RESERVE=ANSWER_TOKENS_RESERVE, ASSUMED_MAX_INPUT_PRICE=ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE=ASSUMED_MAX_OUTPUT_PRICE,
-        BUILD_PLAN_SCHEMA=BUILD_PLAN_SCHEMA, NetworkError=NetworkError, _catalog_data=_catalog_data,
-        _cost_cpt=_cost_cpt, _expected_output_tokens=_expected_output_tokens, _model_config=_model_config,
-        _retry_delay=_retry_delay, _transport=_transport, _usage_pricing=_usage_pricing,
-        adaptive_response_format=adaptive_response_format, api_request=api_request, cap_state=cap_state,
-        downgrade_response_format=downgrade_response_format, error_message=error_message, fetch_models=fetch_models,
-        model_pricing=model_pricing, redact=redact, response_format_for=response_format_for,
-        set_pricing_catalog=_set_pricing_catalog, sys=sys, time=time,
-    )
+    return _facade_adapters.bind(globals(), _model_runtime.ModelRuntimeDependencies.bind,
+                                 "ANSWER_TOKENS_RESERVE ASSUMED_MAX_INPUT_PRICE ASSUMED_MAX_OUTPUT_PRICE BUILD_PLAN_SCHEMA NetworkError _catalog_data _cost_cpt _expected_output_tokens _model_config _retry_delay _transport _usage_pricing adaptive_response_format api_request cap_state downgrade_response_format error_message fetch_models model_pricing redact response_format_for set_pricing_catalog=_set_pricing_catalog sys time")
 
 
 (api_request, _catalog_data, fetch_models, _as_pos_int, _as_bool, ready_model_ids, safe_catalog, model_pricing, adaptive_response_format, downgrade_response_format, _served_model_of, build_plan_rf_ladder, _expected_output_tokens, estimate_cost) = _facade_adapters.build(
@@ -512,17 +494,8 @@ def _set_cap_cache(value):
 
 
 def _capability_dependencies():
-    return _capability_runtime.CapabilityDependencies.bind(
-        CAPABILITY_PATH=CAPABILITY_PATH, CAP_FAIL_THRESHOLD=CAP_FAIL_THRESHOLD, CAP_RECENT_K=CAP_RECENT_K,
-        CHARS_PER_TOKEN=CHARS_PER_TOKEN, TELEMETRY_CPT_MAX=TELEMETRY_CPT_MAX, TELEMETRY_CPT_MIN=TELEMETRY_CPT_MIN,
-        TELEMETRY_EWMA_ALPHA=TELEMETRY_EWMA_ALPHA, USAGE_PATH=USAGE_PATH, _cap_recent=_cap_recent,
-        _load_caps=_load_caps, _read_caps_file=_read_caps_file, _telemetry_core=_telemetry_core,
-        _telemetry_enabled=_telemetry_enabled, _try_caps_lock=_try_caps_lock, _write_caps=_write_caps,
-        fcntl=fcntl, get_cap_cache=_get_cap_cache, get_telemetry_cache=_get_telemetry_cache,
-        json=json, observed_cpt=observed_cpt, os=os,
-        set_cap_cache=_set_cap_cache, set_telemetry_cache=_set_telemetry_cache, tempfile=tempfile,
-        time=time,
-    )
+    return _facade_adapters.bind(globals(), _capability_runtime.CapabilityDependencies.bind,
+                                 "CAPABILITY_PATH CAP_FAIL_THRESHOLD CAP_RECENT_K CHARS_PER_TOKEN TELEMETRY_CPT_MAX TELEMETRY_CPT_MIN TELEMETRY_EWMA_ALPHA USAGE_PATH _cap_recent _load_caps _read_caps_file _telemetry_core _telemetry_enabled _try_caps_lock _write_caps fcntl get_cap_cache=_get_cap_cache get_telemetry_cache=_get_telemetry_cache json observed_cpt os set_cap_cache=_set_cap_cache set_telemetry_cache=_set_telemetry_cache tempfile time")
 
 
 (_telemetry_enabled, observed_cpt, _effective_cpt, _cost_cpt, _read_caps_file, _load_caps, _cap_recent, cap_state, _try_caps_lock, _write_caps, record_cap) = _facade_adapters.build(
@@ -603,16 +576,8 @@ def _set_savings_cache(value):
 
 
 def _usage_runtime_dependencies():
-    return _usage_runtime.UsageRuntimeDependencies.bind(
-        ASSUMED_MAX_INPUT_PRICE=ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE=ASSUMED_MAX_OUTPUT_PRICE, REFERENCE_PRICE_DEFAULT=REFERENCE_PRICE_DEFAULT,
-        _as_pos_int=_as_pos_int, _lock_owner_dead=_lock_owner_dead, _pid_alive=_pid_alive,
-        _savings_enabled=_savings_enabled, _usage_pricing=_usage_pricing, fcntl=fcntl,
-        get_pricing_catalog=_get_pricing_catalog, get_ref_cache=_get_ref_cache,
-        get_savings_cache=_get_savings_cache, os=os,
-        parse_reference_price=parse_reference_price, read_config_file=read_config_file, resolve_reference_price=resolve_reference_price,
-        set_ref_cache=_set_ref_cache, set_savings_cache=_set_savings_cache,
-        time=time,
-    )
+    return _facade_adapters.bind(globals(), _usage_runtime.UsageRuntimeDependencies.bind,
+                                 "ASSUMED_MAX_INPUT_PRICE ASSUMED_MAX_OUTPUT_PRICE REFERENCE_PRICE_DEFAULT _as_pos_int _lock_owner_dead _pid_alive _savings_enabled _usage_pricing fcntl get_pricing_catalog=_get_pricing_catalog get_ref_cache=_get_ref_cache get_savings_cache=_get_savings_cache os parse_reference_price read_config_file resolve_reference_price set_ref_cache=_set_ref_cache set_savings_cache=_set_savings_cache time")
 
 
 (parse_reference_price, resolve_reference_price, usage_cost, reference_cost, _savings_enabled, savings_note, savings_note_by_served, _lock_owner_dead, _fs_lock, _pid_alive) = _facade_adapters.build(
@@ -640,17 +605,8 @@ _LEDGER_LOCK_WAIT_S = 2.0     # bounded wait for the usage-ledger lock
 
 
 def _cost_dependencies():
-    return _cost_runtime.CostDependencies.bind(
-        ASSUMED_MAX_INPUT_PRICE=ASSUMED_MAX_INPUT_PRICE, ASSUMED_MAX_OUTPUT_PRICE=ASSUMED_MAX_OUTPUT_PRICE, RequestSpec=RequestSpec,
-        _as_bool=_as_bool, _as_pos_int=_as_pos_int, _batch_fallback_alt=_batch_fallback_alt,
-        _cost_cpt=_cost_cpt, _expected_output_tokens=_expected_output_tokens, _fallback_enabled=_fallback_enabled,
-        _fb_alt_budget=_fb_alt_budget, _fb_call_cost=_fb_call_cost, _lane_pricing=_lane_pricing,
-        argparse=argparse, contextlib=contextlib, curation=curation,
-        estimate_cost=estimate_cost, estimate_cost_mr=estimate_cost_mr, io=io,
-        is_hidden=is_hidden, model_pricing=model_pricing, model_profile=model_profile,
-        os=os, pick_fallback_model=pick_fallback_model, resolve_model=resolve_model,
-        sys=sys,
-    )
+    return _facade_adapters.bind(globals(), _cost_runtime.CostDependencies.bind,
+                                 "ASSUMED_MAX_INPUT_PRICE ASSUMED_MAX_OUTPUT_PRICE RequestSpec _as_bool _as_pos_int _batch_fallback_alt _cost_cpt _expected_output_tokens _fallback_enabled _fb_alt_budget _fb_call_cost _lane_pricing argparse contextlib curation estimate_cost estimate_cost_mr io is_hidden model_pricing model_profile os pick_fallback_model resolve_model sys")
 
 
 (_lane_pricing, _fallback_enabled, _batch_fallback_alt, _fb_call_cost, _fb_alt_budget, estimate_cost_fb, estimate_cost_mr_fb, estimate_cost_mr, pick_fallback_model) = _facade_adapters.build(
@@ -676,24 +632,8 @@ AUTO_MODEL_SPECS = ("auto", "auto:cheapest", "auto:largest")
 
 
 def _routing_dependencies():
-    return _routing_runtime.RoutingDependencies.bind(
-        ANSWER_TOKENS_RESERVE=ANSWER_TOKENS_RESERVE, ASSUMED_MAX_OUTPUT_PRICE=ASSUMED_MAX_OUTPUT_PRICE, CHARS_PER_TOKEN=CHARS_PER_TOKEN,
-        CONTEXT_OVERHEAD_TOKENS=CONTEXT_OVERHEAD_TOKENS, FALLBACK_CONTEXT=FALLBACK_CONTEXT, FALLBACK_MAX_OUTPUT=FALLBACK_MAX_OUTPUT,
-        INPUT_TOKEN_SAFETY=INPUT_TOKEN_SAFETY, MAX_AUTO_BUDGET_TOKENS=MAX_AUTO_BUDGET_TOKENS, MIN_OUTPUT_TOKENS=MIN_OUTPUT_TOKENS,
-        MIN_REASONING_CHUNK=MIN_REASONING_CHUNK, ModelProfile=ModelProfile, NONREASONING_CONTEXT_MARGIN=NONREASONING_CONTEXT_MARGIN,
-        NONREASONING_OUTPUT_BUDGET=NONREASONING_OUTPUT_BUDGET, OUTPUT_SAFETY=OUTPUT_SAFETY, REASONING_CHUNK_FACTOR=REASONING_CHUNK_FACTOR,
-        REASONING_EXPANSION=REASONING_EXPANSION, REASONING_SINGLE_SHOT_CHARS=REASONING_SINGLE_SHOT_CHARS, SINGLE_SHOT_MAX_CHARS_DEFAULT=SINGLE_SHOT_MAX_CHARS_DEFAULT,
-        _argv_command=_argv_command, _as_bool=_as_bool, _as_pos_int=_as_pos_int,
-        _catalog_out_price=_catalog_out_price, _context_safe_escalation_ceiling=_context_safe_escalation_ceiling, _effective_cpt=_effective_cpt,
-        _fail_exit=_fail_exit, _humanize_ctx=_humanize_ctx, _model_budget=_model_budget,
-        _model_budget_constants=_model_budget_constants, _model_profile_constants=_model_profile_constants, _model_profiles=_model_profiles,
-        _resolve_output_budget=_resolve_output_budget, _routing_core=_routing_core, _validate_reduce_id=_validate_reduce_id,
-        curation=curation, difflib=difflib, is_auto_model=is_auto_model,
-        is_hidden=is_hidden, model_map=model_map, model_pricing=model_pricing,
-        model_profile=model_profile, os=os, preflight_hint=preflight_hint,
-        ready_model_ids=ready_model_ids, resolve_auto_model=resolve_auto_model, resolve_model=resolve_model,
-        single_shot_max_chars=single_shot_max_chars, sys=sys,
-    )
+    return _facade_adapters.bind(globals(), _routing_runtime.RoutingDependencies.bind,
+                                 "ANSWER_TOKENS_RESERVE ASSUMED_MAX_OUTPUT_PRICE CHARS_PER_TOKEN CONTEXT_OVERHEAD_TOKENS FALLBACK_CONTEXT FALLBACK_MAX_OUTPUT INPUT_TOKEN_SAFETY MAX_AUTO_BUDGET_TOKENS MIN_OUTPUT_TOKENS MIN_REASONING_CHUNK ModelProfile NONREASONING_CONTEXT_MARGIN NONREASONING_OUTPUT_BUDGET OUTPUT_SAFETY REASONING_CHUNK_FACTOR REASONING_EXPANSION REASONING_SINGLE_SHOT_CHARS SINGLE_SHOT_MAX_CHARS_DEFAULT _argv_command _as_bool _as_pos_int _catalog_out_price _context_safe_escalation_ceiling _effective_cpt _fail_exit _humanize_ctx _model_budget _model_budget_constants _model_profile_constants _model_profiles _resolve_output_budget _routing_core _validate_reduce_id curation difflib is_auto_model is_hidden model_map model_pricing model_profile os preflight_hint ready_model_ids resolve_auto_model resolve_model single_shot_max_chars sys")
 
 
 (is_auto_model, _catalog_out_price, resolve_auto_model, preflight_hint, route_model, _validate_reduce_id, resolve_reduce_model, response_format_for, _model_budget_constants, _model_profile_constants, _reasoning_output_budget, _context_safe_output_cap, _context_safe_escalation_ceiling, single_shot_max_chars, _reasoning_single_shot_target, model_profile, _resolve_output_budget, apply_output_budget) = _facade_adapters.build(
@@ -986,20 +926,8 @@ _budget_escalation_limit = _session_state.budget_escalation_limit
 
 
 def _completion_dependencies():
-    return _completion_command.CompletionDependencies.bind(
-        AttemptState=AttemptState, CHARS_PER_TOKEN=CHARS_PER_TOKEN,
-        ChatError=ChatError, DEFAULT_BUDGET_ESCALATIONS=DEFAULT_BUDGET_ESCALATIONS,
-        MAX_COMPLETE_ATTEMPTS=MAX_COMPLETE_ATTEMPTS,
-        MIN_OUTPUT_TOKENS=MIN_OUTPUT_TOKENS, NetworkError=NetworkError,
-        RequestSpec=RequestSpec, StallError=StallError, _as_pos_int=_as_pos_int,
-        _budget_escalation_limit=_budget_escalation_limit,
-        _effective_cpt=_effective_cpt, _fallback_enabled=_fallback_enabled,
-        _reasoning_str=_reasoning_str, _session_or=_session_or,
-        classify_error=classify_error, fetch_models=fetch_models,
-        log_usage=log_usage, model_profile=model_profile,
-        pick_fallback_model=pick_fallback_model, read_config_file=read_config_file,
-        redact=redact, stream_completion=stream_completion,
-    )
+    return _facade_adapters.bind(globals(), _completion_command.CompletionDependencies.bind,
+                                 "AttemptState CHARS_PER_TOKEN ChatError DEFAULT_BUDGET_ESCALATIONS MAX_COMPLETE_ATTEMPTS MIN_OUTPUT_TOKENS NetworkError RequestSpec StallError _as_pos_int _budget_escalation_limit _effective_cpt _fallback_enabled _reasoning_str _session_or classify_error fetch_models log_usage model_profile pick_fallback_model read_config_file redact stream_completion")
 
 
 def complete(api_key, api_url, model, messages, args, _stall_retried=False,
@@ -1036,20 +964,8 @@ _CHUNK_IDX_TOKEN = _context_command._CHUNK_IDX_TOKEN
 
 
 def _context_dependencies():
-    return _context_command.ContextDependencies.bind(
-        ABS_MAX_CHARS=ABS_MAX_CHARS, CHUNK_CHARS=CHUNK_CHARS, CODE_MAP_BUDGET_DEFAULT=CODE_MAP_BUDGET_DEFAULT,
-        CODE_MAP_BUDGET_MAX=CODE_MAP_BUDGET_MAX, CODE_MAP_SIGS_PER_FILE=CODE_MAP_SIGS_PER_FILE, MAX_PARALLEL_CHUNKS=MAX_PARALLEL_CHUNKS,
-        SIG_SCAN_LINE_MAX=SIG_SCAN_LINE_MAX, STDIN_WAIT_MAX_S=STDIN_WAIT_MAX_S, STDIN_WAIT_S=STDIN_WAIT_S,
-        _CHUNK_IDX_TOKEN=_CHUNK_IDX_TOKEN, _C_KEYWORDS=_C_KEYWORDS, _C_TYPE_SIGNATURE_MARKERS=_C_TYPE_SIGNATURE_MARKERS,
-        _SIG_EXT=_SIG_EXT, _SIG_PATTERNS=_SIG_PATTERNS, _argv_command=_argv_command,
-        _chunk_break_lines=_chunk_break_lines, _chunking=_chunking, _fail_exit=_fail_exit,
-        _file_signatures=_file_signatures, _intake_core=_intake_core, _map_reduce_core=_map_reduce_core,
-        _py_break_lines=_py_break_lines, _read_stdin_bounded=_read_stdin_bounded, _sigs_python=_sigs_python,
-        _sigs_regex=_sigs_regex, _stdin_read_and_decode=_stdin_read_and_decode, ast=ast,
-        fcntl=fcntl, os=os, re=re,
-        response_format_for=response_format_for, select=select, sys=sys,
-        threading=threading,
-    )
+    return _facade_adapters.bind(globals(), _context_command.ContextDependencies.bind,
+                                 "ABS_MAX_CHARS CHUNK_CHARS CODE_MAP_BUDGET_DEFAULT CODE_MAP_BUDGET_MAX CODE_MAP_SIGS_PER_FILE MAX_PARALLEL_CHUNKS SIG_SCAN_LINE_MAX STDIN_WAIT_MAX_S STDIN_WAIT_S _CHUNK_IDX_TOKEN _C_KEYWORDS _C_TYPE_SIGNATURE_MARKERS _SIG_EXT _SIG_PATTERNS _argv_command _chunk_break_lines _chunking _fail_exit _file_signatures _intake_core _map_reduce_core _py_break_lines _read_stdin_bounded _sigs_python _sigs_regex _stdin_read_and_decode ast fcntl os re response_format_for select sys threading")
 
 
 (read_stdin_if_piped, _stdin_read_and_decode, _read_stdin_bounded, warn_if_stdin_ignored, read_files, files_block, _chunk_ranges, code_map_budget, _sigs_python, _sigs_regex, _file_signatures, build_code_map, _py_break_lines, density_factor, _chunk_break_lines, pack_chunks, _resolve_parallel, _reduce_response_format, _map_note) = _facade_adapters.build(
@@ -1095,19 +1011,8 @@ def _context_dependencies():
 
 
 def _map_reduce_dependencies():
-    return _map_reduce_command.MapReduceDependencies.bind(
-        CACHE_TTL_DEFAULT=CACHE_TTL_DEFAULT, ChatError=ChatError,
-        NetworkError=NetworkError, RequestSpec=RequestSpec,
-        _CHUNK_IDX_TOKEN=_CHUNK_IDX_TOKEN, _cache_get=_cache_get,
-        _cache_key=_cache_key, _cache_put=_cache_put,
-        _chunk_ranges=_chunk_ranges, _map_note=_map_note,
-        _map_reduce_core=_map_reduce_core,
-        _reduce_response_format=_reduce_response_format,
-        _resolve_parallel=_resolve_parallel, _retry_delay=_retry_delay,
-        _session_or=_session_or, complete=complete, model_profile=model_profile,
-        concurrent=concurrent, dataclasses=dataclasses, os=os, sys=sys,
-        threading=threading, time=time,
-    )
+    return _facade_adapters.bind(globals(), _map_reduce_command.MapReduceDependencies.bind,
+                                 "CACHE_TTL_DEFAULT ChatError NetworkError RequestSpec _CHUNK_IDX_TOKEN _cache_get _cache_key _cache_put _chunk_ranges _map_note _map_reduce_core _reduce_response_format _resolve_parallel _retry_delay _session_or complete model_profile concurrent dataclasses os sys threading time")
 
 
 def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
@@ -1121,13 +1026,8 @@ def run_map_reduce(api_key, api_url, model, map_system, chunks, args,
 
 
 def _output_dependencies():
-    return _output_command.OutputDependencies.bind(
-        CHARS_PER_TOKEN=CHARS_PER_TOKEN, EXIT_PARTIAL=EXIT_PARTIAL,
-        _json_in_argv=_json_in_argv, _json_mode=_json_mode,
-        _output_schema=_output_schema, _reasoning_hint=_reasoning_hint,
-        emit_json_error=emit_json_error, paint=paint, redact=redact,
-        savings_note=savings_note, savings_note_by_served=savings_note_by_served,
-    )
+    return _facade_adapters.bind(globals(), _output_command.OutputDependencies.bind,
+                                 "CHARS_PER_TOKEN EXIT_PARTIAL _json_in_argv _json_mode _output_schema _reasoning_hint emit_json_error paint redact savings_note savings_note_by_served")
 
 
 def _reasoning_hint(content, completion_tokens):
@@ -1197,19 +1097,8 @@ CATALOG_ALIAS_OF = _catalog_command.CATALOG_ALIAS_OF
 
 
 def _catalog_dependencies():
-    return _catalog_command.CatalogDependencies.bind(
-        KEY_CONSOLE_URL=KEY_CONSOLE_URL, LAUNCHER_NAME=LAUNCHER_NAME,
-        _as_bool=_as_bool, _dedupe_catalog=_dedupe_catalog,
-        _dedupe_catalog_ids=_dedupe_catalog_ids, _humanize_ctx=_humanize_ctx,
-        _split_csv=_split_csv, curation=curation, fetch_models=fetch_models,
-        format_model_line=format_model_line, is_auto_model=is_auto_model,
-        is_hidden=is_hidden, paint=paint, read_config_file=read_config_file,
-        resolve_api_url=resolve_api_url,
-        resolve_key_and_backend=resolve_key_and_backend,
-        resolve_model=resolve_model, safe_catalog=safe_catalog,
-        sanitize=sanitize, save_config_values=save_config_values,
-        usage_exit=usage_exit,
-    )
+    return _facade_adapters.bind(globals(), _catalog_command.CatalogDependencies.bind,
+                                 "KEY_CONSOLE_URL LAUNCHER_NAME _as_bool _dedupe_catalog _dedupe_catalog_ids _humanize_ctx _split_csv curation fetch_models format_model_line is_auto_model is_hidden paint read_config_file resolve_api_url resolve_key_and_backend resolve_model safe_catalog sanitize save_config_values usage_exit")
 
 
 def _model_badges(m):
@@ -1249,26 +1138,8 @@ BEST_OF_WEAK_TEMP = _ask_command.BEST_OF_WEAK_TEMP
 
 
 def _ask_dependencies():
-    return _ask_command.AskDependencies.bind(
-        CACHE_TTL_DEFAULT=CACHE_TTL_DEFAULT, ChatError=ChatError,
-        EXIT_PARTIAL=EXIT_PARTIAL, MIN_REASONING_CHUNK=MIN_REASONING_CHUNK,
-        NetworkError=NetworkError, RequestSpec=RequestSpec, Session=Session,
-        _StreamRedactor=_StreamRedactor, _answers_agreement=_answers_agreement,
-        _as_pos_int=_as_pos_int, _ask_consensus=_ask_consensus,
-        _best_of_chat=_best_of_chat, _cache_get=_cache_get,
-        _cache_key=_cache_key, _cache_put=_cache_put, _fail=_fail,
-        _parse_consensus_models=_parse_consensus_models,
-        _resolve_best_of=_resolve_best_of, _resolve_parallel=_resolve_parallel,
-        _session_or=_session_or, apply_output_budget=apply_output_budget,
-        complete=complete, density_factor=density_factor, emit_json=emit_json,
-        model_profile=model_profile, note_if_hidden=note_if_hidden,
-        pack_chunks=pack_chunks, paint=paint, read_stdin_if_piped=read_stdin_if_piped,
-        redact=redact, refuse_if_secrets=refuse_if_secrets,
-        render_result=render_result, resolve_reduce_model=resolve_reduce_model,
-        route_model=route_model, run_map_reduce=run_map_reduce,
-        savings_note=savings_note, select_best_sample=select_best_sample,
-        usage_exit=usage_exit, warn_if_stdin_ignored=warn_if_stdin_ignored,
-    )
+    return _facade_adapters.bind(globals(), _ask_command.AskDependencies.bind,
+                                 "CACHE_TTL_DEFAULT ChatError EXIT_PARTIAL MIN_REASONING_CHUNK NetworkError RequestSpec Session _StreamRedactor _answers_agreement _as_pos_int _ask_consensus _best_of_chat _cache_get _cache_key _cache_put _fail _parse_consensus_models _resolve_best_of _resolve_parallel _session_or apply_output_budget complete density_factor emit_json model_profile note_if_hidden pack_chunks paint read_stdin_if_piped redact refuse_if_secrets render_result resolve_reduce_model route_model run_map_reduce savings_note select_best_sample usage_exit warn_if_stdin_ignored")
 
 
 def cmd_ask(args, api_key, api_url, conf):
@@ -1412,32 +1283,8 @@ def _emit_map_result(args, api_key, item_id, *, content=None, partial=False,
 
 
 def _map_dependencies():
-    return _map_command.MapDependencies.bind(
-        CACHE_TTL_DEFAULT=CACHE_TTL_DEFAULT,
-        ChatError=ChatError,
-        EXIT_PARTIAL=EXIT_PARTIAL,
-        EXIT_USAGE=EXIT_USAGE,
-        MAP_OVERSIZE_MSG=MAP_OVERSIZE_MSG,
-        NetworkError=NetworkError,
-        Session=Session,
-        _cache_get=_cache_get,
-        _cache_key=_cache_key,
-        _cache_put=_cache_put,
-        _emit_map_result=_emit_map_result,
-        _fail_exit=_fail_exit,
-        _map_gather_items=_map_gather_items,
-        _map_workflow=_map_workflow,
-        _resolve_parallel=_resolve_parallel,
-        _retry_delay=_retry_delay,
-        apply_output_budget=apply_output_budget,
-        complete=complete,
-        density_factor=density_factor,
-        model_profile=model_profile,
-        note_if_hidden=note_if_hidden,
-        refuse_if_secrets=refuse_if_secrets,
-        route_model=route_model,
-        threading=threading,
-    )
+    return _facade_adapters.bind(globals(), _map_command.MapDependencies.bind,
+                                 "CACHE_TTL_DEFAULT ChatError EXIT_PARTIAL EXIT_USAGE MAP_OVERSIZE_MSG NetworkError Session _cache_get _cache_key _cache_put _emit_map_result _fail_exit _map_gather_items _map_workflow _resolve_parallel _retry_delay apply_output_budget complete density_factor model_profile note_if_hidden refuse_if_secrets route_model threading")
 
 
 def cmd_map(args, api_key, api_url, conf):
@@ -1451,23 +1298,8 @@ _NON_FILE_LABELS = frozenset({
 
 
 def _audit_input_dependencies():
-    return _audit_inputs.AuditInputDependencies.bind(
-        ABS_MAX_CHARS=ABS_MAX_CHARS, AUDIT_FINDINGS_SCHEMA=AUDIT_FINDINGS_SCHEMA, AUDIT_JSON_INSTRUCTION=AUDIT_JSON_INSTRUCTION,
-        AUDIT_SYSTEM_PROMPT=AUDIT_SYSTEM_PROMPT, ChatError=ChatError, EXIT_USAGE=EXIT_USAGE,
-        NetworkError=NetworkError, REPO_FILE_MAX_BYTES=REPO_FILE_MAX_BYTES, REPO_LOCKFILES=REPO_LOCKFILES,
-        REPO_SKIP_DIRS=REPO_SKIP_DIRS, RequestSpec=RequestSpec, _NON_FILE_LABELS=_NON_FILE_LABELS,
-        _as_pos_int=_as_pos_int, _audit_core=_audit_core, _audit_prose=_audit_prose,
-        _fail_exit=_fail_exit, _guttered_size=_guttered_size, _intake_core=_intake_core,
-        _repo_candidate_paths=_repo_candidate_paths, _repository_core=_repository_core, _session_or=_session_or,
-        _text_has_unparsed_finding=_text_has_unparsed_finding, _verdict_from=_verdict_from, adaptive_response_format=adaptive_response_format,
-        complete=complete, cross_file_suspects=cross_file_suspects, dataclasses=dataclasses,
-        dedupe_findings=dedupe_findings, emit_json=emit_json, extract_json=extract_json,
-        files_block=files_block, json=json, os=os,
-        paint=paint, parse_audit_object=parse_audit_object, parse_prose_findings=parse_prose_findings,
-        read_files=read_files, record_cap=record_cap, redact=redact,
-        repo_walk=repo_walk, sanitize=sanitize, subprocess=subprocess,
-        sys=sys, with_line_gutters=with_line_gutters,
-    )
+    return _facade_adapters.bind(globals(), _audit_inputs.AuditInputDependencies.bind,
+                                 "ABS_MAX_CHARS AUDIT_FINDINGS_SCHEMA AUDIT_JSON_INSTRUCTION AUDIT_SYSTEM_PROMPT ChatError EXIT_USAGE NetworkError REPO_FILE_MAX_BYTES REPO_LOCKFILES REPO_SKIP_DIRS RequestSpec _NON_FILE_LABELS _as_pos_int _audit_core _audit_prose _fail_exit _guttered_size _intake_core _repo_candidate_paths _repository_core _session_or _text_has_unparsed_finding _verdict_from adaptive_response_format complete cross_file_suspects dataclasses dedupe_findings emit_json extract_json files_block json os paint parse_audit_object parse_prose_findings read_files record_cap redact repo_walk sanitize subprocess sys with_line_gutters")
 
 
 (extract_json, _finding_sig, _titles_match, parse_audit_object, dedupe_findings, _verdict_from, findings_reducer, _text_has_unparsed_finding, parse_prose_findings, render_findings, with_line_gutters, _repo_candidate_paths, repo_walk, _guttered_size, repo_audit_inputs, cross_file_suspects, run_cross_file_pass, git_diff_inputs) = _facade_adapters.build(
@@ -1523,15 +1355,8 @@ LEGACY_AMBIENT_HOOK_MARKERS = ()  # never claim another install's hook
 
 
 def _audit_hook_dependencies():
-    return _audit_hook_command.AuditHookDependencies.bind(
-        AMBIENT_HOOK_MARKER=AMBIENT_HOOK_MARKER, LAUNCHER_NAME=LAUNCHER_NAME,
-        LEGACY_AMBIENT_HOOK_MARKERS=LEGACY_AMBIENT_HOOK_MARKERS,
-        EXIT_USAGE=EXIT_USAGE, _bundled_cli_path=_bundled_cli_path,
-        _fail_exit=_fail_exit, _git_hooks_dir=_git_hooks_dir,
-        _hook_is_ours=_hook_is_ours, _render_hook=_render_hook,
-        contextlib=contextlib, os=os, shlex=shlex, shutil=shutil, sys=sys,
-        tempfile=tempfile, subprocess=subprocess, usage_exit=usage_exit,
-    )
+    return _facade_adapters.bind(globals(), _audit_hook_command.AuditHookDependencies.bind,
+                                 "AMBIENT_HOOK_MARKER LAUNCHER_NAME LEGACY_AMBIENT_HOOK_MARKERS EXIT_USAGE _bundled_cli_path _fail_exit _git_hooks_dir _hook_is_ours _render_hook contextlib os shlex shutil sys tempfile subprocess usage_exit")
 
 
 def _render_hook(name):
@@ -1555,30 +1380,8 @@ def cmd_audit_hook(args):
 
 
 def _audit_planning_dependencies():
-    return _audit_planning.AuditPlanningDependencies.bind(
-        AUDIT_FINDINGS_SCHEMA=AUDIT_FINDINGS_SCHEMA,
-        AUDIT_JSON_INSTRUCTION=AUDIT_JSON_INSTRUCTION,
-        AUDIT_SYNTH_PROMPT=AUDIT_SYNTH_PROMPT,
-        CACHE_TTL_DEFAULT=CACHE_TTL_DEFAULT, ChatError=ChatError,
-        EXIT_USAGE=EXIT_USAGE, MIN_REASONING_CHUNK=MIN_REASONING_CHUNK,
-        RequestSpec=RequestSpec, _CHUNK_IDX_TOKEN=_CHUNK_IDX_TOKEN,
-        _audit_core=_audit_core, _audit_sample_prep=_audit_sample_prep,
-        _audit_single_key=_audit_single_key, _cache_get=_cache_get,
-        _cache_key=_cache_key, _cache_put=_cache_put, _fail_exit=_fail_exit,
-        _map_note=_map_note, _session_or=_session_or,
-        _audit_split_estimate=_audit_split_estimate,
-        _consensus_estimate=_consensus_estimate,
-        adaptive_response_format=adaptive_response_format,
-        build_code_map=build_code_map, code_map_budget=code_map_budget,
-        complete=complete, contextlib=contextlib, dataclasses=dataclasses,
-        difflib=difflib, estimate_cost=estimate_cost,
-        estimate_cost_fb=estimate_cost_fb, estimate_cost_mr=estimate_cost_mr,
-        estimate_cost_mr_fb=estimate_cost_mr_fb, extract_json=extract_json,
-        files_block=files_block, findings_reducer=findings_reducer, json=json,
-        model_profile=model_profile, pack_chunks=pack_chunks,
-        parse_audit_object=parse_audit_object, redact=redact,
-        run_map_reduce=run_map_reduce, sys=sys, usage_exit=usage_exit,
-    )
+    return _facade_adapters.bind(globals(), _audit_planning.AuditPlanningDependencies.bind,
+                                 "AUDIT_FINDINGS_SCHEMA AUDIT_JSON_INSTRUCTION AUDIT_SYNTH_PROMPT CACHE_TTL_DEFAULT ChatError EXIT_USAGE MIN_REASONING_CHUNK RequestSpec _CHUNK_IDX_TOKEN _audit_core _audit_sample_prep _audit_single_key _cache_get _cache_key _cache_put _fail_exit _map_note _session_or _audit_split_estimate _consensus_estimate adaptive_response_format build_code_map code_map_budget complete contextlib dataclasses difflib estimate_cost estimate_cost_fb estimate_cost_mr estimate_cost_mr_fb extract_json files_block findings_reducer json model_profile pack_chunks parse_audit_object redact run_map_reduce sys usage_exit")
 
 
 def _audit_sample_prep(model, catalog, labeled, sys_prompt, args):
@@ -1638,61 +1441,8 @@ def _print_repo_plan(meta, catalog, model, reduce_model, labeled, total,
 
 
 def _audit_dependencies():
-    return _audit_command.AuditDependencies.bind(
-        AUDIT_FINDINGS_SCHEMA=AUDIT_FINDINGS_SCHEMA,
-        AUDIT_JSON_INSTRUCTION=AUDIT_JSON_INSTRUCTION,
-        AUDIT_SYNTH_PROMPT=AUDIT_SYNTH_PROMPT,
-        AUDIT_SYSTEM_PROMPT=AUDIT_SYSTEM_PROMPT,
-        ChatError=ChatError,
-        EXIT_PARTIAL=EXIT_PARTIAL,
-        EXIT_USAGE=EXIT_USAGE,
-        MIN_REASONING_CHUNK=MIN_REASONING_CHUNK,
-        NetworkError=NetworkError,
-        RequestSpec=RequestSpec,
-        SEVERITY_ORDER=SEVERITY_ORDER,
-        Session=Session,
-        _audit_split_estimate=_audit_split_estimate,
-        _best_of_audit_misses=_best_of_audit_misses,
-        _consensus_estimate=_consensus_estimate,
-        _fail=_fail,
-        _fail_exit=_fail_exit,
-        _finding_sig=_finding_sig,
-        _parse_consensus_models=_parse_consensus_models,
-        _print_repo_plan=_print_repo_plan,
-        _resolve_best_of=_resolve_best_of,
-        _resolve_parallel=_resolve_parallel,
-        _titles_match=_titles_match,
-        _verdict_from=_verdict_from,
-        adaptive_response_format=adaptive_response_format,
-        apply_output_budget=apply_output_budget,
-        build_code_map=build_code_map,
-        code_map_budget=code_map_budget,
-        complete=complete,
-        density_factor=density_factor,
-        emit_json=emit_json,
-        files_block=files_block,
-        findings_reducer=findings_reducer,
-        git_diff_inputs=git_diff_inputs,
-        model_profile=model_profile,
-        note_if_hidden=note_if_hidden,
-        pack_chunks=pack_chunks,
-        read_files=read_files,
-        read_stdin_if_piped=read_stdin_if_piped,
-        redact=redact,
-        refuse_if_secrets=refuse_if_secrets,
-        render_findings=render_findings,
-        render_result=render_result,
-        repo_audit_inputs=repo_audit_inputs,
-        resolve_model=resolve_model,
-        resolve_reduce_model=resolve_reduce_model,
-        route_model=route_model,
-        run_cross_file_pass=run_cross_file_pass,
-        run_map_reduce=run_map_reduce,
-        run_one_audit=run_one_audit,
-        usage_exit=usage_exit,
-        warn_if_stdin_ignored=warn_if_stdin_ignored,
-        with_line_gutters=with_line_gutters,
-    )
+    return _facade_adapters.bind(globals(), _audit_command.AuditDependencies.bind,
+                                 "AUDIT_FINDINGS_SCHEMA AUDIT_JSON_INSTRUCTION AUDIT_SYNTH_PROMPT AUDIT_SYSTEM_PROMPT ChatError EXIT_PARTIAL EXIT_USAGE MIN_REASONING_CHUNK NetworkError RequestSpec SEVERITY_ORDER Session _audit_split_estimate _best_of_audit_misses _consensus_estimate _fail _fail_exit _finding_sig _parse_consensus_models _print_repo_plan _resolve_best_of _resolve_parallel _titles_match _verdict_from adaptive_response_format apply_output_budget build_code_map code_map_budget complete density_factor emit_json files_block findings_reducer git_diff_inputs model_profile note_if_hidden pack_chunks read_files read_stdin_if_piped redact refuse_if_secrets render_findings render_result repo_audit_inputs resolve_model resolve_reduce_model route_model run_cross_file_pass run_map_reduce run_one_audit usage_exit warn_if_stdin_ignored with_line_gutters")
 
 
 def cmd_audit(args, api_key, api_url, conf):
@@ -1700,43 +1450,8 @@ def cmd_audit(args, api_key, api_url, conf):
         args, api_key, api_url, conf, _audit_dependencies())
 
 def _generation_dependencies():
-    return _generation_commands.GenerationDependencies.bind(
-        MIN_REASONING_CHUNK=MIN_REASONING_CHUNK,
-        Session=Session,
-        _best_of_chat=_best_of_chat,
-        _code_workflow=_code_workflow,
-        _fail_exit=_fail_exit,
-        _resolve_best_of=_resolve_best_of,
-        apply_output_budget=apply_output_budget,
-        chat=chat,
-        density_factor=density_factor,
-        files_block=files_block,
-        model_profile=model_profile,
-        note_if_hidden=note_if_hidden,
-        pack_chunks=pack_chunks,
-        read_files=read_files,
-        refuse_if_secrets=refuse_if_secrets,
-        resolve_reduce_model=resolve_reduce_model,
-        route_model=route_model,
-        run_map_reduce=run_map_reduce,
-        usage_exit=usage_exit,
-        warn_if_stdin_ignored=warn_if_stdin_ignored,
-        CHAT_HELP=CHAT_HELP,
-        ChatError=ChatError,
-        EXIT_USAGE=EXIT_USAGE,
-        NetworkError=NetworkError,
-        RequestSpec=RequestSpec,
-        _StreamRedactor=_StreamRedactor,
-        _chat_input=_chat_input,
-        _line_has_secret=_line_has_secret,
-        _stdin_is_tty=_stdin_is_tty,
-        _trim_chat_history=_trim_chat_history,
-        complete=complete,
-        is_auto_model=is_auto_model,
-        redact=redact,
-        resolve_auto_model=resolve_auto_model,
-        savings_note=savings_note,
-    )
+    return _facade_adapters.bind(globals(), _generation_commands.GenerationDependencies.bind,
+                                 "MIN_REASONING_CHUNK Session _best_of_chat _code_workflow _fail_exit _resolve_best_of apply_output_budget chat density_factor files_block model_profile note_if_hidden pack_chunks read_files refuse_if_secrets resolve_reduce_model route_model run_map_reduce usage_exit warn_if_stdin_ignored CHAT_HELP ChatError EXIT_USAGE NetworkError RequestSpec _StreamRedactor _chat_input _line_has_secret _stdin_is_tty _trim_chat_history complete is_auto_model redact resolve_auto_model savings_note")
 
 
 def cmd_code(args, api_key, api_url, conf):
@@ -1769,11 +1484,8 @@ def cmd_chat(args, api_key, api_url, conf):
         args, api_key, api_url, conf, _generation_dependencies())
 
 def _build_state_dependencies():
-    return _build_state_command.BuildStateDependencies.bind(
-        SECRET_NAMES_RE=SECRET_NAMES_RE, __version__=__version__,
-        _build_state_path=_build_state_path, _build_workflow=_build_workflow,
-        json=json, os=os, safe_relpath=safe_relpath, sys=sys, tempfile=tempfile,
-    )
+    return _facade_adapters.bind(globals(), _build_state_command.BuildStateDependencies.bind,
+                                 "SECRET_NAMES_RE __version__ _build_state_path _build_workflow json os safe_relpath sys tempfile")
 
 
 def _parse_file_records(text):
@@ -1819,59 +1531,8 @@ def _load_build_state(root, task_sha, max_plan=512, max_file_bytes=None):
 
 
 def _build_dependencies():
-    return _build_command.BuildDependencies.bind(
-        BUILD_GEN_PROMPT=BUILD_GEN_PROMPT,
-        BUILD_JSON_INSTRUCTION_PLAN=BUILD_JSON_INSTRUCTION_PLAN,
-        BUILD_PLAN_PROMPT=BUILD_PLAN_PROMPT,
-        CHARS_PER_TOKEN=CHARS_PER_TOKEN,
-        ChatError=ChatError,
-        DEFAULT_CODE_MODEL=DEFAULT_CODE_MODEL,
-        EXIT_PARTIAL=EXIT_PARTIAL,
-        MAX_BUDGET_ESCALATIONS=MAX_BUDGET_ESCALATIONS,
-        MIN_REASONING_CHUNK=MIN_REASONING_CHUNK,
-        Session=Session,
-        _build_apply=_build_apply,
-        _build_workflow=_build_workflow,
-        _context_safe_escalation_ceiling=_context_safe_escalation_ceiling,
-        _effective_cpt=_effective_cpt,
-        _fail=_fail,
-        _fail_exit=_fail_exit,
-        _json_mode=_json_mode,
-        _load_build_state=_load_build_state,
-        _parse_file_records=_parse_file_records,
-        _save_build_state=_save_build_state,
-        _served_model_of=_served_model_of,
-        _stdin_is_tty=_stdin_is_tty,
-        _within_root=_within_root,
-        apply_output_budget=apply_output_budget,
-        build_plan_rf_ladder=build_plan_rf_ladder,
-        build_resume_identity=build_resume_identity,
-        cap_state=cap_state,
-        complete=complete,
-        density_factor=density_factor,
-        emit_json=emit_json,
-        emit_json_error=emit_json_error,
-        estimate_cost_fb=estimate_cost_fb,
-        estimate_cost_mr_fb=estimate_cost_mr_fb,
-        extract_json=extract_json,
-        files_block=files_block,
-        is_auto_model=is_auto_model,
-        model_profile=model_profile,
-        note_if_hidden=note_if_hidden,
-        pack_chunks=pack_chunks,
-        progress_display_enabled=progress_display_enabled,
-        read_files=read_files,
-        record_cap=record_cap,
-        redact=redact,
-        refuse_if_secrets=refuse_if_secrets,
-        resolve_model=resolve_model,
-        resolve_reduce_model=resolve_reduce_model,
-        route_model=route_model,
-        run_map_reduce=run_map_reduce,
-        safe_relpath=safe_relpath,
-        usage_exit=usage_exit,
-        warn_if_stdin_ignored=warn_if_stdin_ignored,
-    )
+    return _facade_adapters.bind(globals(), _build_command.BuildDependencies.bind,
+                                 "BUILD_GEN_PROMPT BUILD_JSON_INSTRUCTION_PLAN BUILD_PLAN_PROMPT CHARS_PER_TOKEN ChatError DEFAULT_CODE_MODEL EXIT_PARTIAL MAX_BUDGET_ESCALATIONS MIN_REASONING_CHUNK Session _build_apply _build_workflow _context_safe_escalation_ceiling _effective_cpt _fail _fail_exit _json_mode _load_build_state _parse_file_records _save_build_state _served_model_of _stdin_is_tty _within_root apply_output_budget build_plan_rf_ladder build_resume_identity cap_state complete density_factor emit_json emit_json_error estimate_cost_fb estimate_cost_mr_fb extract_json files_block is_auto_model model_profile note_if_hidden pack_chunks progress_display_enabled read_files record_cap redact refuse_if_secrets resolve_model resolve_reduce_model route_model run_map_reduce safe_relpath usage_exit warn_if_stdin_ignored")
 
 
 def cmd_build(args, api_key, api_url, conf):
@@ -1972,17 +1633,8 @@ def _config_print_status():
 
 
 def _settings_dependencies():
-    return _settings_commands.ConfigDependencies(
-        settings=CONFIG_SETTINGS,
-        save_config=save_config_values,
-        read_config=read_config_file,
-        resolve_key=resolve_key_and_backend,
-        resolve_model=resolve_model,
-        usage_error=usage_exit,
-        launcher_name=LAUNCHER_NAME,
-        secret_patterns=SECRET_PATTERNS,
-        environ=os.environ,
-    )
+    return _facade_adapters.bind(globals(), _settings_commands.ConfigDependencies,
+                                 "settings=CONFIG_SETTINGS save_config=save_config_values read_config=read_config_file resolve_key=resolve_key_and_backend resolve_model usage_error=usage_exit launcher_name=LAUNCHER_NAME secret_patterns=SECRET_PATTERNS environ=os.environ")
 
 
 def cmd_config(args):
@@ -2113,22 +1765,8 @@ def _control_menu(args):
 
 
 def _control_dependencies():
-    return _settings_commands.ControlDependencies(
-        version=__version__, key_console_url=KEY_CONSOLE_URL,
-        launcher_name=LAUNCHER_NAME, mode_options=CONTROL_MODE_OPTIONS,
-        workflows=CONTROL_WORKFLOWS, chat_actions=CONTROL_CHAT_ACTIONS,
-        actions=CONTROL_ACTIONS, setting_names=CONTROL_SETTING_NAMES,
-        settings=CONFIG_SETTINGS, environ=os.environ,
-        read_config=read_config_file, resolve_key=resolve_key_and_backend,
-        resolve_model=resolve_model, resolve_api_url=resolve_api_url,
-        safe_catalog=safe_catalog, dedupe_catalog=_dedupe_catalog,
-        as_bool=_as_bool, curation=curation, is_hidden=is_hidden,
-        config_curation_summary=_config_curation_summary,
-        config_redact=_config_redact, usage_error=usage_exit,
-        command_setup=cmd_setup, command_use=cmd_use,
-        command_config=cmd_config, command_mode=cmd_mode,
-        command_doctor=cmd_doctor, command_usage=cmd_usage,
-    )
+    return _facade_adapters.bind(globals(), _settings_commands.ControlDependencies,
+                                 "version=__version__ key_console_url=KEY_CONSOLE_URL launcher_name=LAUNCHER_NAME mode_options=CONTROL_MODE_OPTIONS workflows=CONTROL_WORKFLOWS chat_actions=CONTROL_CHAT_ACTIONS actions=CONTROL_ACTIONS setting_names=CONTROL_SETTING_NAMES settings=CONFIG_SETTINGS environ=os.environ read_config=read_config_file resolve_key=resolve_key_and_backend resolve_model resolve_api_url safe_catalog dedupe_catalog=_dedupe_catalog as_bool=_as_bool curation is_hidden config_curation_summary=_config_curation_summary config_redact=_config_redact usage_error=usage_exit command_setup=cmd_setup command_use=cmd_use command_config=cmd_config command_mode=cmd_mode command_doctor=cmd_doctor command_usage=cmd_usage")
 
 
 def cmd_control(args):
@@ -2176,20 +1814,8 @@ def _setup_remove():
 
 
 def _setup_dependencies():
-    return _setup_command.SetupDependencies(
-        preamble=SETUP_PREAMBLE, launcher_name=LAUNCHER_NAME,
-        key_console_url=KEY_CONSOLE_URL, support_line=SUPPORT_LINE,
-        default_api_url=DEFAULT_API_URL, config_path=CONFIG_PATH,
-        api_key_env=API_KEY_ENV, keychain_service=KEYCHAIN_SERVICE,
-        read_config=read_config_file, save_config=save_config_values,
-        resolve_key=resolve_key_and_backend, resolve_api_url=resolve_api_url,
-        key_paste_problem=key_paste_problem, api_request=api_request,
-        classify_error=classify_error, catalog_data=_catalog_data,
-        auth_probe=auth_probe, network_error=NetworkError,
-        keychain_available=keychain_available, keychain_write=keychain_write,
-        keychain_delete=keychain_delete, keychain_read=keychain_read,
-        secret_backend=secret_backend, print_welcome=print_welcome_panel,
-    )
+    return _facade_adapters.bind(globals(), _setup_command.SetupDependencies,
+                                 "preamble=SETUP_PREAMBLE launcher_name=LAUNCHER_NAME key_console_url=KEY_CONSOLE_URL support_line=SUPPORT_LINE default_api_url=DEFAULT_API_URL config_path=CONFIG_PATH api_key_env=API_KEY_ENV keychain_service=KEYCHAIN_SERVICE read_config=read_config_file save_config=save_config_values resolve_key=resolve_key_and_backend resolve_api_url key_paste_problem api_request classify_error catalog_data=_catalog_data auth_probe network_error=NetworkError keychain_available keychain_write keychain_delete keychain_read secret_backend print_welcome=print_welcome_panel")
 
 
 def cmd_setup(args):
@@ -2200,22 +1826,8 @@ def cmd_setup(args):
 
 
 def _doctor_dependencies():
-    return _doctor_command.DoctorDependencies(
-        version=__version__, config_path=CONFIG_PATH,
-        launcher_name=LAUNCHER_NAME, shared_api_key_env=SHARED_API_KEY_ENV,
-        api_key_env=API_KEY_ENV, opencode_config_path=OPENCODE_CONFIG_PATH,
-        opencode_provider=OPENCODE_PROVIDER, cache_dir=CACHE_DIR,
-        read_config=read_config_file, resolve_key=resolve_key_and_backend,
-        resolve_api_url=resolve_api_url, paint=paint, which=shutil.which,
-        keychain_available=keychain_available,
-        shared_key_env_is_set=shared_key_env_is_set, api_request=api_request,
-        network_error=NetworkError, classify_error=classify_error,
-        catalog_data=_catalog_data, dedupe_catalog=_dedupe_catalog,
-        ready_model_ids=ready_model_ids, auth_probe=auth_probe,
-        curation=curation, resolve_model=resolve_model,
-        is_auto_model=is_auto_model, is_hidden=is_hidden,
-        bundled_cli_path=_bundled_cli_path,
-    )
+    return _facade_adapters.bind(globals(), _doctor_command.DoctorDependencies,
+                                 "version=__version__ config_path=CONFIG_PATH launcher_name=LAUNCHER_NAME shared_api_key_env=SHARED_API_KEY_ENV api_key_env=API_KEY_ENV opencode_config_path=OPENCODE_CONFIG_PATH opencode_provider=OPENCODE_PROVIDER cache_dir=CACHE_DIR read_config=read_config_file resolve_key=resolve_key_and_backend resolve_api_url paint which=shutil.which keychain_available shared_key_env_is_set api_request network_error=NetworkError classify_error catalog_data=_catalog_data dedupe_catalog=_dedupe_catalog ready_model_ids auth_probe curation resolve_model is_auto_model is_hidden bundled_cli_path=_bundled_cli_path")
 
 
 def cmd_doctor(args):
@@ -2228,14 +1840,8 @@ def _print_empty_usage(args, note, message):
 
 
 def _usage_dependencies():
-    return _maintenance_commands.UsageDependencies(
-        usage_path=USAGE_PATH, read_config=read_config_file,
-        savings_enabled=_savings_enabled, report=_usage_report,
-        positive_int=_as_pos_int, resolve_api_url=resolve_api_url,
-        fetch_models=fetch_models, model_pricing=model_pricing,
-        resolve_reference_price=resolve_reference_price,
-        network_error=NetworkError, usage_error=usage_exit, now=time.time,
-    )
+    return _facade_adapters.bind(globals(), _maintenance_commands.UsageDependencies,
+                                 "usage_path=USAGE_PATH read_config=read_config_file savings_enabled=_savings_enabled report=_usage_report positive_int=_as_pos_int resolve_api_url fetch_models model_pricing resolve_reference_price network_error=NetworkError usage_error=usage_exit now=time.time")
 
 
 def cmd_usage(args):
@@ -2305,14 +1911,8 @@ def _write_stable_launcher(source, destination):
 
 
 def _launcher_dependencies():
-    return _launcher_command.LauncherDependencies(
-        launcher_name=LAUNCHER_NAME,
-        stable_launcher_marker=_launcher.STABLE_LAUNCHER_MARKER,
-        link_is_ours=_link_is_ours, shim_is_ours=_shim_is_ours,
-        stable_launcher_asset=_stable_launcher_asset,
-        stable_launcher_is_ours=_stable_launcher_is_ours,
-        write_stable_launcher=_write_stable_launcher,
-    )
+    return _facade_adapters.bind(globals(), _launcher_command.LauncherDependencies,
+                                 "launcher_name=LAUNCHER_NAME stable_launcher_marker=_launcher.STABLE_LAUNCHER_MARKER link_is_ours=_link_is_ours shim_is_ours=_shim_is_ours stable_launcher_asset=_stable_launcher_asset stable_launcher_is_ours=_stable_launcher_is_ours write_stable_launcher=_write_stable_launcher")
 
 
 def cmd_link(args):
@@ -2351,13 +1951,8 @@ def ensure_opencode_config(api_url, model):
 
 
 def _agent_dependencies():
-    return _agent_command.AgentDependencies(
-        provider=OPENCODE_PROVIDER, ensure_config=ensure_opencode_config,
-        resolve_model=resolve_model, note_if_hidden=note_if_hidden,
-        is_auto_model=is_auto_model, resolve_auto_model=resolve_auto_model,
-        safe_catalog=safe_catalog, build_argv=_agent_config.build_agent_argv,
-        which=shutil.which, run_process=subprocess.run,
-    )
+    return _facade_adapters.bind(globals(), _agent_command.AgentDependencies,
+                                 "provider=OPENCODE_PROVIDER ensure_config=ensure_opencode_config resolve_model note_if_hidden is_auto_model resolve_auto_model safe_catalog build_argv=_agent_config.build_agent_argv which=shutil.which run_process=subprocess.run")
 
 
 def cmd_agent(args, api_key, api_url, conf):
