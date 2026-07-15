@@ -54,8 +54,7 @@ def _secret_safe_reporter(api_key, deps):
         safe_detail = secret_safe_detail(detail, api_key, deps.redact)
         # The only dynamic value at this sink has passed the canonical API-key
         # and terminal-control redactor immediately above.
-        # lgtm[py/clear-text-logging-sensitive-data]
-        print(format_check_line(check, ok, safe_detail, deps.paint))
+        print(format_check_line(check, ok, safe_detail, deps.paint))  # lgtm[py/clear-text-logging-sensitive-data]
 
     return report
 
