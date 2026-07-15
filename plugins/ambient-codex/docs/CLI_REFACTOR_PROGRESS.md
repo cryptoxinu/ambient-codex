@@ -141,6 +141,7 @@ bugs, verification, commits, or the next action changes.
 | 3G-11 | Bounded input and code-context composition | Complete | local checkpoint | `context_command.py`; nonblocking stdin, capped file intake, signature-only code maps, density-aware boundaries, syntax-aware Python breaks, chunk packing, parallel resolution, and reduce-format policy moved behind immutable intake/chunking dependencies |
 | 2E | Runtime state, credential, and trusted-backend composition | Complete | local checkpoint | `runtime_command.py`; foreign-root refusal, marker ownership, environment normalization, native keychain identity, shared-key precedence, local/custom backend trust, and fail-closed configuration loading moved behind immutable late-bound state/credential dependencies |
 | 2F | Terminal, curation, and lane-default composition | Complete | local checkpoint | `presentation_command.py`; key/control-code redaction, terminal sanitization/color, locked atomic config writes, immutable curation merges, hidden-model notes, welcome/status copy, and phase-aware lane defaults moved behind immutable late-bound presentation/config dependencies |
+| 3A-2 | Catalog and capability runtime composition | Complete | local checkpoint | `model_runtime.py`; retried catalog transport, untrusted field normalization, pricing memo handoff, adaptive structured-output ladders, served-model validation, and conservative reasoning-aware output estimates moved behind immutable late-bound transport/model dependencies |
 
 ## Phase 0 checklist
 
