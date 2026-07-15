@@ -1,76 +1,65 @@
-# Ambient Codex
+# Ambient Codex (Beta)
 
-Standalone Codex-native Ambient plugin repository.
+Official Ambient integration for Codex. Use Ambient models for chat, code,
+builds, audits, and large-repository work without leaving Codex.
 
-The plugin lives at:
+> Beta: the core workflows are tested across macOS, Linux, and Windows, but the
+> Codex plugin interface and Ambient model availability can still change.
 
-```text
-plugins/ambient-codex
-```
+## Install
 
-The local marketplace lives at:
-
-```text
-.agents/plugins/marketplace.json
-```
-
-This repo is intentionally separate from any Claude Ambient install. Ambient
-Codex should not inspect, invoke, or route through Claude plugin files during
-normal development or runtime use.
-
-The production architecture is intentionally hybrid: the Codex skill owns
-routing and safety policy, MCP owns fast bounded controls, the bundled CLI owns
-heavy execution, and hooks are opt-in only. See
-[plugins/ambient-codex/docs/CODEX_NATIVE_ARCHITECTURE.md](plugins/ambient-codex/docs/CODEX_NATIVE_ARCHITECTURE.md).
-
-## Validate
-
-```bash
-cd plugins/ambient-codex
-python3 -m py_compile bin/ambient mcp/ambient_mcp.py
-CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-python3 "$CODEX_HOME/skills/.system/plugin-creator/scripts/validate_plugin.py" .
-python3 "$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py" skills/ambient
-python3 -m unittest discover -s tests -t . -q
-```
-
-## Install Locally In Codex
-
-For the public repository:
+Requirements: Codex, Python 3.8+, and an Ambient API key.
 
 ```bash
 codex plugin marketplace add cryptoxinu/ambient-codex
 codex plugin add ambient-codex@ambient-codex
 ```
 
-For local development, run this from the repository root:
-
-```bash
-codex plugin marketplace add "$PWD"
-codex plugin add ambient-codex@ambient-codex
-```
-
-The local marketplace file is:
+Start a new Codex thread, then use `$ambient`:
 
 ```text
-.agents/plugins/marketplace.json
+$ambient
 ```
 
-Start a new Codex thread after install or reinstall. Then invoke the skill with
-`$ambient` or by asking Codex to use Ambient for an audit, build, summary,
-second opinion, or token-saving delegation.
+Need a key? Create one at [app.ambient.xyz](https://app.ambient.xyz), then follow
+the setup prompt. See the [installation guide](docs/INSTALL.md) for the one-time
+terminal launcher and troubleshooting.
 
-Native control smoke test from the plugin root:
+## Use
 
-```bash
-cd plugins/ambient-codex
-./bin/ambient control --offline
+Ask naturally:
+
+```text
+use Ambient to audit this diff
+ask Ambient to review this design
+build this feature with Ambient
+change Ambient mode
+change the code model
 ```
 
-See [plugins/ambient-codex/README.md](plugins/ambient-codex/README.md) for the
-plugin details.
+Modes:
 
-## Security And Maintenance
+- **Normal Codex** — Ambient runs only when requested.
+- **Delegate** — Codex sends larger coding and review work to Ambient.
+- **Ambient session** — Ambient becomes the primary chat and generation engine
+  for the current Codex thread.
 
-- [Public-use threat model](ambient-codex-threat-model.md)
-- [Post-1.9 CLI refactor scope](plugins/ambient-codex/docs/CLI_REFACTOR_SCOPE.md)
+See the concise [feature guide](docs/FEATURES.md) for models, builds, audits,
+large repositories, and session behavior.
+
+## Privacy and safety
+
+Only prompts and files you route to Ambient leave your machine. Never send API
+keys, credentials, or other sensitive material. Generated code is untrusted
+until reviewed and tested.
+
+- [Privacy](plugins/ambient-codex/PRIVACY.md)
+- [Security](SECURITY.md)
+- [Threat model](ambient-codex-threat-model.md)
+
+## Develop
+
+The plugin is in [`plugins/ambient-codex`](plugins/ambient-codex). Contributor
+setup and release gates are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+MIT licensed.
