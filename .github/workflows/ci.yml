@@ -135,9 +135,13 @@ jobs:
           # The MCP server reports its own version over the wire in `initialize`;
           # leaving it out of this gate let it drift from the manifest unnoticed.
           mcp = re.search(r'SERVER_VERSION = "([^"]+)"', open("mcp/ambient_mcp.py").read()).group(1)
-          if not (pj == py == amb == mcp):
+          base = pj.split("+", 1)[0]
+          if "+" in pj and not re.fullmatch(
+              re.escape(base) + r"\+codex\.[A-Za-z0-9][A-Za-z0-9.-]*", pj):
+              sys.exit(f"invalid Codex cachebuster: plugin.json={pj}")
+          if not (base == py == amb == mcp):
               sys.exit(f"version drift: plugin.json={pj} pyproject={py} cli={amb} mcp={mcp}")
-          print(f"version {pj} in sync")
+          print(f"version {pj} (base {base}) in sync")
           PY
       - name: Manifests parse
         run: |
