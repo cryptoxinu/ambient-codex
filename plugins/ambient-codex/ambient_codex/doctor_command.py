@@ -20,7 +20,7 @@ class DoctorDependencies:
     read_config: object
     resolve_key: object
     resolve_api_url: object
-    redact: object
+    sanitize: object
     paint: object
     which: object
     keychain_available: object
@@ -44,17 +44,28 @@ def format_check_line(check, ok, detail, paint):
     return f"{tag:4}  {check:14} {detail}"
 
 
-def secret_safe_detail(detail, api_key, redact):
-    """Sanitize a diagnostic at the last boundary before terminal output."""
-    return redact(str(detail), api_key)
+def auth_status_detail(ok, category):
+    """Map authentication state to fixed text that cannot reflect a response."""
+    if ok:
+        return "authentication verified"
+    return {
+        "funds": "account is out of funds or over quota",
+        "key": "API key rejected",
+        "rate": "authentication check rate-limited",
+        "service": "Ambient service unavailable during authentication check",
+    }.get(category, "authentication check failed")
 
 
-def _secret_safe_reporter(api_key, deps):
+def key_backend_label(backend):
+    """Return only recognized local backend labels."""
+    return backend if backend in {"env", "file", "keychain", "secret-tool"} \
+        else "configured"
+
+
+def _reporter(deps):
     def report(check, ok, detail):
-        safe_detail = secret_safe_detail(detail, api_key, deps.redact)
-        # The only dynamic value at this sink has passed the canonical API-key
-        # and terminal-control redactor immediately above.
-        print(format_check_line(check, ok, safe_detail, deps.paint))  # lgtm[py/clear-text-logging-sensitive-data]
+        safe_detail = deps.sanitize(detail)
+        print(format_check_line(check, ok, safe_detail, deps.paint))
 
     return report
 
@@ -64,10 +75,11 @@ def run_doctor(_args, deps):
     api_key, backend = deps.resolve_key(conf)
     api_url = deps.resolve_api_url(conf)
     print(f"ambient {deps.version}  ·  doctor", file=sys.stderr)
-    report = _secret_safe_reporter(api_key, deps)
-    _report_runtime_and_config(api_key, backend, report, deps)
+    report = _reporter(deps)
+    _report_runtime_and_config(bool(api_key), key_backend_label(backend),
+                               report, deps)
     models, ready = _check_catalog(api_key, api_url, report, deps)
-    ok, category, detail = _check_auth(
+    ok, category = _check_auth(
         api_key, api_url, models, report, deps)
     _report_models(conf, models, ready, report, deps)
     _report_environment(report, deps)
@@ -76,11 +88,11 @@ def run_doctor(_args, deps):
               + ("" if ready else " (No models are serving this minute — the "
                  "network scales with demand; retry soon.)"))
         return
-    print(f"\nDIAGNOSIS [{category}]: {detail}")
+    print(f"\nDIAGNOSIS [auth]: {auth_status_detail(False, category)}")
     raise SystemExit(1)
 
 
-def _report_runtime_and_config(api_key, backend, report, deps):
+def _report_runtime_and_config(key_present, backend, report, deps):
     interpreter = deps.which("python3")
     if interpreter:
         version = ".".join(str(number) for number in sys.version_info[:3])
@@ -96,11 +108,11 @@ def _report_runtime_and_config(api_key, backend, report, deps):
     else:
         report("config", False,
                f"{deps.config_path} missing — run: {deps.launcher_name} setup")
-    _report_key(api_key, backend, report, deps)
+    _report_key(key_present, backend, report, deps)
 
 
-def _report_key(api_key, backend, report, deps):
-    if api_key:
+def _report_key(key_present, backend, report, deps):
+    if key_present:
         hardening = ""
         if backend == "file" and deps.keychain_available():
             hardening = (f" — harden: `{deps.launcher_name} setup --force` "
@@ -119,15 +131,14 @@ def _check_catalog(api_key, api_url, report, deps):
     try:
         status, body = deps.api_request(
             api_url, api_key or "none", "/v1/models", timeout=30)
-    except deps.network_error as error:
-        report("network", False, str(error))
+    except deps.network_error:
+        report("network", False, "request failed")
         print("\nDIAGNOSIS: cannot reach Ambient at all — check YOUR internet first; "
               "if other sites work, Ambient may be unreachable/down.")
         raise SystemExit(1)
     if status != 200:
-        _category, diagnosis = deps.classify_error(status, body, api_key)
-        report("service", False, diagnosis)
-        print(f"\nDIAGNOSIS: {diagnosis}")
+        report("service", False, f"Ambient API returned HTTP {status}")
+        print(f"\nDIAGNOSIS: Ambient API returned HTTP {status}")
         raise SystemExit(1)
     models = deps.dedupe_catalog(deps.catalog_data(body))
     ready = deps.ready_model_ids(models)
@@ -141,13 +152,13 @@ def _check_auth(api_key, api_url, models, report, deps):
         print(f"\nDIAGNOSIS: no API key configured. Run: {deps.launcher_name} setup")
         raise SystemExit(1)
     try:
-        ok, category, detail = deps.auth_probe(api_url, api_key, models)
-    except deps.network_error as error:
-        report("auth", False, str(error))
+        ok, category, _detail = deps.auth_probe(api_url, api_key, models)
+    except deps.network_error:
+        report("auth", False, "network request failed")
         print("\nDIAGNOSIS: network dropped mid-check — retry ambient-codex doctor.")
         raise SystemExit(1)
-    report("auth+billing", ok, detail)
-    return ok, category, detail
+    report("auth+billing", ok, auth_status_detail(ok, category))
+    return ok, category
 
 
 def _report_models(conf, models, ready, report, deps):
@@ -254,5 +265,5 @@ def _report_cache(report, deps):
         report("cache", True, "empty (created on first map-reduce)")
 
 
-__all__ = ("DoctorDependencies", "format_check_line", "run_doctor",
-           "secret_safe_detail")
+__all__ = ("DoctorDependencies", "auth_status_detail", "format_check_line",
+           "key_backend_label", "run_doctor")
