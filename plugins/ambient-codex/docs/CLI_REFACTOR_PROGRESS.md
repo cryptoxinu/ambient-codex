@@ -104,6 +104,7 @@ bugs, verification, commits, or the next action changes.
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
 | 5A-2 | Public JSON envelope construction | Complete | `394b95a` | `output_schema.py`; partial/result envelopes derived before terminal rendering |
 | 5A-3 | Public JSON error construction | Complete | `b67d132` | `output_schema.py`; versioned error envelopes derived before terminal redaction/exit |
+| 5B-1 | Agent provider + command construction | Complete | local checkpoint | `agent_config.py`; immutable namespaced provider merge and credential-free OpenCode argv construction preserve facade-controlled environment/process ownership |
 
 ## Phase 0 checklist
 

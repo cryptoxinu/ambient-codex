@@ -30,4 +30,15 @@ def update_provider_config(config, *, provider, api_url, model):
             if existing is None and "$schema" not in updated else updated)
 
 
-__all__ = ("update_provider_config",)
+def build_agent_argv(agent_args, *, provider, model):
+    """Build a namespaced OpenCode command without credential material."""
+    extra = list(agent_args)
+    pure = ([] if any(arg in ("--pure", "--no-pure") for arg in extra)
+            else ["--pure"])
+    prefix = ["opencode", "--model", f"{provider}/{model}"]
+    if extra and extra[0] == "run":
+        return ["opencode", "run", *prefix[1:], *pure, *extra[1:]]
+    return [*prefix, *pure, *extra]
+
+
+__all__ = ("update_provider_config", "build_agent_argv")

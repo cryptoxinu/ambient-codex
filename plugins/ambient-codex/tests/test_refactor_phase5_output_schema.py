@@ -22,6 +22,24 @@ class OutputSchemaTests(unittest.TestCase):
         self.assertIsNone(core.update_provider_config(
             {"provider": []}, provider="ambient-codex", api_url="https://api.example", model="new/model"))
 
+    def test_agent_command_is_namespaced_pure_and_never_accepts_a_key(self):
+        core = importlib.import_module("ambient_codex.agent_config")
+        self.assertEqual(
+            core.build_agent_argv(
+                ["run", "ship", "it"], provider="ambient-codex",
+                model="new/model"),
+            ["opencode", "run", "--model", "ambient-codex/new/model",
+             "--pure", "ship", "it"],
+        )
+        self.assertEqual(
+            core.build_agent_argv(
+                ["--no-pure", "chat"], provider="ambient-codex",
+                model="new/model"),
+            ["opencode", "--model", "ambient-codex/new/model",
+             "--no-pure", "chat"],
+        )
+        self.assertNotIn("api_key", core.build_agent_argv.__code__.co_varnames)
+
     def test_module_allowlists_tokens_and_never_mutates_input(self):
         core = importlib.import_module("ambient_codex.output_schema")
         source = {"prompt_tokens": 1, "completion_tokens": 2,

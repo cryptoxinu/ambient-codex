@@ -9627,19 +9627,12 @@ def cmd_agent(args, api_key, api_url, conf):
     # from opencode; do not ask an agent to print its environment.
     # The child resolves `{env:AMBIENT_CODEX_API_KEY}` from OUR provider entry.
     env = dict(os.environ, AMBIENT_CODEX_API_KEY=api_key)
-    extra = list(args.agent_args)
     # Keep this Codex-native lane independent of unrelated opencode extensions
     # installed in the user's global config. The provider config still loads;
-    # only external plugins are disabled. Respect an explicit --pure/--no-pure
-    # so terminal power users can make a deliberate choice, and never duplicate
-    # the flag when the caller already supplied it.
-    pure = [] if any(x in ("--pure", "--no-pure") for x in extra) else ["--pure"]
-    if extra and extra[0] == "run":
-        argv = ["opencode", "run", "--model", f"{OPENCODE_PROVIDER}/{model}"] \
-            + pure + extra[1:]
-    else:
-        argv = ["opencode", "--model", f"{OPENCODE_PROVIDER}/{model}"] \
-            + pure + extra
+    # only external plugins are disabled. The extracted builder deliberately
+    # takes no credential argument, so keys can only enter the child environment.
+    argv = _agent_config.build_agent_argv(
+        args.agent_args, provider=OPENCODE_PROVIDER, model=model)
     if os.name == "nt":
         # Windows: os.exec* SPAWNS a new process then the parent exits, so the
         # shell prompt and opencode's full-screen TUI fight over the console; and
