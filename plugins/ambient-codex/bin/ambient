@@ -6973,12 +6973,13 @@ def cmd_code(args, api_key, api_url, conf):
                     "narrow the context, or pass --allow-partial to proceed anyway.",
                     api_key=api_key,
                 )
-            room = max(1000, single - len(task) - 500)
-            if len(context) > room:
+            clamped_context = _code_workflow.clamp_context(
+                context, task=task, single_shot_chars=single)
+            if clamped_context != context:
                 # A partial distillation can fall back to raw concatenation far
                 # above `single`; proceeding would 400 the paid-for generation
                 # call. Clamp with an honest marker.
-                context = context[:room] + "\n[ambient: context truncated to fit]"
+                context = clamped_context
     messages = _code_workflow.final_messages(task, context)
     # 7a: --best-of applies to the final GENERATION call only (any brief/
     # context distillation above stays a single pass — sampling diversity

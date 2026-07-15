@@ -16,3 +16,11 @@ class CodeWorkflowTests(unittest.TestCase):
         self.assertEqual(task, "Add validation")
         self.assertEqual(context, "def existing():\n    pass\n")
 
+    def test_context_is_clamped_to_the_final_prompt_room_immutably(self):
+        core = importlib.import_module("ambient_codex.code_workflow")
+        context = "a" * 1001
+        clamped = core.clamp_context(
+            context, task="t" * 600, single_shot_chars=2_000)
+        self.assertEqual(clamped[:1000], "a" * 1000)
+        self.assertTrue(clamped.endswith("[ambient: context truncated to fit]"))
+        self.assertEqual(context, "a" * 1001)
