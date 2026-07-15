@@ -61,7 +61,7 @@ bugs, verification, commits, or the next action changes.
 | 2C3C | Repository diff/status intake | Complete | `4ba1015` | All gates green |
 | 2D1 | Cache state | Complete | `0b12b10` | All gates green |
 | 2D2A | Usage ledger persistence | Complete | `114966e`→`b91d26f`→fixes | All gates green; Codex-audited |
-| 2D2B | Usage summary records/report | Complete | pending push | Reader extracted; Codex-audited |
+| 2D2B | Usage summary records/report | Complete | `92354c0` | Reader extracted; Codex-audited |
 | 2D2C | Usage aggregation | Complete | local checkpoint | `usage_report.py`; immutable records-to-relative-savings aggregation keeps public rows free of monetary fields |
 | 2D3a | Pure pricing primitives (`model_pricing`, `parse_reference_price`) | Complete | `34b5958`+`ed4f314` | Extracted to `usage_pricing.py`; Codex-audited; CI green |
 | 2D3b-1 | Cost math (`usage_cost`, `reference_cost`) | Complete | `7f6c5f1` | Extended `usage_pricing.py`; injected assumed-prices + coercer; CI green |
@@ -107,8 +107,8 @@ bugs, verification, commits, or the next action changes.
 | 4B-8 | Model-aware build batching + prompt compaction | Complete | local checkpoint | `build_workflow.py`; output-share batching, bounded call ceilings, recovery prompts, context trimming, and paths-only fallback are pure and model-window constrained |
 | 4B-9 | Build retry-state transition | Complete | local checkpoint | `build_workflow.py`; missing-file splits, reasoning-starvation recovery, per-file retry ceilings, and terminal failure reasons are immutable and resumable |
 | 4B-10 | Safe build apply transaction | Complete | local checkpoint | `build_apply.py`; parent revalidation, byte-idempotency, overwrite backup refusal, atomic replacement, and immutable action/failure reporting are module-owned |
-| 4 | Audit and generation workflows | Pending | — | — |
-| 5 | Integrations and facade reduction | Pending | — | — |
+| 4 | Audit and generation workflows | Complete | through `6de64b7` | Audit, ask, code, build, chat, recovery, and safe apply are focused, model-aware module workflows |
+| 5 | Integrations and facade reduction | Complete | through `6de64b7` | CLI is a 788-line compatibility facade; native MCP is a 774-line executable over focused catalog/framing/handler modules |
 | 5A-1 | Public output usage schema | Complete | `a45bfe5` | `output_schema.py`; immutable token-only allowlist keeps money fields out of public JSON |
 | 5A-2 | Public JSON envelope construction | Complete | `394b95a` | `output_schema.py`; partial/result envelopes derived before terminal rendering |
 | 5A-3 | Public JSON error construction | Complete | `b67d132` | `output_schema.py`; versioned error envelopes derived before terminal redaction/exit |
@@ -1470,49 +1470,37 @@ for a behavior-preserving extraction. Tracked for a dedicated hardening pass:
   (invalid-UTF-8) ledger still tracebacks `ambient usage` (the writer only ever
   emits UTF-8) — added to the deferred-hardening list.
 
-## Exact resume point (updated 2026-07-14)
+## Refactor completion (verified 2026-07-15)
 
-SHIPPED: **v1.10.0 released** (`f9ef3fc`, tag `v1.10.0`) — first public release.
-Done since 2D2B: 2D3a pricing primitives; savings-display-off-by-default HARD
-RULE (Codex-audited, HIGH `--json` cost leak fixed); the ENTIRE spend-cap /
-gate / fleet-reservation subsystem DELETED (so 2D3c + 2D4 are gone); 2D3b-1 cost
-math extracted. All CI-green incl Windows.
+The post-v1.10.0 refactor is complete. `bin/ambient` is a 788-line compatibility
+and composition facade; every `ambient_codex` production module is below 800
+lines. `mcp/ambient_mcp.py` is 774 lines and delegates its tool catalog, framing,
+and execution handlers to focused modules that are also below the limit.
 
-CURRENT: Phase 3 is complete and Phase 4 audit parsing now lives in focused
-modules (including prose recovery). Next: move the bounded generation workflows
-(`cmd_code`, then safe build orchestration seams), followed by integrations and
-facade reduction (including deferred `savings_note*`). Execute each RED-first,
-≤5 files, with the full local gate and Codex audit at each phase boundary. The
-current model matrix rerun is retained at
-`/tmp/ambient-codex-model-matrix-current-rerun/summary.txt`: **50 passed, 0
-failed, 1 intentional skip**, including every catalog model's availability path,
-every serving model's real ask/audit/code flow, and the Codex-facing control/MCP
-workflow. Public money display remains prohibited; savings are opt-in and
-relative-only.
+Final verification on code-bearing head `6de64b7`:
 
-T5 backup cleanup: NO-OP — only the bundle+tarball safety net exists at
-`/Users/z/ambient-codex-backups/pre-refactor-8104930/` (KEEP); no redundant
-working copy exists to delete.
+- **1,425 tests pass, 1 intentional package-install skip**; Ruff, recursive
+  compilation, diff hygiene, plugin validation, and skill validation pass.
+- Runtime coverage is **86%**, above the enforced 80% minimum; the CLI facade is
+  98% covered and the native MCP executable is 85% covered.
+- GitHub Actions run `29403596267` is green across all 18 jobs: Linux, macOS,
+  and Windows; Python 3.8, 3.10, 3.12, and 3.13; isolated package installs;
+  no-Node MCP; lint; and coverage.
+- A clean `git archive` contains no cache artifacts and passes source loading,
+  plugin/skill validation, and an isolated PEP 517 install from an unrelated
+  working directory.
+- Installed source/cache parity, MCP self-test, JSONL initialize, 14-tool
+  discovery, and zero-stderr startup pass. Takeover is connection-only and a
+  fresh MCP server resets to Normal Codex; empty usage is a successful response.
+- The final live stress battery is **43 passed, 0 failed, 0 skipped**. The final
+  catalog/model matrix is **50 passed, 0 failed, 1 intentional empty-usage
+  skip** across 17 models, including real audit and code work on all four serving
+  models and clean classified failures for all 13 idle models.
+- Settings are restored to persistent mode `off`, `ambient/large` chat and code
+  defaults, streaming `on`, fallback `off`, and savings `off`. Public output
+  remains token-only; savings are opt-in and percentage-only, with no monetary
+  amount. Both live batteries' credential tripwires pass.
 
-## Continuation update — 2026-07-14 (final local verification)
-
-- New local checkpoints: `094a8c7` moves the single-shot completion lifecycle
-  to `chat_workflow.py`; `322008b` moves the build manifest path firewall to
-  `build_workflow.py`; `22dc6c9` moves immutable usage aggregation to
-  `usage_report.py`; and `39667ef` moves shared terminal result rendering to
-  `output_schema.py`. Each was RED-first, limited to four tracked files, and
-  passed the full local gate.
-- Full guarded suite after the renderer checkpoint: **1,340 pass, 1 intentional
-  skip**; ruff, plugin/skill validators, recursive compile, and diff hygiene
-  pass.
-- Current live model matrix is retained at
-  `/tmp/ambient-codex-model-matrix-20260714-final/summary.txt`: **50 passed,
-  0 failed, 1 intentional usage skip**. It covered all 17 catalog models, real
-  ask/audit/code work for all four serving models, control/setup/git/build and
-  consensus workflows, plus a final clean key-leak tripwire.
-- Plugin cachebuster `1.10.0+codex.20260714205105` is installed locally. Source
-  and installed-cache control both report savings defaulting to `off` and no
-  `reference-price` surface; installed-cache MCP starts on a Python-only PATH
-  and lists exactly 14 tools with zero stderr.
-- Local branch is intentionally unpushed. Do not publish, tag, or push without
-  explicit founder approval.
+T5 backup cleanup remains a no-op: the bundle and source tarball under
+`/Users/z/ambient-codex-backups/pre-refactor-8104930/` are the intentional
+rollback safety net and must be kept.
