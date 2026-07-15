@@ -5,6 +5,23 @@ import unittest
 
 
 class OutputSchemaTests(unittest.TestCase):
+    def test_agent_provider_merge_is_immutable_and_namespaced(self):
+        core = importlib.import_module("ambient_codex.agent_config")
+        source = {"provider": {
+            "foreign": {"options": {"apiKey": "foreign"}},
+            "ambient-codex": {"models": {"old/model": {"name": "old/model"}}},
+        }}
+        updated = core.update_provider_config(
+            source, provider="ambient-codex", api_url="https://api.example", model="new/model")
+        self.assertEqual(source["provider"]["ambient-codex"],
+                         {"models": {"old/model": {"name": "old/model"}}})
+        self.assertEqual(updated["provider"]["foreign"], source["provider"]["foreign"])
+        ours = updated["provider"]["ambient-codex"]
+        self.assertEqual(ours["options"]["baseURL"], "https://api.example/v1")
+        self.assertEqual(set(ours["models"]), {"old/model", "new/model"})
+        self.assertIsNone(core.update_provider_config(
+            {"provider": []}, provider="ambient-codex", api_url="https://api.example", model="new/model"))
+
     def test_module_allowlists_tokens_and_never_mutates_input(self):
         core = importlib.import_module("ambient_codex.output_schema")
         source = {"prompt_tokens": 1, "completion_tokens": 2,

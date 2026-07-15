@@ -171,6 +171,7 @@ from ambient_codex import config_store as _config_store  # noqa: E402
 from ambient_codex import cache_store as _cache_store  # noqa: E402
 from ambient_codex import audit_core as _audit_core  # noqa: E402
 from ambient_codex import audit_prose as _audit_prose  # noqa: E402
+from ambient_codex import agent_config as _agent_config  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
@@ -9548,8 +9549,9 @@ def ensure_opencode_config(api_url, model):
             file=sys.stderr,
         )
         return
-    providers = cfg.get("provider", {})
-    if not isinstance(providers, dict):
+    updated_cfg = _agent_config.update_provider_config(
+        cfg, provider=OPENCODE_PROVIDER, api_url=api_url, model=model)
+    if updated_cfg is None:
         print(
             f"ambient: {OPENCODE_CONFIG_PATH} provider section is not a JSON "
             "object — leaving it alone; `ambient-codex agent` may misbehave "
@@ -9557,40 +9559,6 @@ def ensure_opencode_config(api_url, model):
             file=sys.stderr,
         )
         return
-    # Keyed by LAUNCHER_NAME, not "ambient": opencode has ONE global config, and the
-    # other Ambient install writes a provider under the bare name. Sharing that entry
-    # means whichever install ran `agent` first pins the baseURL, and the other one
-    # then sends ITS key to that endpoint.
-    desired_options = {"baseURL": f"{api_url}/v1",
-                       "apiKey": "{env:AMBIENT_CODEX_API_KEY}"}
-    existing = providers.get(OPENCODE_PROVIDER)
-    if isinstance(existing, dict):
-        # This entry is OURS (keyed by LAUNCHER_NAME). Keep the current model in the
-        # map, and re-pin baseURL + apiKey: an entry left by an older version could
-        # still carry the shared `{env:AMBIENT_API_KEY}` placeholder or a stale
-        # endpoint, which would send the wrong key on the next `agent` run.
-        existing_models = existing.get("models")
-        models_map = existing_models if isinstance(existing_models, dict) else {}
-        native_provider = {
-            **existing,
-            "options": desired_options,
-            "models": {**models_map, model: {"name": model}},
-        }
-    else:
-        # A malformed value under OUR namespaced key is safe to replace. Never
-        # infer ownership of, or repair, any differently named provider.
-        native_provider = {
-            "npm": "@ai-sdk/openai-compatible",
-            "name": "Ambient Codex (ambient.xyz)",
-            "options": desired_options,
-            "models": {model: {"name": model}},
-        }
-    updated_cfg = {
-        **cfg,
-        "provider": {**providers, OPENCODE_PROVIDER: native_provider},
-    }
-    if existing is None and "$schema" not in updated_cfg:
-        updated_cfg = {"$schema": "https://opencode.ai/config.json", **updated_cfg}
     if updated_cfg == cfg:
         return  # already correct — don't rewrite the file
     cfg = updated_cfg
