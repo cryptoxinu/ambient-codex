@@ -155,6 +155,7 @@ bugs, verification, commits, or the next action changes.
 | 5F-3 | Native MCP tool execution surface | Complete | local checkpoint | `mcp/ambient_mcp_tool_handlers.py`; status/control/session-mode/model-picker/settings/key/models/doctor/usage/self-test/ask/audit handlers run over a read-only live facade view, preserving picker and subprocess patch seams while reducing the MCP executable below 800 lines |
 | 5E-3 | CLI parser and process entrypoint orchestration | Complete | local checkpoint | `cli_entrypoint.py`; parser configuration, keyless routing, registry dispatch, numeric normalization, session progress resolution, classified failures, redacted exception shielding, and uninstall handoff run over a read-only live facade view |
 | 5E-4 | CLI command-composition adapter surface | Complete | local checkpoint | `cli_commands.py`; 117 context/output/catalog/ask/map/audit/generation/build/settings/control/setup/doctor/usage/launcher/agent adapters preserve facade patch seams through a read-only live namespace while all domain implementations remain in focused modules |
+| 5E-5 | API client and completion facade surface | Complete | local checkpoint | `client_facade.py`; classified auth probing, secret refusal, retry/cache/usage adapters, quiet SSE transport, frozen session normalization, bounded completion dispatch, and chat rendering preserve live facade seams and reduce `bin/ambient` below 800 lines |
 
 ## Phase 0 checklist
 

@@ -1,61 +1,13 @@
 #!/usr/bin/env python3
 # ruff: noqa: F401 -- declarative dependency bindings resolve facade names late
-"""ambient — CLI for the Ambient (ambient.xyz) OpenAI-compatible inference API.
+"""Ambient CLI for model-aware ask, audit, map, code, build, and agent work.
 
-Commands:
-  setup                First-run: paste + verify your API key, store securely
-                       (--force rotates, --remove offboards)
-  models               List models — READY first, context/capabilities, defaults marked
-  use       [model]    Pick the sticky default model (interactive menu if no arg)
-  curate    [verb]     Choose which models the menus surface (hide/show/only/note)
-  ask       [prompt]   One-shot completion (prompt arg, stdin, or both via '-':
-                       cat doc.txt | ambient-codex ask "summarize" -)
-  audit     [paths…]   Second-opinion code audit (files as args, diff via
-                       stdin, or --repo [DIR] for a whole repository —
-                       git-aware walk, upfront file plan)
-  map       "<p>" [f…] Bulk lane: run ONE prompt independently over MANY items
-                       (files, or stdin lines / --jsonl objects); one result
-                       streamed per item, cache-resumable (re-runs re-bill
-                       only missing items)
-  chat                 Interactive REPL — streams each reply, per-turn token
-                       receipt (opt-in savings); /model /clear /help /exit
-  code      [task]     Single-file code generation on the code model
-  build     [task]     Plan + generate a SET of files (manifest-first; writes
-                       only with --apply, inside --dir; never executes)
-  agent     [args…]    Interactive agentic terminal on Ambient (opencode TUI)
-  doctor               Diagnose: bad key vs out-of-funds vs model availability
-                       vs your network vs Ambient itself — names the culprit
-  usage     [--days]   Local token-usage summary and optional relative savings
-  control              Codex-native control panel: status, mode, models, key,
-                       settings, doctor, usage (also exposed through MCP)
-  mode      [on|off]   Delegate mode toggle (no arg = status). When ON, Codex
-                       routes code writing through Ambient for the session
-  link                 Put a stable `ambient-codex` launcher on your PATH
-  cache     [action]   Inspect / clear the local chunk cache
-  trust-url [url]      Explicitly trust a non-Ambient endpoint (self-hosted)
-  version              Print version
-  codex     [args…]    Blocked upstream for now — explains why; use `agent`
-
-Inputs beyond a model's single-shot budget are auto map-reduced (parallel
-chunk calls + merge) up to the bounded 20M-character input guard. Repository
-audits include source files up to that guard and report any larger source or
-aggregate-overflow exclusion as PARTIAL coverage.
-
-Exit codes: 0 ok · 1 diagnosed error · 2 PARTIAL result · 3 no key configured
-            64 usage error · 130 interrupted
-
-Credentials: OS keychain `ambient-codex` (preferred) or ~/.config/ambient-codex/env
-             (chmod 600). State root override: AMBIENT_CODEX_HOME.
-Model resolution: -m flag > AMBIENT_MODEL_MAP phase entry > AMBIENT_MODEL /
-                  AMBIENT_CODE_MODEL env var > saved default (ambient use)
-                  > built-in default. `-m auto[:cheapest|:largest]` (or
-                  `ambient use auto`) delegates the pick to the live catalog
-                  — resolved per call, always printed. AMBIENT_MODEL_MAP
-                  (like AMBIENT_MAX_PARALLEL, env or
-                  config) routes phases: "map=ID,reduce=ID,chat=ID,code=ID";
-                  --reduce-model overrides its reduce entry per run.
-An explicit concrete -m model is NEVER silently swapped (SACRED) — routing
-is advisory, auto is explicit delegation, --fallback stays opt-in.
+Run ``ambient-codex -h`` or a subcommand's ``-h`` for the complete interface.
+Large inputs use bounded map-reduce; builds use resumable manifest-first batches
+and write only with ``--apply``. Credentials remain private. Concrete models are
+never silently replaced; auto/fallback require explicit delegation. Exit codes:
+0 ok; 1 error; 2 partial; 3 unconfigured; 64 usage; 130 interrupted. Public
+output is token-only; relative savings are opt-in and money is never displayed.
 """
 
 import argparse
@@ -183,6 +135,7 @@ from ambient_codex import build_command as _build_command  # noqa: E402
 from ambient_codex import build_state_command as _build_state_command  # noqa: E402
 from ambient_codex import build_workflow as _build_workflow  # noqa: E402
 from ambient_codex import chat_workflow as _chat_workflow  # noqa: E402
+from ambient_codex import client_facade as _client_facade  # noqa: E402
 from ambient_codex import chunking as _chunking  # noqa: E402
 from ambient_codex import cli_dispatch as _cli_dispatch  # noqa: E402
 from ambient_codex import cli_entrypoint as _cli_entrypoint  # noqa: E402
@@ -345,30 +298,15 @@ def progress_display_enabled():
 _TELEMETRY_CPT_CACHE = None
 
 AUDIT_SYSTEM_PROMPT = """You are an adversarial senior code reviewer giving a second opinion.
-Audit the provided code/diff for real defects: correctness bugs, security vulnerabilities,
-race conditions, data loss, error-handling gaps, and broken edge cases.
-
-SEVERITY RUBRIC (calibrate strictly):
-- CRITICAL: exploitable, causes data loss, or crashes on NORMAL use.
-- HIGH: produces a wrong result on realistic input.
-- MEDIUM: fails only on an edge case / uncommon input.
-- LOW: latent risk, no current trigger.
-Report a "confidence": HIGH if you can name the exact triggering input; else LOW —
-do NOT drop a low-confidence finding, and do NOT overstate it.
-
-LINE NUMBERS: source files are shown with absolute line-number gutters like "  42| code".
-Cite THOSE numbers as file:line. For a diff, cite the new-file line from the nearest @@ hunk.
-
-FORMAT — for each finding: SEVERITY, confidence, file:line, the defect, a concrete failure
-scenario (specific inputs/state -> wrong outcome), and a suggested fix. Rank most-severe
-first. Report ONLY genuine defects — never style nits; if the code is sound, say so plainly.
-Never handwave. End with a one-line verdict: SHIP / FIX FIRST / NEEDS WORK.
-
-EXAMPLE (illustrates FORMAT only — not a bug to look for):
-  HIGH (confidence: HIGH) — pay.py:88 — off-by-one lets a zero-balance transfer create money.
-  Scenario: bal=100, transfer(100): `if bal > amt` skips the debit but still credits the
-  dest → funds created. Fix: use `>=` and validate amt > 0.
-A style preference (e.g. "rename x to count") is NOT a finding — omit it."""
+Audit for real correctness, security, race, data-loss, error-handling, and edge-case defects.
+Severity: CRITICAL is exploitable/data-loss/normal-use crash; HIGH is a wrong realistic result;
+MEDIUM is an uncommon edge case; LOW is latent risk. Mark confidence HIGH only with an exact
+triggering input, otherwise LOW; retain low-confidence findings without overstating them.
+Use supplied gutters as file:line (diffs: nearest @@ new-file line). Give severity,
+confidence, location, defect, concrete input/state → wrong outcome, and fix; rank severe
+first, never style. If sound, say so. End with SHIP / FIX FIRST / NEEDS WORK. Example format:
+HIGH (confidence: HIGH) — pay.py:88 — off-by-one; bal=100, transfer(100) skips debit but
+credits destination; fix comparison/input. The example is format only, not a bug to seek."""
 
 
 def read_config_file():
@@ -571,81 +509,13 @@ def _routing_dependencies():
     "is_auto_model _catalog_out_price resolve_auto_model preflight_hint route_model _validate_reduce_id resolve_reduce_model response_format_for _model_budget_constants _model_profile_constants _reasoning_output_budget _context_safe_output_cap _context_safe_escalation_ceiling single_shot_max_chars _reasoning_single_shot_target model_profile _resolve_output_budget apply_output_budget")
 
 
-def error_message(body):
-    return _response_errors.error_message(body)
-
-
-def classify_error(status, body, api_key):
-    """Map an API failure to (category, user-facing diagnosis) so users can tell
-    a dead key from an empty account from a busy model from a real outage.
-    Categories: key | funds | model | rate | service | unknown."""
-    return _response_errors.classify_error(
-        status, body, api_key, redact, LAUNCHER_NAME,
-    )
-
-
-def auth_probe(api_url, api_key, models):
-    """Verify a key with a minimal real completion (the models endpoint is
-    unauthenticated, so it proves nothing about the key). Returns
-    (ok, category, detail). A not-serving 429 still proves auth passed."""
-    ready = ready_model_ids(models)
-    probe_model = ready[0] if ready else next(
-        (m["id"] for m in models
-         if isinstance(m, dict) and isinstance(m.get("id"), str)),
-        DEFAULT_MODEL)
-    payload = {
-        "model": probe_model,
-        "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 16,
-    }
-    status, body = api_request(
-        api_url, api_key, "/v1/chat/completions", payload, timeout=60
-    )
-    if status == 200:
-        return True, "ok", f"live completion on {sanitize(probe_model)} succeeded"
-    category, detail = classify_error(status, body, api_key)
-    if category == "model":
-        # The not-serving 429 is only ever returned after auth succeeds.
-        return True, category, (
-            "authentication passed (verified even while the probe model isn't "
-            "serving — that response only comes after a valid key)"
-        )
-    if category in ("rate", "service"):
-        # Indeterminate: a gateway limiter or outage can fire before auth is
-        # proven — refuse to certify the key on this evidence.
-        return False, category, (
-            f"could not verify the key ({detail}) — retry in a minute"
-        )
-    return False, category, detail
+(error_message, classify_error, auth_probe, refuse_if_secrets, _retry_delay, _cache_key, _cache_get, _cache_put, log_usage, usage_exit, stream_completion, _session_or, _completion_dependencies, complete, chat) = _client_facade.build(
+    globals(), "error_message classify_error auth_probe refuse_if_secrets _retry_delay _cache_key _cache_get _cache_put log_usage usage_exit stream_completion _session_or _completion_dependencies complete chat")
 
 
 # Compatibility aliases: implementation ownership lives in ambient_codex.secrets.
-SECRET_PATTERNS = _secrets_core.SECRET_PATTERNS
-_LOOSE_LABEL_RE = _secrets_core._LOOSE_LABEL_RE
-_PRECISE_SECRET_PATTERNS = _secrets_core._PRECISE_SECRET_PATTERNS
-_LOOSE_CODE_VALUE_RE = _secrets_core._LOOSE_CODE_VALUE_RE
-_LOOSE_TYPE_VALUE_RE = _secrets_core._LOOSE_TYPE_VALUE_RE
-CREDS_IN_URL_RE = _secrets_core.CREDS_IN_URL_RE
-ENV_ASSIGN_RE = _secrets_core.ENV_ASSIGN_RE
-_ENV_STRONG_COMPONENT_RE = _secrets_core._ENV_STRONG_COMPONENT_RE
-_ENV_STRONG_SUBSTR_RE = _secrets_core._ENV_STRONG_SUBSTR_RE
-_ENV_STRONG_CAMEL_RE = _secrets_core._ENV_STRONG_CAMEL_RE
-_ENV_CONFIG_SUFFIX_RE = _secrets_core._ENV_CONFIG_SUFFIX_RE
-_ENV_SECRET_REF_RE = _secrets_core._ENV_SECRET_REF_RE
-_ENV_SECRET_REF_LINE_RE = _secrets_core._ENV_SECRET_REF_LINE_RE
-_ENV_SENSITIVE_KEY_RE = _secrets_core._ENV_SENSITIVE_KEY_RE
-_PUBLIC_KEY_IDENT_RE = _secrets_core._PUBLIC_KEY_IDENT_RE
-_ENV_HIGH_ENTROPY_RE = _secrets_core._ENV_HIGH_ENTROPY_RE
-_ENV_PASSWORDISH_RE = _secrets_core._ENV_PASSWORDISH_RE
-_ENV_PATH_VALUE_RE = _secrets_core._ENV_PATH_VALUE_RE
-_ENV_INTERP_RE = _secrets_core._ENV_INTERP_RE
-_SECRET_VALUE_HINT_RE = _secrets_core._SECRET_VALUE_HINT_RE
-_CODE_VALUE_RE = _secrets_core._CODE_VALUE_RE
-_CODE_REF_ASSIGN_RE = _secrets_core._CODE_REF_ASSIGN_RE
-_CODE_TAIL = _secrets_core._CODE_TAIL
-_ENV_CODE_VALUE_RE = _secrets_core._ENV_CODE_VALUE_RE
-_ENV_CMDSUB_RE = _secrets_core._ENV_CMDSUB_RE
-SECRET_NAMES_RE = _secrets_core.SECRET_NAMES_RE
+_SECRET_COMPAT = "SECRET_PATTERNS _LOOSE_LABEL_RE _PRECISE_SECRET_PATTERNS _LOOSE_CODE_VALUE_RE _LOOSE_TYPE_VALUE_RE CREDS_IN_URL_RE ENV_ASSIGN_RE _ENV_STRONG_COMPONENT_RE _ENV_STRONG_SUBSTR_RE _ENV_STRONG_CAMEL_RE _ENV_CONFIG_SUFFIX_RE _ENV_SECRET_REF_RE _ENV_SECRET_REF_LINE_RE _ENV_SENSITIVE_KEY_RE _PUBLIC_KEY_IDENT_RE _ENV_HIGH_ENTROPY_RE _ENV_PASSWORDISH_RE _ENV_PATH_VALUE_RE _ENV_INTERP_RE _SECRET_VALUE_HINT_RE _CODE_VALUE_RE _CODE_REF_ASSIGN_RE _CODE_TAIL _ENV_CODE_VALUE_RE _ENV_CMDSUB_RE SECRET_NAMES_RE".split()
+globals().update({name: getattr(_secrets_core, name) for name in _SECRET_COMPAT})
 
 _env_is_strong = _secrets_core.env_is_strong
 _value_looks_nonsecret = _secrets_core.value_looks_nonsecret
@@ -653,39 +523,8 @@ _env_assignment_is_secret = _secrets_core.env_assignment_is_secret
 _line_has_secret = _secrets_core.line_has_secret
 
 
-def refuse_if_secrets(labeled_chunks, allow):
-    """Refuse likely credentials while reporting bounded locations, never content."""
-    if allow:
-        return
-    hits = _secrets_core.secret_hits(labeled_chunks)
-    if hits:
-        msg = (
-            "refusing to send — content that looks like "
-            f"credentials at: {', '.join(hits)}. Redact those lines, or pass "
-            "--allow-secrets if they are false positives (e.g. variable names)."
-        )
-        _fail_exit(None, _argv_command(), "secrets", msg,
-                   prose=f"ambient [secrets]: {msg}")
-
-
 USAGE_MAX_BYTES = 5_000_000  # cap the ledger; trim oldest lines past this
 USAGE_TRIM_KEEP_LINES = 20_000  # how many newest ledger lines a trim keeps
-
-
-def _retry_delay(base, headers=None):
-    """Backoff with random jitter, honoring a Retry-After header (clamped to 60s)
-    when present. Jitter breaks the lockstep that makes 3 fan-out workers
-    re-hit the limiter together (thundering herd)."""
-    hint = 0.0
-    if headers is not None:
-        ra = headers.get("Retry-After")
-        if ra:
-            try:
-                hint = float(ra)
-            except (TypeError, ValueError):
-                hint = 0.0
-    delay = min(max(float(base), hint), 60.0)
-    return delay + random.uniform(0, 0.5 * delay)
 
 
 CACHE_DIR = os.path.join(STATE_DIR, "cache")
@@ -693,130 +532,11 @@ CACHE_MAX_FILES = 4000            # LRU-ish cap; oldest pruned past this
 CACHE_TTL_DEFAULT = 7 * 86400     # a cached chunk older than this is ignored
 
 
-def _cache_key(model, system, chunk, max_tokens, temperature,
-               response_format=None, salt=None):
-    """Content address for one chunk call. MUST include model + max_tokens
-    (per-model budgets differ) AND response_format — a strict-schema model shares
-    the same system prompt for prose vs --json, so omitting it would serve cached
-    prose into the JSON reducer or vice-versa. `salt`
- namespaces otherwise-identical calls — each --best-of sample
-    index gets its OWN cache entry so re-runs resume per sample; salt=None is
-    byte-identical to the pre-salt key."""
-    return _cache_store.cache_key(
-        model, system, chunk, max_tokens, temperature, response_format, salt
-    )
-
-
-def _cache_get(key, ttl):
-    return _cache_store.cache_get(CACHE_DIR, key, ttl)
-
-
-def _cache_put(key, text):
-    _cache_store.cache_put(
-        CACHE_DIR, key, text, CACHE_MAX_FILES, _private_dir
-    )
-
-
-def log_usage(model, usage, input_chars=None):
-    """Best-effort local metering (Ambient has no balance endpoint). Builds the
-    enriched ledger record here — token counts, observed char telemetry, the
-    priced cost, and the frontier reference in force at call time — then
-    delegates fail-open, lock-serialized persistence to
-    ``ambient_codex.usage_store``. A skipped trim only lets the ledger grow a
-    little; a lost line loses spend signal, so the store spools rather than
-    dropping a line under lock contention."""
-    try:
-        record = {
-            "ts": int(time.time()),
-            "model": model,
-            "in": usage.get("prompt_tokens", 0),
-            "out": usage.get("completion_tokens", 0),
-        }
-        # telemetry (additive): store the observed input CHAR count
-        # alongside REAL token usage so observed_cpt() can learn each model's
-        # true chars-per-token. Estimated usage is skipped — its token counts
-        # were themselves derived from chars via the static constant, so the
-        # ratio would be a circular echo, not an observation.
-        if (input_chars and not usage.get("_estimated")
-                and isinstance(input_chars, (int, float))
-                and isinstance(record["in"], (int, float))
-                and record["in"] > 0):
-            record["chars"] = int(input_chars)
-        # (additive; old records without these fields still parse):
-        # price the run NOW and pin the frontier reference in force, so
-        # `ambient usage` computes historical savings against what was true
-        # at call time even if the default/env changes later. Estimated
-        # token counts (salvage path) are marked so they stay honest.
-        try:
-            if usage.get("_estimated"):
-                record["est"] = True
-            cost, assumed = usage_cost(model, usage)
-            if not assumed:  # an ASSUMED worst-case figure is not a real cost
-                # FULL precision — round(…,6) flattened sub-microdollar calls
-                # to 0, and thousands of them aggregated as free (a
-                # fabricated ~100% saving). Round only at display.
-                record["cost"] = cost
-            ref = resolve_reference_price()
-            record["ref"] = [ref[0], ref[1]]
-        except Exception:  # enrichment must never cost us the base record
-            pass
-        line = json.dumps(record) + "\n"
-        _usage_store.append_line(
-            line,
-            usage_path=USAGE_PATH,
-            max_bytes=USAGE_MAX_BYTES,
-            trim_keep_lines=USAGE_TRIM_KEEP_LINES,
-            lock_wait_s=_LEDGER_LOCK_WAIT_S,
-            private_dir=_private_dir,
-            fs_lock=_fs_lock,
-            pid_alive=_pid_alive,
-        )
-    except Exception:  # metering is best-effort; never break the caller's turn
-        pass
-
-
-def usage_exit(msg):
-    """Semantic usage errors share argparse's exit code (EX_USAGE=64) so an
-    agentic caller can tell 'wrong invocation' from 'runtime failure'. Under
-    --json the same error is ALSO emitted as a parseable envelope (exit 64)."""
-    if _json_in_argv():
-        emit_json_error("usage", "usage", msg, exit_code=EXIT_USAGE)
-    print(f"ambient: {msg}", file=sys.stderr)
-    sys.exit(EXIT_USAGE)
-
-
-def stream_completion(api_url, api_key, payload, timeout, on_delta=None):
-    """Facade seam for the extracted dependency-injected SSE transport."""
-    return _streaming.stream_completion(
-        api_url, api_key, payload, timeout, on_delta,
-        opener=urllib.request.urlopen,
-        network_error=NetworkError,
-        stall_error=StallError,
-        stream_line_max=STREAM_LINE_MAX,
-        heartbeat_s=HEARTBEAT_S,
-        hard_wall_s=HARD_WALL_S,
-        noprogress_s=NOPROGRESS_S,
-        progress_enabled=progress_display_enabled,
-        stderr=sys.stderr,
-        stderr_is_tty=_stderr_is_tty,
-    )
-
-
 class Session(_session_state.Session):
     """Facade session whose catalog loader remains late-bound for tests."""
 
     def _load_catalog(self):
         return safe_catalog(self.api_url, self.api_key)
-
-
-def _session_or(session, api_key, api_url, conf=None):
-    """Normalize the loose (api_key, api_url[, conf]) triple to ONE Session.
-    Engine functions accept either form: callers
-    that already hold a Session pass it through; legacy positional callers
-    get an equivalent Session built on the spot."""
-    if session is not None:
-        return session
-    return Session(api_url=api_url, api_key=api_key, conf=conf or {})
 
 
 class RequestSpec(_session_state.RequestSpec):
@@ -835,32 +555,6 @@ MAX_BUDGET_ESCALATIONS = _session_state.MAX_BUDGET_ESCALATIONS
 MAX_COMPLETE_ATTEMPTS = _session_state.MAX_COMPLETE_ATTEMPTS
 _reasoning_str = _session_state.reasoning_str
 _budget_escalation_limit = _session_state.budget_escalation_limit
-
-
-def _completion_dependencies():
-    return _facade_adapters.bind(globals(), _completion_command.CompletionDependencies.bind,
-                                 "AttemptState CHARS_PER_TOKEN ChatError DEFAULT_BUDGET_ESCALATIONS MAX_COMPLETE_ATTEMPTS MIN_OUTPUT_TOKENS NetworkError RequestSpec StallError _as_pos_int _budget_escalation_limit _effective_cpt _fallback_enabled _reasoning_str _session_or classify_error fetch_models log_usage model_profile pick_fallback_model read_config_file redact stream_completion")
-
-
-def complete(api_key, api_url, model, messages, args, _stall_retried=False,
-             _budget_retried=False, _fallback_retried=False,
-             _budget_shrunk=False, on_delta=None, session=None):
-    return _completion_command.run_completion(
-        api_key, api_url, model, messages, args, _stall_retried,
-        _budget_retried, _fallback_retried, _budget_shrunk, on_delta,
-        session, _completion_dependencies())
-
-
-def chat(api_key, api_url, model, messages, args, kind="ask", session=None):
-    """Single-shot completion printed to stdout (CLI convenience wrapper).
-    Live-streams to an interactive terminal."""
-    return _chat_workflow.single_shot_response(
-        api_key, api_url, model, messages, args, kind=kind, session=session,
-        session_or=_session_or, request_spec=RequestSpec.from_args,
-        stdout=sys.stdout, stream_redactor=_StreamRedactor, complete=complete,
-        failure=_fail, completion_error=ChatError, emit_json=emit_json,
-        redact=redact, render=render_result,
-    )
 
 
 STDIN_WAIT_S = 10  # how long to wait for piped data before treating stdin as empty
