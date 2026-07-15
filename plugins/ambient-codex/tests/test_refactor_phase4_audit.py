@@ -5,6 +5,20 @@ import unittest
 
 
 class AuditPreparationTests(unittest.TestCase):
+    def test_prose_parser_is_a_dedicated_dependency_free_module(self):
+        prose = importlib.import_module("ambient_codex.audit_prose")
+        payload = prose.parse_prose_findings(
+            "HIGH — app.py:7 — missing validation\n"
+            "Scenario: user input reaches the sink\n"
+            "Fix: validate input\n"
+            "Verdict: FIX FIRST",
+            verdict=lambda _findings, _partial: "NEEDS WORK",
+        )
+        self.assertEqual(payload["verdict"], "FIX FIRST")
+        self.assertEqual(payload["findings"][0]["file"], "app.py")
+        self.assertTrue(prose.text_has_unparsed_finding(
+            "Severity: HIGH\nFile: app.py\nLine: 7\nDefect: missing validation"))
+
     def test_module_owns_audit_prep_and_single_shot_key(self):
         core = importlib.import_module("ambient_codex.audit_core")
         self.assertEqual(core.__all__, (
