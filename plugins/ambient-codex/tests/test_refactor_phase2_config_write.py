@@ -196,7 +196,9 @@ class InternalConfigWriteTests(unittest.TestCase):
                         td, mock.Mock(), None, abort, time.time, lambda _: None
                     ):
                         self.fail("entered without a lock")
-            self.assertIn("cannot open config lock", str(raised.exception))
+            expected = ("config is locked" if os.name == "nt"
+                        else "cannot open config lock")
+            self.assertIn(expected, str(raised.exception))
 
             lock_path.write_text("live", encoding="utf-8")
             with mock.patch.object(
@@ -239,6 +241,17 @@ class InternalConfigWriteTests(unittest.TestCase):
 
             self.assertEqual(len(attempts), 2)
             self.assertFalse(lock_path.exists())
+
+    def test_windows_delete_pending_permission_race_is_still_contention(self):
+        config_store = importlib.import_module("ambient_codex.config_store")
+        with tempfile.TemporaryDirectory() as td:
+            missing_lock = Path(td) / ".env.lock"
+            error = PermissionError(13, "sharing violation", str(missing_lock))
+
+            self.assertTrue(config_store._portable_lock_is_contended(
+                error, str(missing_lock), "nt"))
+            self.assertFalse(config_store._portable_lock_is_contended(
+                error, str(missing_lock), "posix"))
 
     def test_fallback_lock_write_and_cleanup_errors_fail_closed(self):
         config_store = importlib.import_module("ambient_codex.config_store")
