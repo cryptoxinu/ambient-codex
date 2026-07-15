@@ -3091,60 +3091,12 @@ def complete(api_key, api_url, model, messages, args, _stall_retried=False,
 def chat(api_key, api_url, model, messages, args, kind="ask", session=None):
     """Single-shot completion printed to stdout (CLI convenience wrapper).
     Live-streams to an interactive terminal."""
-    session = _session_or(session, api_key, api_url)
-    api_key, api_url = session.api_key, session.api_url
-    spec = RequestSpec.from_args(args)
-    want_json = spec.json
-    live_stream = sys.stdout.isatty() and not spec.raw and not want_json
-    streamed_parts = []
-    _sr = _StreamRedactor(api_key)   # M43: boundary-split-safe streaming redaction
-
-    def on_delta(piece):
-        out = _sr.feed(piece)
-        if out:
-            sys.stdout.write(out)
-            sys.stdout.flush()
-        streamed_parts.append(piece)
-
-    try:
-        content, usage, body = complete(
-            api_key, api_url, model, messages, spec,
-            on_delta=(on_delta if live_stream else None), session=session)
-    except ChatError as err:
-        if streamed_parts:
-            sys.stdout.write(_sr.flush())   # emit the buffered tail safely
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        _fail(spec, kind, err, api_key)
-    if streamed_parts:                       # success: flush the redactor tail
-        sys.stdout.write(_sr.flush())
-        sys.stdout.flush()
-    if want_json:
-        served = body.get("_served_model", model)
-        emit_json(
-            kind, model=served, api_key=api_key, content=content,
-            partial=bool(body.get("salvaged_partial")),
-            reason="output salvaged" if body.get("salvaged_partial") else None,
-            usage=body.get("usage"), finish_reason=body.get("finish_reason"),
-            extra=({"requested_model": model} if served != model else None),
-            allow_partial=spec.allow_partial)
-        return
-    if spec.raw:
-        print(redact(json.dumps(body, indent=2), api_key))
-        return
-    clean_stream = bool(streamed_parts) and "".join(streamed_parts).strip() == content
-    if not clean_stream and streamed_parts:
-        sys.stdout.write("\n[ambient: stream restarted — full result below]\n")
-        sys.stdout.flush()
-    render_result(
-        content,
-        bool(body.get("salvaged_partial")) or body.get("finish_reason") == "length",
-        "output was salvaged/truncated", spec, api_key, usage,
-        # Price the receipt at the model that actually SERVED — an opt-in
-        # --fallback switch to a pricier model must not over-state the
-        # saving by pricing the requested model.
-        body.get("_served_model", model),
-        already_streamed=clean_stream,
+    return _chat_workflow.single_shot_response(
+        api_key, api_url, model, messages, args, kind=kind, session=session,
+        session_or=_session_or, request_spec=RequestSpec.from_args,
+        stdout=sys.stdout, stream_redactor=_StreamRedactor, complete=complete,
+        failure=_fail, completion_error=ChatError, emit_json=emit_json,
+        redact=redact, render=render_result,
     )
 
 

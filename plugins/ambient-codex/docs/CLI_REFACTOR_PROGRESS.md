@@ -95,6 +95,7 @@ bugs, verification, commits, or the next action changes.
 | 4A-7 | Audit rendering normalization + verdict policy | Complete | local checkpoint | `audit_core.py`; immutable file/line normalization and conservative effective verdict extracted |
 | 4A-8 | Audit prose recovery grammar | Complete | `b6f6dc5` | `audit_prose.py`; bounded recovery, false-positive guards, and parser facade extracted |
 | 4B-1 | Interactive chat history policy | Complete | `f3b816d` | `chat_workflow.py`; immutable, recent-first prompt-budget trimming extracted |
+| 4B-1a | Single-shot completion lifecycle | Complete | local checkpoint | `chat_workflow.py`; injected streaming/redaction, JSON handoff, and served-model rendering preserve facade transport/terminal seams |
 | 4B-2 | Build resume identity + state path | Complete | `1a10931`→`743948a` | `build_workflow.py`; version-sensitive deterministic identity and scoped path extracted |
 | 4B-3 | Build resume-state validation | Complete | local checkpoint | `build_workflow.py`; immutable bounded plan/done validation delegates through the existing facade path firewall |
 | 4B-4 | Build manifest firewall | Complete | local checkpoint | `build_workflow.py`; copied/capped model manifest validation delegates through the existing path firewall |
