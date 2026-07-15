@@ -23,10 +23,11 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = ROOT.parents[1]
 CLI = ROOT / "bin" / "ambient"
 CREDENTIALS = ROOT / "ambient_codex" / "credentials.py"
-STRESS_HARNESS = ROOT / "tools" / "stress_test.sh"
-MODEL_MATRIX = ROOT / "tools" / "model_matrix.sh"
+STRESS_HARNESS = REPO_ROOT / "tools" / "stress_test.sh"
+MODEL_MATRIX = REPO_ROOT / "tools" / "model_matrix.sh"
 STABLE_LAUNCHER = ROOT / "scripts" / "ambient-codex-launcher.py"
 
 # `posixpath.expanduser` reads HOME; `ntpath.expanduser` ignores it and reads

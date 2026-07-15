@@ -20,6 +20,9 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
 PACKAGE = ROOT / "ambient_codex" / "__init__.py"
+PLUGIN_VERSION = json.loads(
+    (ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+)["version"].split("+", 1)[0]
 
 
 def isolated_env(home):
@@ -104,7 +107,7 @@ class SourceAndPluginCacheTests(unittest.TestCase):
             )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "ambient 1.10.0")
+        self.assertEqual(proc.stdout.strip(), f"ambient {PLUGIN_VERSION}")
 
     def test_offline_process_contract_snapshot(self):
         with tempfile.TemporaryDirectory() as td:
@@ -128,7 +131,7 @@ class SourceAndPluginCacheTests(unittest.TestCase):
         payload = json.loads(control.stdout)
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["surface"], "codex-native")
-        self.assertEqual(payload["version"], "1.10.0")
+        self.assertEqual(payload["version"], PLUGIN_VERSION)
         self.assertEqual(payload["mode"], "off")
         self.assertFalse(payload["key"]["configured"])
         self.assertIn("workflows", payload)
@@ -207,7 +210,7 @@ class PackageInstallTests(unittest.TestCase):
             )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "ambient 1.10.0")
+        self.assertEqual(proc.stdout.strip(), f"ambient {PLUGIN_VERSION}")
 
 
 if __name__ == "__main__":
