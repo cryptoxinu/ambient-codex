@@ -8963,73 +8963,17 @@ def cmd_usage(args):
     summary = _usage_report.summarize_records(
         recent, pricing=pricing, default_reference=default_ref,
         positive_int=_as_pos_int)
-    rows = summary["rows"]
-    raw_rows = summary["raw_rows"]
-    grand_frontier = summary["grand_frontier"]
-    grand_saved = summary["grand_saved"]
-    est_records = summary["est_records"]
-    priced_all = summary["all_priced"]
-    approx_ref = summary["approx_ref_records"]
     if getattr(args, "json", False):
         # Relative % savings only — NO dollar figures and NO per-token
         # reference prices (founder policy: billing is plan-dependent).
-        overall_pct = (int(grand_saved / grand_frontier * 100)
-                       if show_savings and grand_frontier > 0
-                       and grand_saved > 0 else None)
-        json_models = rows if show_savings else [
-            {**row, "saved_pct": None} for row in rows]
-        print(json.dumps({
-            "schema_version": 1, # contract field
-            "days": args.days,
-            "models": json_models,
-            "empty": False,
-            "all_priced": priced_all,
-            "saved_pct": overall_pct,
-            "approx_ref_records": approx_ref,
-            "est_records": est_records,  # estimated ≠ exact
-            "unmetered_lanes": ["agent"],
-            "note": unmetered_note,
-        }, indent=2))
+        print(json.dumps(_usage_report.usage_payload(
+            summary, days=args.days, show_savings=show_savings,
+            note=unmetered_note), indent=2))
         return
-    print(f"Ambient usage, last {args.days} days:")
-    for r, raw in zip(rows, raw_rows):
-        if not show_savings:
-            tail = ""
-        elif raw is None:
-            tail = "est n/a"
-        elif raw[0] == "partial":
-            tail = "(partial — some records unpriced)"
-        else:
-            _cost, _fcost, saved, pct = raw  # RAW math
-            if pct is not None:
-                tail = f"~{pct}% cheaper than frontier"
-            elif saved < 0:
-                tail = "costlier than frontier"
-            else:
-                tail = ""
-        if r["est_records"]:
-            tail += f"  [{r['est_records']} est.]"
-        print(
-            f"  {r['model']:42} {r['calls']:4} calls  in={r['in']:>9,}  "
-            f"out={r['out']:>9,}  {tail}"
-        )
-    if show_savings and grand_frontier > 0 and grand_saved > 0:
-        pct = int(grand_saved / grand_frontier * 100)
-        total_line = f"Overall: ~{pct}% cheaper than a frontier-equivalent model"
-    elif show_savings and grand_frontier > 0 and grand_saved < 0:
-        total_line = "Overall: costlier than a frontier-equivalent model"
-    else:
-        total_line = "Overall usage summary"
-    if show_savings and not priced_all:
-        total_line += " (some models unpriced)"
-    print(total_line)
-    if est_records:
-        print(f"note: {est_records} estimated record(s) — token counts "
-              "approximated locally (stream sent no usage object), not exact.")
-    if show_savings and approx_ref:
-        print(f"note: {approx_ref} record(s) use the current comparison "
-              "baseline (approx).")
-    print(f"note: {unmetered_note}.")
+    for line in _usage_report.usage_lines(
+            summary, days=args.days, show_savings=show_savings,
+            note=unmetered_note):
+        print(line)
 
 
 def _this_script():

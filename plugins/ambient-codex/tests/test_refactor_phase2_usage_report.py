@@ -15,7 +15,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "ambient"
-MOVED_NAMES = ("read_records", "filter_recent", "summarize_records")
+MOVED_NAMES = ("read_records", "filter_recent", "summarize_records",
+               "usage_payload", "usage_lines")
 
 
 def load_facade(home):
@@ -135,6 +136,31 @@ class FilterRecentTests(unittest.TestCase):
         }])
         self.assertTrue(summary["all_priced"])
         self.assertEqual(summary["est_records"], 1)
+
+    def test_renderers_keep_money_private_and_savings_opt_in(self):
+        report = importlib.import_module("ambient_codex.usage_report")
+        summary = {
+            "rows": [{"model": "m", "calls": 1, "in": 2, "out": 3,
+                      "est_records": 0, "cost_partial": False,
+                      "saved_pct": 50}],
+            "raw_rows": [(1.0, 2.0, 1.0, 50)],
+            "grand_frontier": 2.0, "grand_saved": 1.0,
+            "all_priced": True, "approx_ref_records": 0,
+            "est_records": 0,
+        }
+        hidden = report.usage_payload(
+            summary, days=7, show_savings=False, note="CLI only")
+        shown = report.usage_payload(
+            summary, days=7, show_savings=True, note="CLI only")
+
+        self.assertIsNone(hidden["saved_pct"])
+        self.assertIsNone(hidden["models"][0]["saved_pct"])
+        self.assertEqual(shown["saved_pct"], 50)
+        self.assertFalse({"cost", "price", "frontier_cost"} & shown.keys())
+        self.assertFalse({"cost", "price", "frontier_cost"}
+                         & shown["models"][0].keys())
+        self.assertIn("Overall usage summary", "\n".join(report.usage_lines(
+            summary, days=7, show_savings=False, note="CLI only")))
 
 
 class UsageReportFacadeTests(unittest.TestCase):

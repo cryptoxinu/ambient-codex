@@ -119,4 +119,74 @@ def summarize_records(records, *, pricing, default_reference, positive_int):
     }
 
 
-__all__ = ("read_records", "filter_recent", "summarize_records")
+def usage_payload(summary, *, days, show_savings, note):
+    """Return the public token/relative-savings JSON payload."""
+    frontier = summary["grand_frontier"]
+    saved = summary["grand_saved"]
+    overall = (int(saved / frontier * 100)
+               if show_savings and frontier > 0 and saved > 0 else None)
+    models = (summary["rows"] if show_savings else
+              [{**row, "saved_pct": None} for row in summary["rows"]])
+    return {
+        "schema_version": 1,
+        "days": days,
+        "models": models,
+        "empty": False,
+        "all_priced": summary["all_priced"],
+        "saved_pct": overall,
+        "approx_ref_records": summary["approx_ref_records"],
+        "est_records": summary["est_records"],
+        "unmetered_lanes": ["agent"],
+        "note": note,
+    }
+
+
+def _row_tail(row, raw, show_savings):
+    if not show_savings:
+        tail = ""
+    elif raw is None:
+        tail = "est n/a"
+    elif raw[0] == "partial":
+        tail = "(partial — some records unpriced)"
+    else:
+        saved, percentage = raw[2], raw[3]
+        tail = (f"~{percentage}% cheaper than frontier" if percentage is not None
+                else "costlier than frontier" if saved < 0 else "")
+    if row["est_records"]:
+        tail += f"  [{row['est_records']} est.]"
+    return tail
+
+
+def usage_lines(summary, *, days, show_savings, note):
+    """Return the human usage report as immutable display lines."""
+    lines = [f"Ambient usage, last {days} days:"]
+    for row, raw in zip(summary["rows"], summary["raw_rows"]):
+        tail = _row_tail(row, raw, show_savings)
+        lines.append(
+            f"  {row['model']:42} {row['calls']:4} calls  "
+            f"in={row['in']:>9,}  out={row['out']:>9,}  {tail}")
+    frontier, saved = summary["grand_frontier"], summary["grand_saved"]
+    if show_savings and frontier > 0 and saved > 0:
+        total = (f"Overall: ~{int(saved / frontier * 100)}% cheaper than a "
+                 "frontier-equivalent model")
+    elif show_savings and frontier > 0 and saved < 0:
+        total = "Overall: costlier than a frontier-equivalent model"
+    else:
+        total = "Overall usage summary"
+    if show_savings and not summary["all_priced"]:
+        total += " (some models unpriced)"
+    lines.append(total)
+    if summary["est_records"]:
+        lines.append(
+            f"note: {summary['est_records']} estimated record(s) — token counts "
+            "approximated locally (stream sent no usage object), not exact.")
+    if show_savings and summary["approx_ref_records"]:
+        lines.append(
+            f"note: {summary['approx_ref_records']} record(s) use the current "
+            "comparison baseline (approx).")
+    lines.append(f"note: {note}.")
+    return tuple(lines)
+
+
+__all__ = ("read_records", "filter_recent", "summarize_records",
+           "usage_payload", "usage_lines")
