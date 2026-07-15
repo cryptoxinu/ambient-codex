@@ -91,7 +91,13 @@ run env AMBIENT_CODEX_API_KEY="$FAKEKEY" "$AMB" audit "$WORK/big.txt" "$WORK/min
 cat "$WORK/staged.out" >> "$LOG"; OUT="$WORK/staged.out"; RC=$(cat "$WORK/staged.rc")
 grep -qi "git repository" "$OUT" && pass "--staged outside repo: clean error" || fail "--staged guard" "no clean error"
 run "$AMB" link --dir "$WORK/bin"
-[ -L "$WORK/bin/ambient-codex" ] && pass "link creates launcher symlink" || fail "link" "no symlink"
+if [ -f "$WORK/bin/ambient-codex" ] && [ -x "$WORK/bin/ambient-codex" ] \
+   && [ ! -L "$WORK/bin/ambient-codex" ] \
+   && grep -q "Stable user-facing launcher" "$WORK/bin/ambient-codex"; then
+  pass "link creates stable cache-independent launcher"
+else
+  fail "link" "stable launcher missing, non-executable, or still a cache symlink"
+fi
 run "$AMB" link --dir "$WORK/bin" --remove
 [ ! -e "$WORK/bin/ambient-codex" ] && pass "link --remove removes it" || fail "link remove" "still there"
 run "$AMB" cache;                  grep -q "cache:" "$OUT" && pass "cache status prints" || fail "cache" "no status"

@@ -158,6 +158,7 @@ bugs, verification, commits, or the next action changes.
 | 5E-5 | API client and completion facade surface | Complete | local checkpoint | `client_facade.py`; classified auth probing, secret refusal, retry/cache/usage adapters, quiet SSE transport, frozen session normalization, bounded completion dispatch, and chat rendering preserve live facade seams and reduce `bin/ambient` below 800 lines |
 | 5E-6 | Cross-version facade and streaming fast path | Complete | local checkpoint | Python 3.8-compatible adapter installation preserves explicit cardinality validation; safe printable streaming deltas bypass repeated full regex scans while control-bearing segments and boundary-split secrets retain canonical sanitization |
 | 5E-7 | Immutable audit prompt ownership | Complete | local checkpoint | `audit_prompts.py`; the complete pre-refactor severity, confidence, line-gutter, failure-scenario, fix, no-style, and verdict contract is restored verbatim outside the thin facade |
+| 5G-1 | Live launcher contract alignment | Complete | local checkpoint | stress and model-matrix harnesses now assert the intended executable, cache-independent copied launcher instead of the removed versioned-cache symlink behavior |
 
 ## Phase 0 checklist
 

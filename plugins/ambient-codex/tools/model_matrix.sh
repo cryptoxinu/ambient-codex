@@ -122,7 +122,13 @@ grep -q "reset" "$OUT" && pass "curate reset" || fail "curate reset" "?"
 run "$AMB" cache; grep -q "cache:" "$OUT" && pass "cache status" || fail "cache" "?"
 run "$AMB" cache clear; grep -q "removed" "$OUT" && pass "cache clear" || fail "cache clear" "?"
 run "$AMB" link --dir "$WORK/bin"; run "$AMB" link --dir "$WORK/bin"
-[ -L "$WORK/bin/ambient-codex" ] && pass "link is idempotent" || fail "link idempotent" "?"
+if [ -f "$WORK/bin/ambient-codex" ] && [ -x "$WORK/bin/ambient-codex" ] \
+   && [ ! -L "$WORK/bin/ambient-codex" ] \
+   && grep -q "Stable user-facing launcher" "$WORK/bin/ambient-codex"; then
+  pass "stable launcher install is idempotent"
+else
+  fail "link idempotent" "stable launcher contract not preserved"
+fi
 run "$AMB" trust-url https://gateway.example < /dev/null
 [ $RC -ne 0 ] && grep -qi "interactive-only" "$OUT" && pass "trust-url refuses non-TTY" || fail "trust-url gate" "rc=$RC"
 run wk "$AMB" usage --json
