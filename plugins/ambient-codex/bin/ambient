@@ -211,6 +211,7 @@ from ambient_codex import presentation_command as _presentation_command  # noqa:
 from ambient_codex import response_errors as _response_errors  # noqa: E402
 from ambient_codex import repository as _repository_core  # noqa: E402
 from ambient_codex import routing as _routing_core  # noqa: E402
+from ambient_codex import routing_runtime as _routing_runtime  # noqa: E402
 from ambient_codex import runtime_command as _runtime_command  # noqa: E402
 from ambient_codex import secrets as _secrets_core  # noqa: E402
 from ambient_codex import settings_commands as _settings_commands  # noqa: E402
@@ -1126,324 +1127,98 @@ def pick_fallback_model(*args, **kwargs):
 AUTO_MODEL_SPECS = ("auto", "auto:cheapest", "auto:largest")
 
 
-def is_auto_model(model):
-    """True for the explicit `auto` pseudo-model specs (case-insensitive)."""
-    return _routing_core.is_auto_model(model)
-
-
-def _catalog_out_price(catalog, model_id):
-    p = model_pricing(catalog, model_id)
-    return p[1] if p else ASSUMED_MAX_OUTPUT_PRICE
-
-
-def resolve_auto_model(spec, catalog, conf, input_chars=0, args=None,
-                       label="-m"):
-    """Resolve the EXPLICIT `-m auto[:cheapest|:largest]` pseudo-model to a
-    REAL model id at call time: READY + curation-visible + text-output, and
-    (for cheapest/bare auto) able to hold the input in ONE pass. The pick is
-    PRINTED to stderr — the user delegated the choice but always sees exactly
-    which model runs. SACRED-safe: this only ever executes when the user
-    literally asked for auto. Fails with the clean [model] diagnosis (naming
-    what IS ready) when nothing qualifies — never a silent substitute.
-    `label` names the surface the spec came from in every message (-m,
-    --reduce-model, AMBIENT_MODEL_MAP reduce=)."""
-    spec_l = spec.strip().lower()
-    variant = spec_l.split(":", 1)[1] if ":" in spec_l else ""
-    allow, hide, show, _notes = curation(conf)
-    candidates = []
-    for m in catalog or []:
-        if not (isinstance(m, dict) and _as_bool(m.get("is_ready")) and m.get("id")):
-            continue
-        out_mod = m.get("output_modalities") or ["text"]
-        if not isinstance(out_mod, list) or "text" not in out_mod:
-            continue
-        if is_hidden(m["id"], allow, hide, show):
-            continue
-        candidates.append(m)
-
-    def _bail(msg):
-        _fail_exit(args, _argv_command(), "model", msg,
-                   prose=f"ambient [model]: {msg}")
-
-    if not candidates:
-        ready = ready_model_ids(catalog)
-        if ready:  # READY models exist but curation hides every one of them
-            _bail(f"{label} {spec}: every READY model is hidden by your curation "
-                  f"(READY: {', '.join(ready)}) — surface one with "
-                  "`ambient-codex curate show <id>` or pick it explicitly with -m.")
-        _bail(f"{label} {spec}: no model is serving at this moment — the "
-              "network scales up with demand; try again shortly, or check: "
-              "ambient-codex models")
-    selected = _routing_core.select_auto_model(
-        spec, candidates,
-        is_ready=lambda _model: True,
-        is_hidden=lambda _model: False,
-        context_length=lambda candidate: _as_pos_int(
-            candidate.get("context_length"), 0),
-        output_price=lambda candidate: _catalog_out_price(catalog, candidate["id"]),
-        fits=lambda candidate: input_chars <= model_profile(
-            catalog, candidate["id"]).single_shot_chars,
-    )
-    if selected is None:
-        if variant != "largest":
-            names = ", ".join(m["id"] for m in candidates)
-            _bail(f"{label} {spec}: no READY model fits this input "
-                  f"(~{input_chars:,} chars) in one pass — READY: {names}; "
-                  "pick one explicitly with -m (oversize inputs are "
-                  "map-reduced), or use -m auto:largest.")
-        _bail(f"{label} {spec}: no model is serving at this moment — the "
-              "network scales up with demand; try again shortly, or check: "
-              "ambient-codex models")
-    pick, reason = selected
-    if variant == "largest":
-        chosen = next(candidate for candidate in candidates if candidate["id"] == pick)
-        why = (f"largest READY context, "
-               f"{_humanize_ctx(_as_pos_int(chosen.get('context_length'), 0))}")
-    else:
-        why = reason
-    print(f"ambient: {label} {spec} -> {pick} ({why})", file=sys.stderr)
-    return pick
-
-
-def preflight_hint(model, catalog, conf, input_chars=0):
-    """ADVISORY ONLY. One stderr line when the user's resolved
-    CONCRETE model has no live workers, or the whole input cannot fit its
-    context window — naming READY alternatives. It never
-    changes the model, never blocks, and says so: model choice is SACRED."""
-    if not catalog:
-        return None  # degraded/offline catalog — nothing trustworthy to say
-    meta = next((m for m in catalog
-                 if isinstance(m, dict) and m.get("id") == model), None)
-    if meta is None:
-        return None  # unknown id: complete() gives the real [model] diagnosis
-    problems = []
-    if not _as_bool(meta.get("is_ready")):
-        problems.append(f"'{model}' isn't serving right now "
-                        "(Ambient scales models with demand)")
-    if input_chars:
-        ctx_chars = _as_pos_int(meta.get("context_length"), 0) * CHARS_PER_TOKEN
-        if ctx_chars and input_chars > ctx_chars:
-            problems.append(
-                f"the input (~{input_chars:,} chars) exceeds '{model}'s whole "
-                "context window (it will be split and map-reduced)")
-    if not problems:
-        return None
-    allow, hide, show, _notes = curation(conf)
-    alts = []
-    for m in catalog:
-        if not (isinstance(m, dict) and _as_bool(m.get("is_ready")) and m.get("id")) \
-                or m["id"] == model:
-            continue
-        out_mod = m.get("output_modalities") or ["text"]
-        if not isinstance(out_mod, list) or "text" not in out_mod:
-            continue
-        if is_hidden(m["id"], allow, hide, show):
-            continue
-        alts.append((_catalog_out_price(catalog, m["id"]), m["id"]))
-    alts.sort()
-    line = "ambient: note — " + "; ".join(problems)
-    if alts:
-        shown = ", ".join(mid for _pr, mid in alts[:4])
-        line += f" — READY: {shown}; pick with -m or -m auto"
-    line += ". (advisory only — your model choice is unchanged)"
-    print(line, file=sys.stderr)
-    return None
-
-
-def route_model(args, conf, kind, catalog, input_chars=0, phase=None):
-    """The shared command preamble: resolve the model, expand an
-    explicit `auto` spec to a concrete READY pick (printed), or print the
-    pre-flight advisory for a concrete model. Returns the model to run.
-    NEVER changes a concrete model — the hint is information only."""
-    model = resolve_model(args, conf, kind, phase=phase)
-    if is_auto_model(model):
-        return resolve_auto_model(model, catalog, conf, input_chars, args)
-    preflight_hint(model, catalog, conf, input_chars)
-    return model
-
-
-def _validate_reduce_id(chosen, catalog, args, source):
-    """H1: an unknown reduce id must be diagnosed BEFORE the map fan-out
-    spends a cent — the old failure mode billed EVERY map chunk, then
-    merge() degraded the synthesis ChatError into raw concatenation and the
-    user never saw the real 'unknown model' diagnosis. Clean [model] error
-    with did-you-mean suggestions, prose AND --json envelope, exit 1."""
-    ids = [m["id"] for m in catalog
-           if isinstance(m, dict) and isinstance(m.get("id"), str)]
-    if not ids or chosen in ids:
-        return
-    close = difflib.get_close_matches(chosen, ids, n=3, cutoff=0.4)
-    hint = f" — did you mean: {', '.join(close)}?" if close else ""
-    msg = (f"unknown reduce model '{chosen}' (from {source}){hint} "
-           "— nothing was run or billed. See: ambient-codex models")
-    _fail_exit(args, _argv_command(), "model", msg,
-               prose=f"ambient [model]: {msg}")
-
-
-def resolve_reduce_model(args, conf, map_model, catalog=None):
-    """Model for the map-reduce SYNTHESIS step (cheap-map /
-    strong-reduce): --reduce-model flag > AMBIENT_MODEL_MAP 'reduce' phase >
-    the map model itself. An explicit concrete -m pins the WHOLE run — the
-    config map must never reroute the synthesis behind the user's back.
-    When a `catalog` is available: an `auto[:…]` reduce spec resolves to a
-    concrete READY pick (printed) instead of being silently dropped, and a
-    concrete id is VALIDATED up front so a typo'd --reduce-model / stale
-    map entry fails before any map spend. A degraded/absent catalog
-    changes nothing — no false refusals while offline."""
-    flag = getattr(args, "reduce_model", None)
-    if flag:
-        chosen, source = flag, "--reduce-model"
-    else:
-        explicit = getattr(args, "model", None)
-        if explicit and not is_auto_model(explicit):
-            return map_model
-        mapped = model_map(conf).get("reduce")
-        if not mapped:
-            return map_model
-        chosen, source = mapped, "AMBIENT_MODEL_MAP reduce="
-    if is_auto_model(chosen):
-        if catalog:
-            # input_chars=0 is intentional: the reduce input (concatenated map
-            # extracts) is genuinely unknown here, and run_map_reduce clamps the
-            # hierarchical synthesis to the CHOSEN reduce model's own window
-            # (multi-level reduce) so a small model degrades, never 400s.
-            # auto:cheapest therefore honestly returns the cheapest READY model.
-            return resolve_auto_model(chosen, catalog, conf, 0, args,
-                                      label=source)
-        # No catalog to resolve against: say so explicitly rather than
-        # letting the pseudo-model id reach the synthesis call (or silently
-        # vanishing, the old behavior for a mapped auto spec).
-        print(f"ambient: note — {source} {chosen} ignored (model catalog "
-              f"unavailable) — synthesis stays on {map_model}",
-              file=sys.stderr)
-        return map_model
-    if chosen != map_model and catalog:
-        _validate_reduce_id(chosen, catalog, args, source)
-    return chosen
-
-
-def response_format_for(profile, schema):
-    """Capability-gated structured-output request for a model (A4): strict
-    json_schema when supported, else json_object, else None (prompt-only).
-    Sending response_format to a model that lacks it can 400 — so gate."""
-    return _model_budget.response_format_for(profile, schema)
-
-
-def _model_budget_constants():
-    """Return immutable-in-use constants for extracted model budget math."""
-    return {
-        "CHARS_PER_TOKEN": CHARS_PER_TOKEN,
-        "REASONING_EXPANSION": REASONING_EXPANSION,
-        "ANSWER_TOKENS_RESERVE": ANSWER_TOKENS_RESERVE,
-        "OUTPUT_SAFETY": OUTPUT_SAFETY,
-        "INPUT_TOKEN_SAFETY": INPUT_TOKEN_SAFETY,
-        "CONTEXT_OVERHEAD_TOKENS": CONTEXT_OVERHEAD_TOKENS,
-        "MIN_REASONING_CHUNK": MIN_REASONING_CHUNK,
-    }
-
-
-def _model_profile_constants():
-    """Return the model-profile inputs without coupling the pure module to CLI state."""
-    return {
-        **_model_budget_constants(),
-        "FALLBACK_CONTEXT": FALLBACK_CONTEXT,
-        "FALLBACK_MAX_OUTPUT": FALLBACK_MAX_OUTPUT,
-        "MAX_AUTO_BUDGET_TOKENS": MAX_AUTO_BUDGET_TOKENS,
-        "MIN_OUTPUT_TOKENS": MIN_OUTPUT_TOKENS,
-        "NONREASONING_OUTPUT_BUDGET": NONREASONING_OUTPUT_BUDGET,
-        "NONREASONING_CONTEXT_MARGIN": NONREASONING_CONTEXT_MARGIN,
-        "REASONING_CHUNK_FACTOR": REASONING_CHUNK_FACTOR,
-    }
-
-
-def _reasoning_output_budget(input_chars, cpt=None):
-    """Tokens needed to REASON over `input_chars` of dense code AND still emit a
-    real answer: reasoning_tokens + a fixed answer reserve, times a safety
-    factor. `cpt` lets model_profile pass the model's OBSERVED chars-per-token
-; default = the static constant, byte-identical."""
-    return _model_budget.reasoning_output_budget(
-        input_chars, cpt, _model_budget_constants())
-
-
-def _context_safe_output_cap(profile, input_chars=None, cpt=None):
-    """Maximum output tokens that leave room for this input in context.
-
-    The static 3.2 chars/token estimate is optimistic for guttered source code,
-    so context checks use an extra input-token safety factor. The lower bound is
-    a last-resort floor for tiny windows; callers still prefer smaller chunks
-    when they can.
-    """
-    return _model_budget.context_safe_output_cap(
-        profile, input_chars, cpt, _model_budget_constants())
-
-
-def _context_safe_escalation_ceiling(profile, input_chars=None, cpt=None):
-    return _model_budget.context_safe_escalation_ceiling(
-        profile, input_chars, cpt, _model_budget_constants())
-
-
-def single_shot_max_chars():
-    """Cost-knob cap on how large a single-shot reasoning call may get (A1)."""
-    raw = os.environ.get("AMBIENT_SINGLE_SHOT_MAX_CHARS")
-    if raw:
-        try:
-            return max(REASONING_SINGLE_SHOT_CHARS, int(raw))
-        except ValueError:
-            pass
-    return SINGLE_SHOT_MAX_CHARS_DEFAULT
-
-
-def _reasoning_single_shot_target(ctx, max_out, cpt=None):
-    """Largest input a reasoning model can take in ONE pass and still fit both
-    its output cap and its context window. Bounded by the cost knob. `cpt` =
-    observed chars-per-token when history exists; default static."""
-    return _model_budget.reasoning_single_shot_target(
-        ctx, max_out, cpt, single_shot_max_chars(), _model_budget_constants())
-
-
-def model_profile(catalog, model):
-    """Derive per-model tuning from /v1/models metadata (PURE — pass an already-
-    fetched catalog). Reasoning models get a GENEROUS output budget so reasoning
-    AND answer both fit, plus SMALL chunks so reasoning-per-chunk stays bounded;
-    non-reasoning models get a modest budget and LARGE (context-sized) chunks.
-    An unknown/offline model falls back to conservative REASONING defaults — the
-    safer failure mode (over-budget, under-chunk). Char↔token conversion uses
-    the model's OBSERVED chars-per-token when the local ledger has real usage
-    history (AMBIENT_TELEMETRY=off opts out), else
-    the static CHARS_PER_TOKEN — a no-history profile is byte-identical."""
-    return _model_profiles.build_model_profile(
-        catalog, model, _effective_cpt, _as_pos_int, ModelProfile,
-        _model_profile_constants(), single_shot_max_chars(),
+def _routing_dependencies():
+    return _routing_runtime.RoutingDependencies.bind(
+        ANSWER_TOKENS_RESERVE=ANSWER_TOKENS_RESERVE, ASSUMED_MAX_OUTPUT_PRICE=ASSUMED_MAX_OUTPUT_PRICE, CHARS_PER_TOKEN=CHARS_PER_TOKEN,
+        CONTEXT_OVERHEAD_TOKENS=CONTEXT_OVERHEAD_TOKENS, FALLBACK_CONTEXT=FALLBACK_CONTEXT, FALLBACK_MAX_OUTPUT=FALLBACK_MAX_OUTPUT,
+        INPUT_TOKEN_SAFETY=INPUT_TOKEN_SAFETY, MAX_AUTO_BUDGET_TOKENS=MAX_AUTO_BUDGET_TOKENS, MIN_OUTPUT_TOKENS=MIN_OUTPUT_TOKENS,
+        MIN_REASONING_CHUNK=MIN_REASONING_CHUNK, ModelProfile=ModelProfile, NONREASONING_CONTEXT_MARGIN=NONREASONING_CONTEXT_MARGIN,
+        NONREASONING_OUTPUT_BUDGET=NONREASONING_OUTPUT_BUDGET, OUTPUT_SAFETY=OUTPUT_SAFETY, REASONING_CHUNK_FACTOR=REASONING_CHUNK_FACTOR,
+        REASONING_EXPANSION=REASONING_EXPANSION, REASONING_SINGLE_SHOT_CHARS=REASONING_SINGLE_SHOT_CHARS, SINGLE_SHOT_MAX_CHARS_DEFAULT=SINGLE_SHOT_MAX_CHARS_DEFAULT,
+        _argv_command=_argv_command, _as_bool=_as_bool, _as_pos_int=_as_pos_int,
+        _catalog_out_price=_catalog_out_price, _context_safe_escalation_ceiling=_context_safe_escalation_ceiling, _effective_cpt=_effective_cpt,
+        _fail_exit=_fail_exit, _humanize_ctx=_humanize_ctx, _model_budget=_model_budget,
+        _model_budget_constants=_model_budget_constants, _model_profile_constants=_model_profile_constants, _model_profiles=_model_profiles,
+        _resolve_output_budget=_resolve_output_budget, _routing_core=_routing_core, _validate_reduce_id=_validate_reduce_id,
+        curation=curation, difflib=difflib, is_auto_model=is_auto_model,
+        is_hidden=is_hidden, model_map=model_map, model_pricing=model_pricing,
+        model_profile=model_profile, os=os, preflight_hint=preflight_hint,
+        ready_model_ids=ready_model_ids, resolve_auto_model=resolve_auto_model, resolve_model=resolve_model,
+        single_shot_max_chars=single_shot_max_chars, sys=sys,
     )
 
 
-def _resolve_output_budget(max_tokens, profile, input_chars=None):
-    """Pure core of the output-budget derivation: (max_tokens, auto_budget)
-    for this profile. Shared by apply_output_budget (mutable Namespace, kept
-    for the cmd_* boundary) and RequestSpec.with_output_budget (frozen engine
-    spec) — ONE implementation so the two carriers can never
-    drift. When `input_chars` is given, RIGHT-SIZE a reasoning model's budget
-    to the actual input (A1) — so a small prompt gets a sane ceiling, not the
-    worst-case one."""
-    return _model_budget.resolve_output_budget(
-        max_tokens, profile, input_chars, _effective_cpt,
-        _model_budget_constants(),
-        lambda message: print(message, file=sys.stderr), MIN_OUTPUT_TOKENS,
-    )
+def is_auto_model(*args, **kwargs):
+    return _routing_runtime.is_auto_model(
+        *args, deps=_routing_dependencies(), **kwargs)
 
+def _catalog_out_price(*args, **kwargs):
+    return _routing_runtime._catalog_out_price(
+        *args, deps=_routing_dependencies(), **kwargs)
 
-def apply_output_budget(args, profile, input_chars=None):
-    """Resolve args.max_tokens from the profile unless the user set it
-    explicitly, and stash the escalation ceiling for complete(). Runs before
-    any pricing estimate in every command, so estimates reflect the real budget. The
-    cmd_*-boundary (mutable argparse.Namespace) twin of
-    RequestSpec.with_output_budget — both delegate to _resolve_output_budget."""
-    args.max_tokens, args._auto_budget = _resolve_output_budget(
-        getattr(args, "max_tokens", None), profile, input_chars)
-    ceiling = _context_safe_escalation_ceiling(
-        profile, input_chars, _effective_cpt(profile.model))
-    args.escalation_ceiling = max(args.max_tokens, ceiling)
+def resolve_auto_model(*args, **kwargs):
+    return _routing_runtime.resolve_auto_model(
+        *args, deps=_routing_dependencies(), **kwargs)
 
+def preflight_hint(*args, **kwargs):
+    return _routing_runtime.preflight_hint(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def route_model(*args, **kwargs):
+    return _routing_runtime.route_model(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _validate_reduce_id(*args, **kwargs):
+    return _routing_runtime._validate_reduce_id(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def resolve_reduce_model(*args, **kwargs):
+    return _routing_runtime.resolve_reduce_model(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def response_format_for(*args, **kwargs):
+    return _routing_runtime.response_format_for(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _model_budget_constants(*args, **kwargs):
+    return _routing_runtime._model_budget_constants(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _model_profile_constants(*args, **kwargs):
+    return _routing_runtime._model_profile_constants(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _reasoning_output_budget(*args, **kwargs):
+    return _routing_runtime._reasoning_output_budget(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _context_safe_output_cap(*args, **kwargs):
+    return _routing_runtime._context_safe_output_cap(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _context_safe_escalation_ceiling(*args, **kwargs):
+    return _routing_runtime._context_safe_escalation_ceiling(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def single_shot_max_chars(*args, **kwargs):
+    return _routing_runtime.single_shot_max_chars(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _reasoning_single_shot_target(*args, **kwargs):
+    return _routing_runtime._reasoning_single_shot_target(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def model_profile(*args, **kwargs):
+    return _routing_runtime.model_profile(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def _resolve_output_budget(*args, **kwargs):
+    return _routing_runtime._resolve_output_budget(
+        *args, deps=_routing_dependencies(), **kwargs)
+
+def apply_output_budget(*args, **kwargs):
+    return _routing_runtime.apply_output_budget(
+        *args, deps=_routing_dependencies(), **kwargs)
 
 def error_message(body):
     return _response_errors.error_message(body)
