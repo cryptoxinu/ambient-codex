@@ -323,15 +323,13 @@ def cmd_trust_url_reset(deps=None):
     print(f"Endpoint trust cleared — back to {DEFAULT_API_URL}")
 
 
-def exit_unconfigured(launcher_name, api_key_env, key_console_url, exit_code,
-                      sys_module):
+def exit_unconfigured(launcher_name, exit_code, sys_module):
     """Exit with constant setup guidance; this boundary never accepts a key."""
     print(
         "ambient [setup]: no API key configured.\n"
         f"  Interactive:      {launcher_name} setup\n"
-        f"  Non-interactive:  export {api_key_env}=<key>   "
-        f"(or: {launcher_name} setup --key-stdin)\n"
-        f"  Get a key:        {key_console_url}  →  API Keys",
+        f"  Non-interactive:  {launcher_name} setup --key-stdin\n"
+        "  Get a key:        https://ambient.xyz",
         file=sys_module.stderr,
     )
     sys_module.exit(exit_code)
@@ -343,9 +341,7 @@ def load_config(deps=None):
     shows the welcome panel, then continues the original command) instead of
     erroring; non-interactive callers get a stable category + dedicated exit
     code and never hang."""
-    API_KEY_ENV = deps.API_KEY_ENV
     EXIT_UNCONFIGURED = deps.EXIT_UNCONFIGURED
-    KEY_CONSOLE_URL = deps.KEY_CONSOLE_URL
     LAUNCHER_NAME = deps.LAUNCHER_NAME
     argparse = deps.argparse
     cmd_setup = deps.cmd_setup
@@ -384,5 +380,4 @@ def load_config(deps=None):
             print("\nambient: setup complete — continuing with your original "
                   "command.\n", file=sys.stderr)
             return api_key, resolve_api_url(conf), conf
-    exit_unconfigured(
-        LAUNCHER_NAME, API_KEY_ENV, KEY_CONSOLE_URL, EXIT_UNCONFIGURED, sys)
+    exit_unconfigured(LAUNCHER_NAME, EXIT_UNCONFIGURED, sys)

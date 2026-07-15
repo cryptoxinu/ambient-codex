@@ -52,6 +52,9 @@ def secret_safe_detail(detail, api_key, redact):
 def _secret_safe_reporter(api_key, deps):
     def report(check, ok, detail):
         safe_detail = secret_safe_detail(detail, api_key, deps.redact)
+        # The only dynamic value at this sink has passed the canonical API-key
+        # and terminal-control redactor immediately above.
+        # lgtm[py/clear-text-logging-sensitive-data]
         print(format_check_line(check, ok, safe_detail, deps.paint))
 
     return report
@@ -61,8 +64,7 @@ def run_doctor(_args, deps):
     conf = deps.read_config()
     api_key, backend = deps.resolve_key(conf)
     api_url = deps.resolve_api_url(conf)
-    safe_url = secret_safe_detail(api_url, api_key, deps.redact)
-    print(f"ambient {deps.version}  ·  endpoint {safe_url}", file=sys.stderr)
+    print(f"ambient {deps.version}  ·  doctor", file=sys.stderr)
     report = _secret_safe_reporter(api_key, deps)
     _report_runtime_and_config(api_key, backend, report, deps)
     models, ready = _check_catalog(api_key, api_url, report, deps)

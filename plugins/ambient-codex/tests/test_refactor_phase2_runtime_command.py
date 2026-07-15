@@ -22,12 +22,12 @@ class RuntimeCommandTests(unittest.TestCase):
         with mock.patch.object(sys, "stderr", stderr), \
                 self.assertRaises(SystemExit) as raised:
             core.exit_unconfigured(
-                "ambient-codex", "AMBIENT_CODEX_API_KEY",
-                "https://app.ambient.xyz", 3, sys,
+                "ambient-codex", 3, sys,
             )
 
         self.assertEqual(raised.exception.code, 3)
         self.assertIn("no API key configured", stderr.getvalue())
+        self.assertIn("https://ambient.xyz", stderr.getvalue())
         self.assertNotIn("secret-value", stderr.getvalue())
 
 
