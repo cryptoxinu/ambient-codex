@@ -27,6 +27,29 @@ class AuditDependencies:
             raise AttributeError(name) from error
 
 
+_STRUCTURED_RETRY_INSTRUCTION = """
+
+Your previous attempt did not produce a usable structured audit. Start fresh.
+Return one valid JSON object matching the requested findings schema. Do not emit
+reasoning, commentary, Markdown fences, or text before or after the JSON object."""
+
+
+def _structured_retry_messages(content, structured, messages, parse_audit):
+    """Build one fresh structured retry without replaying untrusted output."""
+    if not structured:
+        return None
+    parsed = parse_audit(content)
+    if isinstance(parsed, dict) and isinstance(parsed.get("findings"), list):
+        return None
+    if len(messages) != 2 or messages[0].get("role") != "system":
+        raise ValueError("structured audit retry requires system and user messages")
+    return [
+        {**messages[0],
+         "content": messages[0]["content"] + _STRUCTURED_RETRY_INSTRUCTION},
+        dict(messages[1]),
+    ]
+
+
 def run_audit(args, api_key, api_url, conf, deps):
     AUDIT_FINDINGS_SCHEMA = deps.AUDIT_FINDINGS_SCHEMA
     AUDIT_JSON_INSTRUCTION = deps.AUDIT_JSON_INSTRUCTION
@@ -65,6 +88,7 @@ def run_audit(args, api_key, api_url, conf, deps):
     model_profile = deps.model_profile
     note_if_hidden = deps.note_if_hidden
     pack_chunks = deps.pack_chunks
+    parse_audit_object = deps.parse_audit_object
     read_files = deps.read_files
     read_stdin_if_piped = deps.read_stdin_if_piped
     redact = deps.redact
@@ -674,6 +698,15 @@ def run_audit(args, api_key, api_url, conf, deps):
         try:
             content, _usage, body = complete(api_key, api_url, model, messages,
                                              args, session=session)
+            retry_messages = _structured_retry_messages(
+                content, structured, messages, parse_audit_object)
+            if retry_messages is not None:
+                print("ambient: structured audit response was unusable — "
+                      "retrying once with a fresh JSON-only request",
+                      file=sys.stderr)
+                content, _usage, body = complete(
+                    api_key, api_url, model, retry_messages, args,
+                    session=session)
             emit_single(content, body)
             return
         except ChatError as err:
