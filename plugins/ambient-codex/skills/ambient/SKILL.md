@@ -87,6 +87,13 @@ answer rather than replacing it with separate Codex reasoning. Keep only key
 handling, outbound-secret checks, untrusted-output validation, destructive actions,
 and security-critical boundaries local.
 
+For a short conversational `ask`, call Ambient immediately without a
+routing/checking preamble. After a successful result, return Ambient's answer
+verbatim unless a local safety boundary requires a concise warning. Do not narrate
+the tool invocation, copy its arguments, or repeat usage/diagnostic metadata.
+Reserve visible progress updates for long-running work such as builds, audits,
+maps, and multi-step recovery.
+
 Do not force repository work, multi-file implementation, or oversized input through
 `ask`. Select the task-specific CLI lane and let its selected model profile derive
 context capacity, reasoning/output budget, chunk boundaries, and map-reduce
@@ -103,10 +110,17 @@ and settings remain persistent separately.
 Do not wrap long Ambient commands in a shell timeout. The CLI has progress-aware
 stall detection.
 
-1. Start the bundled command and retain its session id.
-2. Poll it while running and relay useful progress.
-3. Parse the final envelope, not the first JSON-looking line.
-4. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
+1. Start the bundled command once in a background terminal and retain its session id.
+2. Send one concise running update. Do not copy the full brief, command, or prior
+   terminal output into chat.
+3. Poll only for liveness at a bounded interval while it runs. Report only state
+   changes, substantive progress, a stall/partial signal, or completion; never
+   narrate repeated waiting/polling checks.
+4. Never cancel a healthy Ambient job to save Codex tokens or because it has not
+   finished yet. Stop it only on the user's request or the CLI's actual failure/
+   stall signal.
+5. Parse the final envelope, not the first JSON-looking line.
+6. Interpret exits: `0` complete, `2` partial, `3` setup required, `64` bad
    invocation. Report usable partial output and every coverage gap.
 
 Build uses record-framed JSONL and `.ambient-build.json` so complete files survive

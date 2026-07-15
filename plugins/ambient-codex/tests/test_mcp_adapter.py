@@ -483,6 +483,43 @@ class TestMcpAdapter(unittest.TestCase):
             "--", "--focus", "safe.py",
         ])
 
+    def test_ask_tool_compacts_successful_json_to_the_ambient_answer(self):
+        mcp = load_mcp()
+        payload = {
+            "kind": "ask",
+            "status": "ok",
+            "content": "Ambient's concise answer.",
+            "model": "ambient/large",
+            "usage": {"prompt_tokens": 12, "completion_tokens": 34},
+        }
+        completed = mcp.tool_text(json.dumps(payload))
+        with mock.patch.object(mcp, "run_ambient", return_value=completed):
+            result = mcp.call_tool("ambient_ask", {"prompt": "Hello"})
+        self.assertFalse(result["isError"])
+        self.assertEqual(result["content"][0]["text"], "Ambient's concise answer.")
+
+    def test_ask_tool_marks_compacted_partial_results_incomplete(self):
+        mcp = load_mcp()
+        payload = {
+            "kind": "ask",
+            "status": "ok",
+            "content": "The partial answer.",
+            "partial": True,
+            "finish_reason": "length",
+        }
+        completed = mcp.tool_text(json.dumps(payload))
+        with mock.patch.object(mcp, "run_ambient", return_value=completed):
+            result = mcp.call_tool("ambient_ask", {"prompt": "Hello"})
+        self.assertIn("The partial answer.", result["content"][0]["text"])
+        self.assertIn("incomplete", result["content"][0]["text"])
+
+    def test_ask_tool_preserves_error_details_for_diagnosis(self):
+        mcp = load_mcp()
+        completed = mcp.tool_text("ambient exited 1\nsetup required", is_error=True)
+        with mock.patch.object(mcp, "run_ambient", return_value=completed):
+            result = mcp.call_tool("ambient_ask", {"prompt": "Hello"})
+        self.assertEqual(result, completed)
+
     def test_mcp_string_inputs_reject_nul_bytes_before_subprocess(self):
         mcp = load_mcp()
         with mock.patch.object(mcp, "run_ambient") as run:

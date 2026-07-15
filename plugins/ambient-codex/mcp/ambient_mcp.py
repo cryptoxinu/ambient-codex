@@ -385,6 +385,29 @@ def run_ambient(
     return tool_text(text)
 
 
+def compact_ask_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep successful chat turns readable while preserving incomplete signals."""
+    if result.get("isError"):
+        return result
+    try:
+        text = result["content"][0]["text"]
+        payload = json.loads(text)
+    except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+        return result
+    if not isinstance(payload, dict) or payload.get("kind") != "ask":
+        return result
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        return tool_text("Ambient returned no answer.")
+    if not payload.get("partial"):
+        return tool_text(content)
+    reason = payload.get("finish_reason")
+    suffix = "Ambient response incomplete"
+    if isinstance(reason, str) and reason:
+        suffix += f" ({reason})"
+    return tool_text(f"{content}\n\n[{suffix}; do not present it as complete.]")
+
+
 def status_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     reject_unknown(args, set())
     return run_ambient(["config"])
@@ -754,7 +777,7 @@ def ask_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     if optional_bool(args, "json", True):
         argv.append("--json")
     argv.extend(["--", prompt])
-    return run_ambient(argv, timeout_seconds=timeout_seconds)
+    return compact_ask_result(run_ambient(argv, timeout_seconds=timeout_seconds))
 
 
 def audit_small_tool(args: Dict[str, Any]) -> Dict[str, Any]:

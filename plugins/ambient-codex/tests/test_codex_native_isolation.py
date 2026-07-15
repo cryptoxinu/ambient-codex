@@ -273,6 +273,21 @@ class TestCodexNativeIsolation(unittest.TestCase):
         self.assertNotIn(
             "mode setting persists on disk", skill)
 
+    def test_ambient_session_short_asks_are_quiet_and_verbatim(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("routing/checking preamble", skill)
+        self.assertIn("Ambient's answer\nverbatim", skill)
+        self.assertIn("long-running work", skill)
+
+    def test_ambient_session_long_jobs_use_quiet_liveness_polling(self):
+        skill = (ROOT / "skills" / "ambient" / "SKILL.md").read_text(
+            encoding="utf-8")
+        self.assertIn("one concise running update", skill)
+        self.assertIn("state\n   changes", skill)
+        self.assertIn("Never cancel a healthy Ambient job", skill)
+        self.assertIn("Do not copy the full brief", skill)
+
 
 if __name__ == "__main__":
     unittest.main()
