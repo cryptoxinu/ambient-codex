@@ -1,4 +1,11 @@
-"""Pure final-request construction for code generation."""
+"""Request isolation and final dispatch for focused code generation."""
+
+import copy
+
+
+def clone_request(args):
+    """Return a shallow request copy so phase-local tuning cannot leak out."""
+    return copy.copy(args)
 
 
 def final_messages(task, context):
@@ -23,4 +30,21 @@ def clamp_context(context, *, task, single_shot_chars):
             else context[:room] + "\n[ambient: context truncated to fit]")
 
 
-__all__ = ("final_messages", "clamp_context")
+def dispatch_generation(api_key, api_url, model, task, context, args, *,
+                        best_of_k, best_of_temperature, catalog, conf, session,
+                        best_of_chat, chat):
+    """Dispatch the final code request with generation-only sampling state."""
+    request = clone_request(args)
+    messages = final_messages(task, context)
+    if best_of_k:
+        request.temperature = best_of_temperature
+        best_of_chat(
+            api_key, api_url, model, messages, request, best_of_k,
+            catalog, conf, kind="code", session=session)
+        return
+    chat(api_key, api_url, model, messages, request, kind="code",
+         session=session)
+
+
+__all__ = ("clone_request", "final_messages", "clamp_context",
+           "dispatch_generation")

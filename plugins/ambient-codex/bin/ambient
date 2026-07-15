@@ -6899,6 +6899,7 @@ def cmd_code(args, api_key, api_url, conf):
                    'ambient-codex code "write a rate limiter" -f context.py')
     warn_if_stdin_ignored("`code` does not read stdin — pass context with -f FILE")
     refuse_if_secrets([("task", task)], args.allow_secrets)
+    args = _code_workflow.clone_request(args)
     # 7a validated UP FRONT: an invalid --best-of must fail usage
     # (64) BEFORE the catalog fetch and BEFORE any billed task/context
     # distillation pass — zero spend on a doomed invocation. The 0→0.7
@@ -7003,18 +7004,15 @@ def cmd_code(args, api_key, api_url, conf):
                 # above `single`; proceeding would 400 the paid-for generation
                 # call. Clamp with an honest marker.
                 context = clamped_context
-    messages = _code_workflow.final_messages(task, context)
     # 7a: --best-of applies to the final GENERATION call only (any brief/
     # context distillation above stays a single pass — sampling diversity
     # buys nothing on extraction). Validated at the TOP of cmd_code;
     # the diversity temperature applies HERE only.
-    if best_of_k:
-        args.temperature = best_of_temp
-        _best_of_chat(api_key, api_url, model, messages, args, best_of_k,
-                      catalog, conf, kind="code", session=session)
-        return
-    chat(api_key, api_url, model, messages, args, kind="code",
-         session=session)
+    _code_workflow.dispatch_generation(
+        api_key, api_url, model, task, context, args,
+        best_of_k=best_of_k, best_of_temperature=best_of_temp,
+        catalog=catalog, conf=conf, session=session,
+        best_of_chat=_best_of_chat, chat=chat)
 
 
 # --------------------------------------------------------------------------
