@@ -1,7 +1,9 @@
 """Phase 5 contracts for secure setup command orchestration."""
 
 import importlib
+import os
 import unittest
+from unittest import mock
 
 
 class SetupCommandTests(unittest.TestCase):
@@ -13,6 +15,18 @@ class SetupCommandTests(unittest.TestCase):
             self.core.normalize_pasted_key("  Bearer abc_DEF-123  "),
             "abc_DEF-123",
         )
+
+    def test_environment_presence_check_never_reads_the_secret_value(self):
+        class PresenceOnlyEnvironment:
+            def __contains__(self, name):
+                return name == "AMBIENT_CODEX_API_KEY"
+
+            def get(self, _name):
+                raise AssertionError("secret value must not be read")
+
+        with mock.patch.object(os, "environ", PresenceOnlyEnvironment()):
+            self.assertTrue(self.core.environment_variable_is_set(
+                "AMBIENT_CODEX_API_KEY"))
         self.assertEqual(
             self.core.normalize_pasted_key("abc_DEF-123"),
             "abc_DEF-123",

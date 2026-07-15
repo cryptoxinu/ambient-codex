@@ -17,6 +17,26 @@ class DoctorCommandTests(unittest.TestCase):
         self.assertEqual(
             line, "PASS  runtime        python3 -> /usr/bin/python3")
 
+    def test_auth_status_uses_fixed_categories_not_provider_detail(self):
+        self.assertEqual(
+            self.core.auth_status_detail(True, "ok"),
+            "authentication verified",
+        )
+        self.assertEqual(
+            self.core.auth_status_detail(False, "key"),
+            "API key rejected",
+        )
+        self.assertEqual(
+            self.core.auth_status_detail(False, "unexpected"),
+            "authentication check failed",
+        )
+
+    def test_unknown_key_backend_is_not_reflected_to_output(self):
+        self.assertEqual(
+            self.core.key_backend_label("secret-provider-value"),
+            "configured",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

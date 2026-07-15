@@ -39,6 +39,11 @@ def normalize_pasted_key(value):
     return key[7:].strip() if key.lower().startswith("bearer ") else key
 
 
+def environment_variable_is_set(name):
+    """Check secret configuration by name without reading its value."""
+    return name in os.environ
+
+
 def collect_key_interactive(deps):
     import getpass
     import warnings
@@ -167,7 +172,7 @@ def setup_remove(deps):
     print("Sticky settings (default models, delegate mode) were kept — delete")
     print(f"{deps.config_path} to reset everything. Reconfigure any time: "
           f"{deps.launcher_name} setup")
-    if os.environ.get(deps.api_key_env):
+    if environment_variable_is_set(deps.api_key_env):
         print(f"note: {deps.api_key_env} is still set in this shell's environment "
               "and will keep working until you unset it.", file=sys.stderr)
 
@@ -221,5 +226,6 @@ def _collect_setup_key(args, deps):
 
 
 __all__ = ("SetupDependencies", "collect_key_interactive",
+           "environment_variable_is_set",
            "normalize_pasted_key", "run_setup", "setup_remove",
            "verify_and_store_key")
